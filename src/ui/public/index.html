@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bind | Autonomous Business Agent Engine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    .status-pulse { animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased">
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center space-x-3">
+      <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20 text-white font-bold text-xl">
+        <i class="fa-solid fa-cube"></i>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+          Bind
+          <span class="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium">Kitchen Vertical Slice</span>
+        </h1>
+        <p class="text-xs text-slate-400">Autonomous Business Agent Deployment & Policy Enforcement</p>
+      </div>
+    </div>
+
+    <!-- Workspace & Treasury Info -->
+    <div class="flex items-center gap-4 flex-wrap">
+      <div class="bg-slate-800/80 px-4 py-2 rounded-lg border border-slate-700 flex items-center gap-3">
+        <div class="text-right">
+          <div class="text-xs text-slate-400 font-medium">Treasury Balance</div>
+          <div id="treasuryBalance" class="text-sm font-bold text-emerald-400">$10,000.00 USDC</div>
+        </div>
+        <div class="h-8 w-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold">
+          $
+        </div>
+      </div>
+
+      <div class="bg-slate-800/80 px-4 py-2 rounded-lg border border-slate-700 text-xs">
+        <div class="text-slate-400">Network / Settlement</div>
+        <div class="font-semibold text-slate-200 flex items-center gap-1.5">
+          <span class="h-2 w-2 rounded-full bg-emerald-500 status-pulse"></span>
+          Arc Testnet (5042002)
+        </div>
+      </div>
+
+      <button id="btnRecover" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium border border-slate-700 transition flex items-center gap-2">
+        <i class="fa-solid fa-rotate-right"></i>
+        <span>Scan & Recover</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-8">
+    <!-- Active Agent Roles Grid -->
+    <section>
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-lg font-bold text-white">Active Agent Team</h2>
+          <p class="text-xs text-slate-400">Deterministic code-enforced authority matrix (BIND_BUILD_SPEC.md)</p>
+        </div>
+        <span class="text-xs text-slate-400 bg-slate-800 px-2.5 py-1 rounded-md border border-slate-700">3 Agents Coordinated</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="rolesGrid">
+        <!-- Roles rendered via app.js -->
+        <div class="p-5 rounded-xl border border-slate-800 bg-slate-900/50 animate-pulse h-36"></div>
+        <div class="p-5 rounded-xl border border-slate-800 bg-slate-900/50 animate-pulse h-36"></div>
+        <div class="p-5 rounded-xl border border-slate-800 bg-slate-900/50 animate-pulse h-36"></div>
+      </div>
+    </section>
+
+    <!-- Pending Approvals Banner (Hidden when empty) -->
+    <section id="approvalsSection" class="hidden">
+      <div class="p-5 rounded-xl border border-amber-500/40 bg-gradient-to-r from-amber-950/40 to-slate-900 shadow-xl">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="h-8 w-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-amber-300">Pending Owner Approvals</h3>
+            <p class="text-xs text-slate-400">Commercial commitments exceeding the autonomous threshold ($250.00)</p>
+          </div>
+        </div>
+        <div id="approvalsList" class="space-y-3"></div>
+      </div>
+    </section>
+
+    <!-- Kitchen Inventory & Restock Section -->
+    <section class="bg-slate-900/60 rounded-xl border border-slate-800 overflow-hidden shadow-sm">
+      <div class="p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-boxes-stacked text-amber-500"></i>
+            Kitchen Live Inventory
+          </h2>
+          <p class="text-xs text-slate-400">Automated par-level monitoring and supplier RFQ triggers</p>
+        </div>
+        <div class="text-xs text-slate-400">
+          Auto-replenish when stock &lt; par level
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm text-slate-300">
+          <thead class="bg-slate-800/60 text-xs uppercase text-slate-400 font-medium">
+            <tr>
+              <th class="px-5 py-3">Item / SKU</th>
+              <th class="px-5 py-3">Category</th>
+              <th class="px-5 py-3">Current Stock</th>
+              <th class="px-5 py-3">Par Level</th>
+              <th class="px-5 py-3">Unit Price</th>
+              <th class="px-5 py-3">Status</th>
+              <th class="px-5 py-3 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryTable" class="divide-y divide-slate-800">
+            <tr><td colspan="7" class="px-5 py-8 text-center text-slate-500">Loading inventory...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Workflows & Activity History -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Active Workflows -->
+      <section class="bg-slate-900/60 rounded-xl border border-slate-800 p-5 flex flex-col shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-diagram-project text-blue-400"></i>
+            Active Workflows & 3-Way Match
+          </h2>
+          <span class="text-xs text-slate-400">Durable state machine</span>
+        </div>
+        <div id="workflowsList" class="flex-1 space-y-3 overflow-y-auto max-h-96 pr-1">
+          <div class="text-slate-500 text-xs text-center py-8">No active workflows</div>
+        </div>
+      </section>
+
+      <!-- Audit Trail -->
+      <section class="bg-slate-900/60 rounded-xl border border-slate-800 p-5 flex flex-col shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-shield-halved text-emerald-400"></i>
+            Auditable Event Log
+          </h2>
+          <span class="text-xs text-slate-400">Immutable policy record</span>
+        </div>
+        <div id="auditList" class="flex-1 space-y-3 overflow-y-auto max-h-96 pr-1">
+          <div class="text-slate-500 text-xs text-center py-8">Loading audit trail...</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="border-t border-slate-800/80 bg-slate-900 py-4 px-6 text-center text-xs text-slate-500">
+    Bind autonomous business agent platform · Tameion Agents Hackathon · Canteen × Circle on Arc L1
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
