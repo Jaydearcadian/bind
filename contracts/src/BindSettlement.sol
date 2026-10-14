@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 /**
  * @title BindSettlement
- * @notice On-chain settlement, milestone escrow, and 3-way match audit registry for Bind on Arc L1.
+ * @notice On-chain settlement, milestone escrow, 3-way match audit registry, and deterministic policy enforcement for Bind on Arc L1.
  * @dev On Arc L1, native gas is native USDC (18 decimals).
  */
 contract BindSettlement {
@@ -18,6 +18,12 @@ contract BindSettlement {
     }
 
     address public owner;
+    uint256 public dailySpendLimit;
+    uint256 public dailySpent;
+    uint256 public lastDayReset;
+    bool public enforceVendorWhitelist;
+
+    mapping(address => bool) public whitelistedVendors;
     mapping(bytes32 => Escrow) public escrows;
     mapping(bytes32 => bool) public settledOrders;
 
@@ -42,6 +48,10 @@ contract BindSettlement {
         uint256 timestamp
     );
 
+    event DailyLimitUpdated(uint256 oldLimit, uint256 newLimit);
+    event VendorStatusUpdated(address indexed vendor, bool allowed);
+    event VendorWhitelistEnforcementUpdated(bool enforce);
+
     error Unauthorized();
     error EscrowAlreadyExists();
     error EscrowNotFound();
@@ -49,6 +59,8 @@ contract BindSettlement {
     error InsufficientValue();
     error TransferFailed();
     error OrderAlreadySettled();
+    error DailyLimitExceeded(uint256 attempted, uint256 limit);
+    error VendorNotWhitelisted(address vendor);
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert Unauthorized();
@@ -57,6 +69,46 @@ contract BindSettlement {
 
     constructor() {
         owner = msg.sender;
+        lastDayReset = block.timestamp;
+    }
+
+    /**
+     * @notice Internal check and update of rolling 24-hour daily spend limit.
+     */
+    function _checkAndUpdateDailyLimit(uint256 amount) internal {
+        if (block.timestamp >= lastDayReset + 1 days) {
+            dailySpent = 0;
+            lastDayReset = block.timestamp;
+        }
+        if (dailySpendLimit > 0 && dailySpent + amount > dailySpendLimit) {
+            revert DailyLimitExceeded(dailySpent + amount, dailySpendLimit);
+        }
+        dailySpent += amount;
+    }
+
+    /**
+     * @notice Sets or updates the 24-hour rolling daily spend limit (in wei/USDC).
+     */
+    function setDailyLimit(uint256 newLimit) external onlyOwner {
+        emit DailyLimitUpdated(dailySpendLimit, newLimit);
+        dailySpendLimit = newLimit;
+    }
+
+    /**
+     * @notice Whitelists or revokes an approved vendor address.
+     */
+    function setVendorStatus(address vendor, bool allowed) external onlyOwner {
+        if (vendor == address(0)) revert Unauthorized();
+        whitelistedVendors[vendor] = allowed;
+        emit VendorStatusUpdated(vendor, allowed);
+    }
+
+    /**
+     * @notice Enables or disables mandatory vendor whitelist enforcement.
+     */
+    function setEnforceVendorWhitelist(bool enforce) external onlyOwner {
+        enforceVendorWhitelist = enforce;
+        emit VendorWhitelistEnforcementUpdated(enforce);
     }
 
     /**
@@ -68,7 +120,12 @@ contract BindSettlement {
     function depositEscrow(bytes32 commitmentId, address recipient, bytes32 matchHash) external payable {
         if (msg.value == 0) revert InsufficientValue();
         if (recipient == address(0)) revert Unauthorized();
+        if (enforceVendorWhitelist && !whitelistedVendors[recipient]) {
+            revert VendorNotWhitelisted(recipient);
+        }
         if (escrows[commitmentId].depositor != address(0)) revert EscrowAlreadyExists();
+
+        _checkAndUpdateDailyLimit(msg.value);
 
         escrows[commitmentId] = Escrow({
             depositor: msg.sender,
@@ -117,6 +174,10 @@ contract BindSettlement {
         uint256 amount = esc.amount;
         address depositor = esc.depositor;
 
+        if (dailySpent >= amount) {
+            dailySpent -= amount;
+        }
+
         (bool success,) = payable(depositor).call{value: amount}("");
         if (!success) revert TransferFailed();
 
@@ -132,7 +193,12 @@ contract BindSettlement {
     function settleOrder(bytes32 orderId, address supplier, bytes32 matchHash) external payable {
         if (msg.value == 0) revert InsufficientValue();
         if (supplier == address(0)) revert Unauthorized();
+        if (enforceVendorWhitelist && !whitelistedVendors[supplier]) {
+            revert VendorNotWhitelisted(supplier);
+        }
         if (settledOrders[orderId]) revert OrderAlreadySettled();
+
+        _checkAndUpdateDailyLimit(msg.value);
 
         settledOrders[orderId] = true;
 
