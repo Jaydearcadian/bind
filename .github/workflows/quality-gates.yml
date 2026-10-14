@@ -1,0 +1,76 @@
+name: Bind quality gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: bind_local
+          POSTGRES_USER: bind_local
+          POSTGRES_PASSWORD: bind_local_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bind_local -d bind_local"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://bind_local:bind_local_only@127.0.0.1:5432/bind_local
+      SETTLEMENT_MODE: local
+      CHAIN_ID: "31337"
+      RPC_URL: http://127.0.0.1:8545
+      SUPPLIER_ADAPTER_MODE: simulated
+      ALLOW_NO_CONTRACTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install package manager and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f pnpm-lock.yaml ]]; then
+            corepack enable
+            pnpm install --frozen-lockfile
+          elif [[ -f bun.lock || -f bun.lockb ]]; then
+            npm install --global bun
+            bun install --frozen-lockfile
+          elif [[ -f package-lock.json ]]; then
+            npm ci
+          elif [[ -f yarn.lock ]]; then
+            corepack enable
+            yarn install --immutable
+          else
+            echo "No lockfile found. Reproducible dependency installs are mandatory." >&2
+            exit 1
+          fi
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+      - name: Start local Anvil
+        shell: bash
+        run: |
+          anvil --chain-id 31337 --host 127.0.0.1 --port 8545 > /tmp/bind-anvil.log 2>&1 &
+          for i in $(seq 1 40); do
+            if cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/bind-anvil.log
+          exit 1
+      - name: Run required application and contract gates
+        shell: bash
+        run: bash scripts/verify-local.sh

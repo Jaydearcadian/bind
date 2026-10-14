@@ -1,0 +1,10 @@
+# Merge these entries into the repository's existing .gitignore; do not overwrite it.
+.env.local
+.env.*.local
+.agtx/
+.worktrees/
+playwright-report/
+test-results/
+coverage/
+artifacts/
+cache/

@@ -1,0 +1,48 @@
+# Managed by CAPA. After `capa install`, commit capabilities.lock so resolved
+# remote skills remain repeatable. Review `capa install --dry-run` before first install.
+providers:
+  - opencode
+
+options:
+  toolExposure: search
+  agentActivity: true
+
+skills:
+  - id: bind-oneshot
+    type: local
+    def:
+      path: skills/bind-oneshot
+      description: Execute Bind's full local-first implementation mission, verification loop, and evidence report.
+  - id: bind-testing-gates
+    type: local
+    def:
+      path: skills/bind-testing-gates
+      description: Implement and run application, contract, security, end-to-end, and production-readiness test gates.
+  - id: bind-ui-quality
+    type: local
+    def:
+      path: skills/bind-ui-quality
+      description: Build and verify coherent, accessible product UI with actual browser evidence.
+  - id: capabilities-manager
+    type: github
+    def:
+      repo: infragate/capa::skills/capabilities-manager
+  - id: context7
+    type: github
+    def:
+      repo: intellectronica/agent-skills::skills/context7
+  - id: frontend-design
+    type: github
+    def:
+      repo: anthropics/skills::skills/frontend-design
+  - id: styleseed
+    type: github
+    def:
+      repo: bitjaru/styleseed::skills/styleseed
+
+servers:
+  - id: context7
+    type: mcp
+    expose: all
+    def:
+      url: https://mcp.context7.com/mcp
