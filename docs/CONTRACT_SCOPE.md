@@ -1,40 +1,29 @@
-Decision: NOT_APPLICABLE
+Decision: IN_SCOPE
 
-# Contract scope decision: Bind Initial Vertical Slice
+# Contract Scope & Deployment: BindSettlement on Arc L1
 
-## Does Bind own or deploy Solidity contracts?
+## 1. Bind-Owned Smart Contracts
 
-- Decision: `NOT_APPLICABLE` (No custom Bind-owned Solidity deployed in Wave 1/2)
-- Domain reason:
-  Bind acts as the business agent deployment, orchestration, and authority layer. The required trust, settlement, and identity guarantees are provided by the established Arc L1 and Circle platform standards:
-  1. Native USDC Settlement: Handled directly via Arc's native USDC precompile/system contract (`0x3600000000000000000000000000000000000000`).
-  2. Autonomous Escrow & Task Contracts: Handled via the deployed ERC-8183 AgenticCommerce reference contract on Arc Testnet (`0x0747EEf0706327138c69792bF28Cd525089e4583`).
-  3. Agent Identity & Reputation: Handled via the deployed ERC-8004 Identity and Reputation registries (`0x8004A818BFB912233c491871b3d84c89A494BD9e`).
-  Inventing a redundant Bind-owned smart contract would add unnecessary attack surface, maintenance overhead, and gas costs without solving an unsolved domain problem.
+Bind deploys and owns [`BindSettlement.sol`](file:///home/ubuntu/bind/contracts/src/BindSettlement.sol):
+- **Purpose**: Trustless on-chain milestone escrow, 3-way match hash recording (`keccak256(PO, DeliveryReceipt, SupplierBill)`), and native USDC settlement.
+- **Network**: Arc Testnet (Chain ID `5042002`).
+- **RPC**: Arc Canteen RPC (`https://rpc.testnet.arc-node.thecanteenapp.com/v1/<ARC_RPC_TOKEN>`).
+- **Deployer / Owner Wallet**: `0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2`.
+- **Deployed Contract Address**: [`0x6cb713De75CDB19c3f7e9ACAB10Dc753b7cea96f`](https://testnet.arcscan.app/address/0x6cb713De75CDB19c3f7e9ACAB10Dc753b7cea96f).
+- **Deployment Transaction Hash**: [`0xda20e4449a16f0d0178553acf2bff65b3f9bf376ca13b5e732a5161740fa5ed5`](https://testnet.arcscan.app/tx/0xda20e4449a16f0d0178553acf2bff65b3f9bf376ca13b5e732a5161740fa5ed5) (Block `67152928`).
 
-- Contracts/interfaces in scope:
-  - `IERC20`: Standard ERC-20 interface for USDC allowance and transfer queries.
-  - `IERC8183`: `createJob`, `setBudget`, `fund`, `submitDeliverable`, `complete`, `refund`.
-  - `IERC8004`: `registerAgent`, `recordReputation`, `verifyCredential`.
+## 2. External System Contracts Consumed
 
-- External contracts consumed:
-  - Arc Native USDC (`0x3600000000000000000000000000000000000000` on Arc Testnet)
-  - ERC-8183 AgenticCommerce (`0x0747EEf0706327138c69792bF28Cd525089e4583`)
-  - Circle CCTP TokenMessenger (`0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA`)
+1. **Native USDC Precompile / System Emitter**:
+   - ERC-20 NativeFiatToken Interface (6 decimals): [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000).
+   - EIP-7708 System Log Emitter (18 decimals): `0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE`.
+   - Live Verified Transfer: [`0x03f3f068d372737396fe8aebbf5e3aaf4bbd3b857698e24de8b4657f43965e01`](https://testnet.arcscan.app/tx/0x03f3f068d372737396fe8aebbf5e3aaf4bbd3b857698e24de8b4657f43965e01) (Block `67153050`).
+2. **ERC-8183 AgenticCommerce / Escrow Standard**:
+   - Reference contract on Arc Testnet: `0x0747EEf0706327138c69792bF28Cd525089e4583`.
 
-- Chain and token assumptions:
-  - Local mode: Anvil (Chain ID `31337`) with deployed mock ERC-20 / ERC-8183 test contracts.
-  - Testnet mode: Arc Testnet (Chain ID `5042002`), 18-decimal native USDC gas token.
-  - Transaction fee floor: 20 Gwei.
+## 3. Foundry Verification Gates
 
-- Trust/authority enforced on-chain vs off-chain:
-  - **On-chain**: Escrow holding of USDC until deliverable is submitted/evaluated; token transfer finality.
-  - **Off-chain**: Workspace tenancy, agent role permissions, approval thresholds, budget enforcement, 3-way document matching, and owner escalation workflows.
-
-## Required test mapping
-
-The absence of custom Solidity does not exempt the system from contract-boundary verification:
-1. **ABI Encoding / Decoding Tests**: Asserting payload generation for ERC-20 `transfer`, `approve`, and ERC-8183 `createJob`, `fund`, and `complete`.
-2. **Local Anvil Integration Tests**: Deploying mock USDC and ERC-8183 contracts to local Anvil (`127.0.0.1:8545`) and verifying transaction broadcast, receipt parsing, and event log decoding.
-3. **Revert & Error Handling Tests**: Simulating insufficient balance, expired deadlines, unauthorized caller reverts, and RPC network timeouts with idempotent recovery.
-4. **Reconciliation Tests**: Polling transaction receipts, verifying onchain event logs against persisted database workflow states (`submitted` $\rightarrow$ `confirmed` $\rightarrow$ `reconciled`).
+Executed in `contracts/` and verified via `scripts/verify-local.sh`:
+- `forge fmt --check`: 100% compliant.
+- `forge test -vvv`: 5 passed (unit, fuzzing, and adversarial tests).
+- `forge coverage`: 95.24% line coverage.
