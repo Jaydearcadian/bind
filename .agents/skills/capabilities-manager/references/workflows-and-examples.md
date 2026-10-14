@@ -1,0 +1,640 @@
+# Usage Workflows and Examples
+
+## Contents
+
+- **Workflows**: 1. Starting a New Project · 2. Adding a Community Skill · 3. Adding a Local Skill · 4. Creating a Custom Skill (inline) · 5. Running Tools with `capa sh` · 6. Managing Server Lifecycle · 7. Installing Without a Providers Section · 8. Bypassing the Cache · 9. Wrap (shadow workspaces) · 10. Passthrough native writes · 11. Browse registries
+- **Examples**: 1. Web Research Setup · 2. File Operations · 3. Mixed Command and MCP Tools · 4. On-Demand Tool Loading · 5. CLI Prerequisites · 6. Rules · 7. Plugins · 8. Optional Providers · 9. Tool formatter
+
+---
+
+## Workflows
+
+### 1. Starting a New Project
+
+```bash
+# Initialize capabilities file (defaults to YAML) + register project in Web UI
+capa init
+
+# Edit capabilities.yaml to add your skills and tools
+# Or open http://localhost:5912 and use the capabilities editor
+
+# Install the capabilities
+capa install
+
+# Server starts automatically - check status / Web UI URL
+capa status
+```
+
+### 2. Adding a Community Skill
+
+```bash
+# Option 1: Use capa add command
+capa add vercel-labs/agent-skills
+
+# Option 2: From a registry
+capa registry search skills-sh "research"
+capa add skills-sh:vercel-labs/skills/find-skills --install
+
+# Option 3: Manually add to capabilities.yaml:
+skills:
+  - id: web-researcher
+    type: github
+    def:
+      repo: vercel-labs/agent-skills@web-researcher
+      requires:
+        - '@brave.search'
+
+# Add required tools/servers
+
+# Install
+capa install
+```
+
+### 3. Adding a Local Skill (file reference)
+
+When the skill lives in the project (e.g. `./my-skill/SKILL.md`), add it by path so it is stored as type `local` and re-read on every install:
+
+```bash
+# Add by path (directory must contain SKILL.md)
+capa add ./my-skill
+
+# Or manually in capabilities.yaml:
+skills:
+  - id: my-skill
+    type: local
+    def:
+      path: my-skill    # relative to project root
+      description: Local skill from this repo
+
+capa install
+```
+
+Edits to `my-skill/SKILL.md` are picked up on the next `capa install`; no need to re-add the skill.
+
+### 4. Creating a Custom Skill (inline)
+
+Add an inline skill to your `capabilities.yaml`:
+
+```yaml
+skills:
+  - id: my-custom-skill
+    type: inline
+    def:
+      description: My custom skill description
+      requires:
+        - '@my-server.my_tool'
+      content: |
+        ---
+        name: my-custom-skill
+        description: My custom skill description
+        ---
+        
+        # My Custom Skill
+        
+        Detailed description and usage instructions here...
+        
+        ## When to Use
+        - Situation 1
+        - Situation 2
+
+# Install
+capa install
+```
+
+### 5. Running Tools with `capa sh`
+
+Once the project is installed and the server is running, any configured tool can be called directly:
+
+```bash
+# Explore what's available
+capa sh
+capa sh gitlab
+capa sh gitlab list-merge-requests --help
+
+# Execute a tool
+capa sh gitlab list-merge-requests --project-id 123 --state opened
+
+# Skip optional formatters
+capa sh --raw gitlab list-merge-requests --project-id 123
+
+# Top-level command tool
+capa sh find-skills --query "git automation"
+
+# Pass through an OS command
+capa sh git log --oneline
+```
+
+Tool IDs are slugified automatically: `list_merge_requests` → `list-merge-requests`.
+
+### 6. Managing Server Lifecycle
+
+```bash
+# Check server status + Web UI URL
+capa status
+
+# Stop server (also stops active wrap sessions)
+capa stop
+
+# Start server (background)
+capa start
+
+# Restart after config changes
+capa restart
+
+# View server logs (stored in ~/.capa/logs/)
+```
+
+### 7. Installing Without a Providers Section
+
+When the `providers` field is omitted from `capabilities.yaml`, capa resolves providers at install time:
+
+```bash
+# Specify provider via CLI flag (non-interactive)
+capa install -p cursor
+
+# Or let capa prompt interactively (auto-detects installed providers)
+capa install
+
+# Previously selected provider is remembered for future installs
+capa install  # re-uses the provider from last time (stored in DB)
+```
+
+This is useful for distributing a `capabilities.yaml` that works across teams using different agents — each developer picks their own provider once.
+
+### 8. Bypassing the Cache
+
+Capa caches remote git repositories locally. To force a fresh fetch:
+
+```bash
+# Re-resolve all remote sources (skills, rules, plugins, agent snippets)
+capa install --no-cache
+
+# Or clear the entire cache first, then install normally
+capa cache clean
+capa install
+```
+
+### 9. Wrap (shadow workspaces)
+
+Run an agent without writing provider dirs into the real repo:
+
+```bash
+capa wrap cursor          # Cursor GUI
+capa wrap claude          # Claude Code
+capa wrap codex
+capa wrap --prune         # clean stale ~/.capa/workspaces entries
+```
+
+Edit `capabilities.yaml` and run `capa install` from the **real** project path (mutating commands refuse wrap workspaces). The shadow workspace reinstalls automatically when capabilities change.
+
+### 10. Passthrough native writes
+
+One-off provider-native files without capa management:
+
+```bash
+capa add owner/repo@skill --passthrough --provider cursor
+capa add --rule --id ts-strict --inline "Always use strict TypeScript" --passthrough -p cursor
+capa install --passthrough -p cursor
+```
+
+Do **not** use `--tool … --passthrough` — tool aliases need the managed MCP proxy. Prefer managed mode (`capa add` without `--passthrough`) for anything that should be reproducible via `capabilities.lock`.
+
+### 11. Browse registries
+
+```bash
+capa registry list
+capa registry search "typescript"
+capa registry search skills-sh "research" --capability skills
+capa registry add anthropics/claude-plugins-official --type claude-marketplace
+capa add skills-sh:vercel-labs/skills/find-skills --install
+```
+
+Or open the Web UI → **Registries**.
+
+---
+
+## Examples
+
+### Example 1: Web Research Setup
+
+**capabilities.yaml:**
+```yaml
+providers:
+  - cursor
+
+skills:
+  - id: web-researcher
+    type: inline
+    def:
+      description: Web research using Brave Search
+      requires:
+        - '@brave-search-server.search'
+      content: |
+        ---
+        name: web-researcher
+        description: Search the web for information
+        ---
+        
+        # Web Researcher
+        
+        Use brave-search-server.search for finding current information on the web.
+
+servers:
+  - id: brave-search-server
+    type: mcp
+    def:
+      cmd: npx
+      args:
+        - -y
+        - "@modelcontextprotocol/server-brave-search"
+      env:
+        BRAVE_API_KEY: ${BraveApiKey}
+
+tools:
+  - id: search
+    type: mcp
+    def:
+      server: "@brave-search-server"
+      tool: brave_web_search
+```
+
+**Setup:**
+```bash
+capa install  # Will prompt for BraveApiKey via web UI
+```
+
+### Example 2: File Operations
+
+**capabilities.yaml:**
+```yaml
+providers:
+  - cursor
+  - claude-code
+
+skills:
+  - id: file-manager
+    type: github
+    def:
+      repo: vercel-labs/agent-skills@file-operations
+      requires:
+        - '@filesystem-server.read_file'
+        - '@filesystem-server.write_file'
+        - '@filesystem-server.list_directory'
+
+servers:
+  - id: filesystem-server
+    type: mcp
+    def:
+      cmd: npx
+      args:
+        - -y
+        - "@modelcontextprotocol/server-filesystem"
+        - C:\Users\Tony\Projects
+
+tools:
+  - id: read_file
+    type: mcp
+    def:
+      server: "@filesystem-server"
+      tool: read_file
+  
+  - id: write_file
+    type: mcp
+    def:
+      server: "@filesystem-server"
+      tool: write_file
+  
+  - id: list_directory
+    type: mcp
+    def:
+      server: "@filesystem-server"
+      tool: list_directory
+```
+
+### Example 3: Mixed Command and MCP Tools
+
+**capabilities.yaml:**
+```yaml
+providers:
+  - cursor
+
+options:
+  toolExposure: on-demand  # Tools only exposed via setup_tools()
+
+skills:
+  - id: hello-world
+    type: inline
+    def:
+      description: Basic greeting capabilities
+      requires:
+        - hello_world
+        - greet_user
+      content: |
+        ---
+        name: hello-world
+        description: Greeting tools
+        ---
+        
+        # Hello World
+        
+        Demonstrates command tools for greetings.
+        Command tools use their plain ID (e.g. hello_world, greet_user).
+
+servers: []
+
+tools:
+  - id: hello_world
+    type: command
+    def:
+      run:
+        cmd: echo Hello, World!
+        args: []
+  
+  - id: greet_user
+    type: command
+    def:
+      run:
+        cmd: echo Hello, {name}!
+        args:
+          - name: name
+            type: string
+            description: Name to greet
+            required: true
+```
+
+### Example 4: On-Demand Tool Loading
+
+**capabilities.yaml:**
+```yaml
+providers:
+  - cursor
+
+options:
+  toolExposure: on-demand
+
+skills:
+  - id: researcher
+    type: inline
+    def:
+      requires:
+        - '@brave.search'
+      content: |
+        ---
+        name: researcher
+        ---
+        For research tasks, use brave.search
+  
+  - id: data-analyst
+    type: inline
+    def:
+      requires:
+        - pandas_query
+      content: |
+        ---
+        name: data-analyst
+        ---
+        For data analysis, use pandas_query
+
+servers:
+  - id: brave
+    type: mcp
+    def:
+      cmd: npx
+      args:
+        - -y
+        - "@modelcontextprotocol/server-brave-search"
+      env:
+        BRAVE_API_KEY: ${BraveApiKey}
+
+tools:
+  - id: search
+    type: mcp
+    def:
+      server: "@brave"
+      tool: brave_web_search
+  
+  - id: pandas_query
+    type: command
+    def:
+      init:
+        cmd: pip install pandas
+      run:
+        cmd: python -c "import pandas as pd; df = pd.read_csv('{file}'); print(df.query('{query}'))"
+        args:
+          - name: file
+            type: string
+            required: true
+          - name: query
+            type: string
+            required: true
+```
+
+With `on-demand` mode, the agent starts with only `setup_tools()` and `call_tool()` available and calls:
+- `setup_tools(["researcher"])` → Activates skill `researcher`; returns the compact signature list `["brave.search(query, count?, freshness?, …)"]` (full schemas are intentionally *not* returned — they're only shown in `call_tool` error responses when an invocation is invalid).
+- `setup_tools(["data-analyst"])` → Adds `pandas_query(file, query)` to the active set.
+- `call_tool({ name: "brave.search", data: { query: "MCP spec" } })` → Invokes the tool. If `data` is missing required args or fails validation, the error response includes the full input schema so the agent can retry without re-running `setup_tools`.
+
+With `search` mode the same project starts with only `search()` and `call_tool()`:
+- `search("web search for a paper")` → returns `{ tool: "brave.search", signature: "brave.search(query, count?, …)", description: … }` and makes it callable.
+- `call_tool({ name: "brave.search", data: { query: "MCP spec" } })` → same call path as on-demand. No skill ids involved; search again when the task changes.
+
+For an option that bypasses MCP entirely, see `toolExposure: 'none'` in [`capabilities-schema.md`](./capabilities-schema.md#tool-exposure-optionstoolexposure) — capa skips writing any `.mcp.json` / `.cursor/mcp.json` / `.codex/config.toml` entries and the agent is expected to invoke tools via `capa sh <group> <tool> [--args]` instead.
+
+### Example 5: CLI Prerequisites
+
+**capabilities.yaml:**
+```yaml
+providers:
+  - cursor
+
+options:
+  requiresCommands:
+    - cli: docker
+      description: Required to build and run containers
+    - cli: kubectl
+      description: Kubernetes CLI for cluster management
+    - cli: helm
+
+skills:
+  - id: k8s-deployer
+    type: inline
+    def:
+      description: Deploy services to Kubernetes
+      requires:
+        - deploy_service
+      content: |
+        ---
+        name: k8s-deployer
+        description: Deploy and manage Kubernetes workloads
+        ---
+        
+        # Kubernetes Deployer
+        
+        Use deploy_service to deploy a Helm chart to a cluster.
+
+servers: []
+
+tools:
+  - id: deploy_service
+    type: command
+    description: Deploy a Helm chart to the current kubectl context
+    def:
+      run:
+        cmd: helm upgrade --install {release} {chart} --namespace {namespace} --create-namespace
+        args:
+          - name: release
+            type: string
+            description: Helm release name
+            required: true
+          - name: chart
+            type: string
+            description: Chart reference (e.g. oci://registry/chart)
+            required: true
+          - name: namespace
+            type: string
+            description: Target Kubernetes namespace
+            required: true
+```
+
+Running `capa install` first checks that `docker`, `kubectl`, and `helm` are available. If any command is missing, installation stops with a clear error listing the missing tools.
+
+### Example 6: Rules
+
+**capabilities.yaml:**
+```yaml
+providers:
+  - cursor
+
+rules:
+  - id: code-style
+    type: inline
+    alwaysApply: true
+    description: Project code style guidelines
+    content: |
+      Use TypeScript strict mode. Prefer const over let.
+      Always use explicit return types on exported functions.
+
+  - id: test-conventions
+    type: inline
+    appliesTo:
+      - "**/*.test.ts"
+      - "**/*.spec.ts"
+    description: Testing conventions
+    content: |
+      Use describe/it blocks. Prefer toBe over toEqual for primitives.
+      Always test error paths alongside happy paths.
+
+  - id: org-standards
+    type: github
+    def:
+      # Exact path inside the repo, pinned to v2.0.0 (use "::" for exact paths;
+      # "@" is reserved for recursive basename search and rejects slashes)
+      repo: my-org/standards::rules/typescript.md:v2.0.0
+    description: Organization-wide TypeScript standards
+
+skills: []
+servers: []
+tools: []
+```
+
+For Cursor, rules are written to `.cursor/rules/{id}.mdc` with frontmatter (`description`, `globs`, `alwaysApply`). For providers without a dedicated rules directory (e.g. Claude Code), rule content is folded into the instructions file as a capa marker block.
+
+### Example 7: Plugins
+
+**capabilities.yaml:**
+```yaml
+providers:
+  - cursor
+
+plugins:
+  - id: slack-mcp
+    type: github
+    def:
+      repo: slackapi/slack-mcp-plugin
+    # Optional: rename the plugin's MCP server. Omit to keep the manifest key.
+    servers:
+      slack:
+        as: slack
+
+tools:
+  # Plugin tools are NOT auto-exposed. Declare each one explicitly,
+  # referencing the plugin's MCP server with `@server-id`.
+  - id: send_message
+    type: mcp
+    description: Send a message to a Slack channel
+    def:
+      server: "@slack"
+      tool: slack_send_message
+
+skills:
+  # `type: plugin` activates a skill shipped inside the plugin and binds tools to it.
+  - id: slack-messaging
+    type: plugin
+    def:
+      requires:
+        - "@slack.send_message"
+
+servers: []
+```
+
+During `capa install`, the plugin manifest is fetched and **unpacked**: SKILL.md files are copied to each provider's skills folder, MCP servers are registered, and any rules / sub-agents / hooks from the plugin are merged into the same install pipeline. The plugin contributes only the tools you declare in `tools:` and the skills you activate with `type: plugin`. Capa warns when a `type: plugin` skill id has no matching plugin manifest skill, and when a plugin server has no user-declared tool pointing at it.
+
+### Example 8: Optional Providers
+
+**capabilities.yaml** (no `providers` field):
+```yaml
+skills:
+  - id: web-researcher
+    type: github
+    def:
+      repo: vercel-labs/agent-skills@web-researcher
+      requires:
+        - '@brave.search'
+
+servers:
+  - id: brave
+    type: mcp
+    def:
+      cmd: npx
+      args:
+        - -y
+        - "@modelcontextprotocol/server-brave-search"
+      env:
+        BRAVE_API_KEY: ${BraveApiKey}
+
+tools:
+  - id: search
+    type: mcp
+    def:
+      server: "@brave"
+      tool: brave_web_search
+```
+
+**Install:**
+```bash
+# First install: capa will prompt to pick a provider (or use -p)
+capa install -p cursor
+
+# Subsequent installs remember the choice
+capa install
+```
+
+This pattern is ideal for shared `capabilities.yaml` files where different team members use different agents.
+
+### Example 9: Tool formatter
+
+Pipe MCP tool JSON through `jq` before the agent (or `capa sh`) sees it:
+
+```yaml
+tools:
+  - id: search
+    type: mcp
+    def:
+      server: "@brave"
+      tool: brave_web_search
+      formatter:
+        cmd: jq -r '.[] | [.title, .url] | @tsv'
+        timeout: 3000
+```
+
+Use `capa sh --raw brave search --query "…"` to skip the formatter. Do not use formatters that re-execute stdin (`eval`, `xargs sh -c`).

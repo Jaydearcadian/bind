@@ -1,0 +1,38 @@
+version: 1
+generator: capa@2.3.0
+generatedAt: '2026-10-14T11:00:52.051Z'
+skills:
+  - id: capabilities-manager
+    source: github
+    repo: infragate/capa
+    skillName: skills/capabilities-manager
+    requestedVersion: null
+    requestedRef: null
+    resolvedRef: 2d9105e3970befb756bd82e2cc16b3c1599330b2
+    resolvedVersion: v2.3.0
+  - id: context7
+    source: github
+    repo: intellectronica/agent-skills
+    skillName: skills/context7
+    requestedVersion: null
+    requestedRef: null
+    resolvedRef: 9b0e00ad1b941165e2506545bbfddafa34cf2cb8
+    resolvedVersion: null
+  - id: frontend-design
+    source: github
+    repo: anthropics/skills
+    skillName: skills/frontend-design
+    requestedVersion: null
+    requestedRef: null
+    resolvedRef: dbd4588f9e1033efb41dad4bef2f7947c8993d44
+    resolvedVersion: null
+  - id: styleseed
+    source: github
+    repo: bitjaru/styleseed
+    skillName: skills/styleseed
+    requestedVersion: null
+    requestedRef: null
+    resolvedRef: 257ec7001288973b3b281fa3495b7fcdcbfb0f31
+    resolvedVersion: v5.0.0
+plugins: []
+hooks: []
