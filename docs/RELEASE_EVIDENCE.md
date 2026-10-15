@@ -42,7 +42,7 @@ Bind owns and has deployed [`BindSettlement.sol`](file:///home/ubuntu/bind/contr
 | **Dependency Audit** | `npm audit --audit-level=high` | `found 0 vulnerabilities` | `LOCAL_PASS` |
 | **Linting & Hygiene** | `npm run lint` (`eslint src/ tests/`) | `0 errors, 0 warnings` | `LOCAL_PASS` |
 | **Strict Typecheck** | `npm run typecheck` (`tsc --noEmit`) | `0 type errors` | `LOCAL_PASS` |
-| **Unit Test Suite** | `npm run test:unit` | `34 passed (34)` | `LOCAL_PASS` |
+| **Unit Test Suite** | `npm run test:unit` | `38 passed (38)` | `LOCAL_PASS` |
 | **Integration Suite**| `npm run test:integration` | `11 passed (11)` | `LOCAL_PASS` |
 | **Playwright E2E** | `npm run test:e2e` | `4 passed (4)` | `LOCAL_PASS` |
 | **Production Build** | `npm run build` (`tsc -p tsconfig.build.json`) | Clean compilation to `dist/` | `LOCAL_PASS` |
