@@ -4,7 +4,10 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 export const ARC_TESTNET_CHAIN = "ARC-TESTNET";
-export const ARC_TESTNET_RPC = "https://rpc.testnet.arc.network";
+export const ARC_TESTNET_RPC =
+  process.env.ARC_RPC_URL ||
+  process.env.RPC_URL ||
+  "https://rpc.testnet.arc-node.thecanteenapp.com/v1/<ARC_RPC_TOKEN>";
 export const BIND_SETTLEMENT_CONTRACT =
   "0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29";
 export const WHITELISTED_VENDOR =

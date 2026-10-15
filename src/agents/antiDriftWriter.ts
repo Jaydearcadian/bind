@@ -5,7 +5,10 @@ import { VerifiableDecisionRecord } from "./bindTemplateAgent.js";
 export const CANONICAL_ARC_LOCK = {
   chainName: "ARC-TESTNET",
   chainId: 5042002,
-  rpcUrl: "https://rpc.testnet.arc.network",
+  rpcUrl:
+    process.env.ARC_RPC_URL ||
+    process.env.RPC_URL ||
+    "https://rpc.testnet.arc-node.thecanteenapp.com/v1/<ARC_RPC_TOKEN>",
   explorerBaseUrl: "https://testnet.arcscan.app",
   bindSettlementContract: "0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29",
   whitelistedVendor: "0xa8358AED200D6CB6C856F972D853C1be833006ea",
