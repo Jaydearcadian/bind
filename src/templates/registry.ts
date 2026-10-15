@@ -3,17 +3,19 @@ import { agencyTemplate } from "./agency-v1.js";
 import { WorkspaceTemplate } from "./types.js";
 import { withTransaction } from "../db/client.js";
 
-const TEMPLATES: Record<string, WorkspaceTemplate> = {
+const BASE_TEMPLATES: Record<string, WorkspaceTemplate> = {
   "kitchen-v1": kitchenTemplate,
   "agency-v1": agencyTemplate,
 };
 
 export function getTemplate(templateId: string): WorkspaceTemplate | undefined {
-  return TEMPLATES[templateId];
+  if (BASE_TEMPLATES[templateId]) return BASE_TEMPLATES[templateId];
+  if (templateId === "kitchen-ops") return BASE_TEMPLATES["kitchen-v1"];
+  return BASE_TEMPLATES[templateId];
 }
 
 export function listTemplates(): WorkspaceTemplate[] {
-  return Object.values(TEMPLATES);
+  return Object.values(BASE_TEMPLATES);
 }
 
 export interface ProvisionOptions {
@@ -35,7 +37,7 @@ export async function provisionWorkspace(
 ): Promise<WorkspaceTemplate> {
   const template = getTemplate(templateId);
   if (!template) {
-    throw new Error(`Invalid templateId '${templateId}'. Supported templates: ${Object.keys(TEMPLATES).join(", ")}`);
+    throw new Error(`Invalid templateId '${templateId}'. Supported templates: ${Object.keys(BASE_TEMPLATES).join(", ")}`);
   }
 
   const dailyLimit = options?.customDailyLimitCents ?? template.defaultDailyLimitCents;

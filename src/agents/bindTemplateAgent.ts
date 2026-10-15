@@ -11,7 +11,53 @@ import {
 } from "../adapters/marketBenchmark.js";
 import { writeWorkflowAntiDriftFiles } from "./antiDriftWriter.js";
 
-export type BindTemplateId = "kitchen-ops" | "coffee-roaster";
+export type BindTemplateId = string;
+
+export interface AvailableTemplateInfo {
+  id: string;
+  dir: string;
+  agentsSpecPath: string;
+  hasSkills: boolean;
+}
+
+/**
+ * Discovers available business templates from disk dynamically at runtime.
+ */
+export function listAvailableTemplates(): AvailableTemplateInfo[] {
+  const templatesRoot = path.resolve(process.cwd(), "templates");
+  if (!fs.existsSync(templatesRoot)) return [];
+  const entries = fs.readdirSync(templatesRoot, { withFileTypes: true });
+  return entries
+    .filter((d) => d.isDirectory())
+    .map((d) => {
+      const dir = path.join(templatesRoot, d.name);
+      const agentsSpecPath = path.join(dir, "AGENTS.md");
+      const skillsDir = path.join(dir, "skills");
+      return {
+        id: d.name,
+        dir,
+        agentsSpecPath,
+        hasSkills: fs.existsSync(skillsDir),
+      };
+    })
+    .filter((t) => fs.existsSync(t.agentsSpecPath));
+}
+
+/**
+ * Resolves directory for any template ID, handling common aliases (e.g., kitchen-v1 -> kitchen-ops).
+ */
+export function resolveTemplateDir(templateId: string): string {
+  const templatesRoot = path.resolve(process.cwd(), "templates");
+  const directPath = path.join(templatesRoot, templateId);
+  if (fs.existsSync(directPath)) return directPath;
+
+  if (templateId === "kitchen-v1" && fs.existsSync(path.join(templatesRoot, "kitchen-ops"))) {
+    return path.join(templatesRoot, "kitchen-ops");
+  }
+  const fallback = path.join(templatesRoot, "kitchen-ops");
+  if (fs.existsSync(fallback)) return fallback;
+  return directPath;
+}
 
 export interface SimulatedVendorQuote {
   vendorId: string;
@@ -62,16 +108,22 @@ export async function generateVerifiableDecisionRecord(params: {
   dailyLimitUsdc?: string;
 }): Promise<VerifiableDecisionRecord> {
   const dailyLimitUsdc = params.dailyLimitUsdc ?? "1.0";
-  const templateDir = path.resolve(process.cwd(), "templates", params.templateId);
+  const templateDir = resolveTemplateDir(params.templateId);
 
   if (!fs.existsSync(templateDir)) {
     throw new Error(`Bind template directory not found: ${templateDir}`);
   }
 
   const benchmarkAdapter = new HybridMarketBenchmarkAdapter();
+  const contextDomain =
+    params.templateId.includes("coffee")
+      ? "coffee roastery"
+      : params.templateId.includes("kitchen") || params.templateId.includes("restaurant")
+      ? "commercial restaurant kitchen"
+      : `${params.templateId} operations`;
   const marketBenchmark = await benchmarkAdapter.fetchBenchmark(
     params.skuName,
-    params.templateId === "kitchen-ops" ? "commercial restaurant kitchen" : "coffee roastery"
+    contextDomain
   );
 
   // Deterministic vendor selection baseline (whitelisted + lowest total cost)

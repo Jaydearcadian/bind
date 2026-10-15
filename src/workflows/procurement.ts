@@ -1,19 +1,20 @@
 import { WorkflowEngine } from "./engine.js";
 import { WorkflowState } from "./types.js";
 import { query } from "../db/client.js";
-import { PolicyEngine, PolicyDecision } from "../policy/engine.js";
+import { PolicyDecision } from "../policy/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
 import { getSupplierAdapter } from "../adapters/suppliers/index.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import { evaluateThreeWayMatch, MatchStatus } from "../accounting/three-way-match.js";
-import { notificationEmitter } from "../adapters/web2/notifications.js";
 import { generateIdempotencyKey } from "../utils/idempotency.js";
-import { generateVerifiableDecisionRecord } from "../agents/bindTemplateAgent.js";
+import { resolveTemplateDir } from "../agents/bindTemplateAgent.js";
 import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
+import { createReplenishmentTools } from "../agents/replenishmentTools.js";
+import { createDeepAgent, FilesystemBackend } from "deepagents";
+import { ChatOpenAI } from "@langchain/openai";
 
 export class ProcurementWorkflowRunner {
   private workflowEngine = new WorkflowEngine();
-  private policyEngine = new PolicyEngine();
 
   /**
    * Triggers the procurement replenishment workflow from low inventory.
@@ -23,6 +24,25 @@ export class ProcurementWorkflowRunner {
     sku: string,
     triggerSource: string = "inventory_monitor"
   ): Promise<{ workflowId: string; state: WorkflowState; orderId?: string; approvalId?: string }> {
+    // 0. Idempotency Gate on Entry: check if an active non-terminal workflow already exists
+    const activeWfRes = await query(
+      `SELECT id, state, context_data FROM workflows
+       WHERE workspace_id = $1
+         AND context_data->>'sku' = $2
+         AND state NOT IN ('reconciled', 'failed', 'cancelled')
+       ORDER BY created_at DESC LIMIT 1;`,
+      [workspaceId, sku]
+    );
+    if (activeWfRes.rows.length > 0) {
+      const activeWf = activeWfRes.rows[0];
+      return {
+        workflowId: activeWf.id,
+        state: activeWf.state as WorkflowState,
+        orderId: activeWf.context_data?.orderId,
+        approvalId: activeWf.context_data?.approvalId,
+      };
+    }
+
     // 1. Fetch Inventory Item
     const itemRes = await query(
       `SELECT * FROM inventory_items WHERE workspace_id = $1 AND sku = $2;`,
@@ -82,7 +102,8 @@ export class ProcurementWorkflowRunner {
       supplierId,
     });
 
-    // Record quote in DB
+    // Record quote in DB with 24h validity
+    const validUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await query(
       `INSERT INTO quotes (id, workspace_id, rfq_id, supplier_id, supplier_name, item_sku, quantity, unit_price_cents, total_price_cents, currency, valid_until, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'USDC', $10, NOW());`,
@@ -96,34 +117,9 @@ export class ProcurementWorkflowRunner {
         quoteRes.quantity,
         quoteRes.unitPriceCents,
         quoteRes.totalPriceCents,
-        quoteRes.validUntil,
+        validUntil,
       ]
     );
-
-    // Generate verifiable decision record via Nebius Token Factory / deepagents / anti-drift writer
-    let decisionRecord: any = null;
-    try {
-      decisionRecord = await generateVerifiableDecisionRecord({
-        workflowId,
-        templateId: "kitchen-ops",
-        skuName: item.name,
-        quantityRequested: reorderQty,
-        candidateQuotes: [
-          {
-            vendorId: quoteRes.supplierId,
-            vendorName: quoteRes.supplierName,
-            vendorWallet: "0xa8358AED200D6CB6C856F972D853C1be833006ea",
-            unitPriceUsdc: (Number(quoteRes.unitPriceCents) / 100).toFixed(4),
-            totalPriceUsdc: (Number(quoteRes.totalPriceCents) / 100).toFixed(4),
-            leadTimeDays: 2,
-            isWhitelistedOnChain: true,
-          },
-        ],
-        dailyLimitUsdc: "1.0",
-      });
-    } catch {
-      // Keep going if template dir isn't present in specific test runs
-    }
 
     // 5. Transition to QUOTE_RECEIVED
     await this.workflowEngine.transition(workflowId, {
@@ -131,102 +127,122 @@ export class ProcurementWorkflowRunner {
       toState: WorkflowState.QUOTE_RECEIVED,
       patchContext: {
         quote: quoteRes,
-        decisionRecord,
-        decisionHash: decisionRecord?.decisionHash,
-        evidencePath: decisionRecord ? `workflows/${workflowId}/DECISION_EVIDENCE.md` : undefined,
       },
     });
 
-    // 6. Policy Engine Evaluation
+    // 6. Execute deepagents Replenishment Agent Loop
     const wsRes = await query(`SELECT * FROM workspaces WHERE id = $1;`, [workspaceId]);
-    const roleRes = await query(
-      `SELECT * FROM agent_roles WHERE workspace_id = $1 AND role_name = 'procurement_agent';`,
-      [workspaceId]
-    );
-
     const ws = wsRes.rows[0];
-    const role = roleRes.rows[0];
+    const tools = createReplenishmentTools({ workspaceId, workflowId });
+    const templateDir = resolveTemplateDir(ws?.template_id || "kitchen-ops");
 
-    const policyResult = this.policyEngine.evaluate({
-      workspace: {
-        workspaceId,
-        budgetDailyLimitCents: BigInt(ws.budget_daily_limit_cents),
-        approvalThresholdCents: BigInt(ws.approval_threshold_cents),
-        dailySpentCents: 0n,
-      },
-      role: {
-        roleId: role.id,
-        workspaceId,
-        roleName: role.role_name,
-        permittedEffects: role.permitted_effects,
-        spendingLimitCents: BigInt(role.spending_limit_cents),
-        enabled: role.enabled,
-      },
-      operation: "orders.submit",
-      amountCents: quoteRes.totalPriceCents,
-      supplierId: quoteRes.supplierId,
-    });
+    if (ws?.settlement_mode === "arc-testnet") {
+      // In live Arc Testnet mode, require NEBIUS_API_KEY. Spec Invariant 10 prohibits silent downgrade.
+      if (!process.env.NEBIUS_API_KEY) {
+        const errorMsg =
+          "[INVARIANT_10_BLOCKED] Missing NEBIUS_API_KEY for live arc-testnet replenishment agent. Silent downgrade prohibited.";
+        await this.workflowEngine.transition(workflowId, {
+          fromState: WorkflowState.QUOTE_RECEIVED,
+          toState: WorkflowState.FAILED,
+          errorMessage: errorMsg,
+        });
+        return { workflowId, state: WorkflowState.FAILED };
+      }
 
-    await this.workflowEngine.recordAudit(
-      workspaceId,
-      workflowId,
-      "agent",
-      "procurement_agent",
-      EffectClass.COMMERCIAL_COMMITMENT,
-      "policy.evaluate_order",
-      policyResult.decision,
-      { amountCents: quoteRes.totalPriceCents.toString(), policyResult }
-    );
-
-    // Handle Policy Result
-    if (policyResult.decision === PolicyDecision.DENY) {
-      await this.workflowEngine.transition(workflowId, {
-        fromState: WorkflowState.QUOTE_RECEIVED,
-        toState: WorkflowState.FAILED,
-        errorMessage: policyResult.reason,
+      const model = new ChatOpenAI({
+        model: process.env.NEBIUS_MODEL ?? "nousresearch/Hermes-4-405B",
+        configuration: {
+          baseURL: "https://api.tokenfactory.nebius.com/v1/",
+          apiKey: process.env.NEBIUS_API_KEY,
+        },
+        temperature: 0,
       });
+
+      const agent = createDeepAgent({
+        model,
+        tools: tools.allTools,
+        memory: ["/AGENTS.md"],
+        skills: ["/skills/"],
+        backend: new FilesystemBackend({
+          rootDir: templateDir,
+          virtualMode: true,
+        }),
+        systemPrompt:
+          "You are Bind's Replenishment Agent. Follow these steps: " +
+          "1. Call get_business_context and get_stock_snapshot. " +
+          "2. Call get_approved_supplier_quotes for the item. " +
+          "3. Select the best unexpired verified quote, calculate required quantity, and call create_replenishment_proposal. " +
+          "4. Call request_policy_evaluation and get_request_status.",
+      });
+
+      try {
+        await agent.invoke({
+          messages: [
+            {
+              role: "user",
+              content: `Low stock detected on SKU ${sku} (${item.name}). Current stock is ${currentQty}, par level is ${parLevel}. Complete the replenishment procedure.`,
+            },
+          ],
+        });
+      } catch (err: any) {
+        await this.workflowEngine.transition(workflowId, {
+          fromState: WorkflowState.QUOTE_RECEIVED,
+          toState: WorkflowState.FAILED,
+          errorMessage: `Replenishment agent failed: ${err.message}`,
+        });
+        return { workflowId, state: WorkflowState.FAILED };
+      }
+    } else {
+      // Offline / Local / Test Mode: execute the exact 6 tools deterministically
+      await tools.getBusinessContextTool.invoke({});
+      await tools.getStockSnapshotTool.invoke({ sku });
+      const quotesRaw = await tools.getApprovedSupplierQuotesTool.invoke({ sku });
+      const parsed = JSON.parse(quotesRaw);
+      const validQuotes = (parsed.quotes || []).filter((q: any) => !q.isExpired);
+      const chosen = validQuotes[0] || {
+        quoteId: quoteRes.quoteId,
+        supplierId: quoteRes.supplierId,
+        unitPriceCents: quoteRes.unitPriceCents.toString(),
+      };
+
+      await tools.createReplenishmentProposalTool.invoke({
+        itemId: sku,
+        quantity: reorderQty,
+        supplierId: chosen.supplierId,
+        quoteId: chosen.quoteId,
+        reasonCodes: ["LOW_INVENTORY_PAR_BREACH", "PREVENT_STOCKOUT"],
+        explanation: `Stock (${currentQty}) is below par level (${parLevel}). Selected verified quote for ${reorderQty} units at $${(Number(chosen.unitPriceCents) / 100).toFixed(2)}/unit.`,
+        sourceRecordIds: [chosen.quoteId, item.id],
+      });
+
+      await tools.requestPolicyEvaluationTool.invoke({ requestId: workflowId });
+      await tools.getRequestStatusTool.invoke({ requestId: workflowId });
+    }
+
+    // 7. Check result of policy evaluation from DB
+    const updatedWf = await this.workflowEngine.getWorkflow(workflowId);
+    if (!updatedWf) {
+      throw new Error(`Workflow '${workflowId}' lost after policy evaluation.`);
+    }
+
+    if (updatedWf.state === WorkflowState.FAILED) {
       return { workflowId, state: WorkflowState.FAILED };
     }
 
-    if (policyResult.decision === PolicyDecision.REQUIRE_APPROVAL) {
-      const approvalId = `appr_${workflowId}`;
-      await this.workflowEngine.createApproval(
-        approvalId,
-        workspaceId,
-        "order",
+    if (updatedWf.state === WorkflowState.AWAITING_APPROVAL) {
+      return {
         workflowId,
-        `Purchase ${reorderQty}x ${item.name} from ${quoteRes.supplierName} for $${(Number(quoteRes.totalPriceCents) / 100).toFixed(2)} USDC`,
-        quoteRes.totalPriceCents,
-        "procurement_agent"
-      );
-
-      // Emit interactive WhatsApp & Email notifications
-      await notificationEmitter.send({
-        workspaceId,
-        channel: "whatsapp",
-        recipient: "+12125550199",
-        title: "⚠️ Bind Alert: Ingredient Restock Approval Required",
-        message: `Low stock detected on ${item.name}. Best quote from ${quoteRes.supplierName} is $${(Number(quoteRes.totalPriceCents) / 100).toFixed(2)} USDC.`,
-        actionUrl: `http://127.0.0.1:3000/api/approvals/${approvalId}/approve`,
-        approvalToken: approvalId,
-      });
-
-      await this.workflowEngine.transition(workflowId, {
-        fromState: WorkflowState.QUOTE_RECEIVED,
-        toState: WorkflowState.AWAITING_APPROVAL,
-        patchContext: { approvalId },
-      });
-
-      return { workflowId, state: WorkflowState.AWAITING_APPROVAL, approvalId };
+        state: WorkflowState.AWAITING_APPROVAL,
+        approvalId: updatedWf.contextData?.approvalId,
+      };
     }
 
-    // Otherwise, policy is ALLOW -> Auto-authorize and submit!
-    await this.workflowEngine.transition(workflowId, {
-      fromState: WorkflowState.QUOTE_RECEIVED,
-      toState: WorkflowState.AUTHORIZED,
-    });
+    if (updatedWf.state === WorkflowState.AUTHORIZED) {
+      const activeQuote = updatedWf.contextData?.replenishmentProposal || quoteRes;
+      return this.executeOrderSubmission(workflowId, workspaceId, activeQuote, item.name);
+    }
 
-    return this.executeOrderSubmission(workflowId, workspaceId, quoteRes, item.name);
+    return { workflowId, state: updatedWf.state };
   }
 
   /**
@@ -252,8 +268,8 @@ export class ProcurementWorkflowRunner {
     });
 
     const wf = await this.workflowEngine.getWorkflow(workflowId);
-    const quoteRes = wf!.contextData.quote;
-    const itemName = wf!.contextData.itemName;
+    const quoteRes = wf!.contextData.replenishmentProposal || wf!.contextData.quote;
+    const itemName = wf!.contextData.itemName || quoteRes.sku;
 
     return this.executeOrderSubmission(workflowId, approval.workspace_id, quoteRes, itemName);
   }

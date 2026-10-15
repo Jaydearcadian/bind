@@ -126,14 +126,15 @@ export class CircleAgentStackAdapter {
     const commandStr = `circle ${args.join(" ")}`;
 
     if (!process.env.ENABLE_LIVE_CIRCLE_CLI || !this.agentWalletAddress) {
+      const simHash = `0xsim_arc_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
       return {
         command: commandStr,
-        txHash:
-          "0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb",
+        txHash: simHash,
         rawOutput: JSON.stringify({
-          status: "confirmed",
+          status: "simulated_confirmed",
           chain: ARC_TESTNET_CHAIN,
           contract: BIND_SETTLEMENT_CONTRACT,
+          badge: "LOCAL_PASS",
         }),
         chain: ARC_TESTNET_CHAIN,
         contractAddress: BIND_SETTLEMENT_CONTRACT,
