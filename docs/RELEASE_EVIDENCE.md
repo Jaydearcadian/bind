@@ -42,7 +42,7 @@ Bind owns and has deployed [`BindSettlement.sol`](file:///home/ubuntu/bind/contr
 | **Dependency Audit** | `npm audit --audit-level=high` | `found 0 vulnerabilities` | `LOCAL_PASS` |
 | **Linting & Hygiene** | `npm run lint` (`eslint src/ tests/`) | `0 errors, 0 warnings` | `LOCAL_PASS` |
 | **Strict Typecheck** | `npm run typecheck` (`tsc --noEmit`) | `0 type errors` | `LOCAL_PASS` |
-| **Unit Test Suite** | `npm run test:unit` | `42 passed (42)` | `LOCAL_PASS` |
+| **Unit Test Suite** | `npm run test:unit` | `49 passed (49)` | `LOCAL_PASS` |
 | **Integration Suite**| `npm run test:integration` | `11 passed (11)` | `LOCAL_PASS` |
 | **Playwright E2E** | `npm run test:e2e` | `4 passed (4)` | `LOCAL_PASS` |
 | **Production Build** | `npm run build` (`tsc -p tsconfig.build.json`) | Clean compilation to `dist/` | `LOCAL_PASS` |
@@ -67,3 +67,13 @@ Bind owns and has deployed [`BindSettlement.sol`](file:///home/ubuntu/bind/contr
 3. **Double-Spend Prevention**: Every external order and settlement transaction requires a deterministic idempotency key locked in PostgreSQL before network dispatch.
 4. **Compliance Screening**: Verified against Circle's compliance screening policies on Arc Testnet.
 5. **Secret Redaction**: Server-side credentials, private keys, and session tokens are strictly excluded from client payloads, audit logs, and model transcripts (`[REDACTED]`).
+
+## Live Arc Testnet & Jev/Surface Verification (2026-10-15T22:24:18.999Z)
+| Gate / Check | Evidence Classification | Verified Details |
+| :--- | :--- | :--- |
+| Arc Testnet RPC & Chain ID Verification | `LIVE_READ_PASS` | Connected to https://rpc.testnet.arc-node.thecanteenapp.com/v1/<ARC_RPC_TOKEN> (chainId=5042002, expected=5042002) |
+| BindSettlement.sol Deployed Bytecode Verification | `VERIFIED_REMOTE` | Contract 0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29 bytecode length=14716 chars |
+| On-Chain Approved Supplier Allowlist Check | `LIVE_READ_PASS` | whitelistedVendors(0xa8358AED200D6CB6C856F972D853C1be833006ea) = true |
+| Negative Path: Unapproved Supplier Rejection (VendorNotWhitelisted) | `LIVE_READ_PASS` | Deterministically reverted on Arc Testnet with selector 0x65e822e9; 0 USDC moved |
+| Negative Path: Rolling 24h Budget Cap Enforcement (DailyLimitExceeded) | `LIVE_READ_PASS` | Attempted 2.0 USDC > 1.0 USDC cap; deterministically reverted on Arc Testnet with selector 0xef664d6a |
+| Confirmed On-Chain USDC Settlement Receipt | `VERIFIED_REMOTE` | Tx 0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb confirmed in block 67155117 on Arc Testnet (status=0x1) |

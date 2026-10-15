@@ -6,6 +6,7 @@ import { PolicyDecision } from "../policy/engine.js";
 import { notificationEmitter } from "../adapters/web2/notifications.js";
 import { CANONICAL_ARC_LOCK } from "./antiDriftWriter.js";
 import { generateVerifiableDecisionRecord } from "./bindTemplateAgent.js";
+import { evaluateWithJevSystemOne } from "../domain/jevScorer.js";
 
 export interface ReplenishmentToolsContext {
   workspaceId: string;
@@ -241,7 +242,80 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
       );
       const itemName = itemRes.rows[0]?.name || quote.item_sku;
 
-      // 5. Store validated proposal in workflow context
+      // 5. Evaluate with TypeSafe Jev System One decision scorer
+      const candidatesRes = await query(
+        `SELECT q.id AS quote_id, q.supplier_id, q.supplier_name, q.unit_price_cents, q.total_price_cents,
+                q.valid_until, s.verified
+         FROM quotes q
+         JOIN suppliers s ON s.id = q.supplier_id AND s.workspace_id = q.workspace_id
+         WHERE q.workspace_id = $1 AND q.item_sku = $2;`,
+        [workspaceId, quote.item_sku]
+      );
+
+      const wsRes = await query(`SELECT * FROM workspaces WHERE id = $1;`, [workspaceId]);
+      const ws = wsRes.rows[0];
+
+      const invRes = await query(
+        `SELECT current_quantity, par_level, reorder_quantity FROM inventory_items WHERE workspace_id = $1 AND sku = $2;`,
+        [workspaceId, quote.item_sku]
+      );
+      const inv = invRes.rows[0];
+
+      const spendRes = await query(
+        `SELECT COALESCE(SUM(total_price_cents), 0) AS daily_spent_cents
+         FROM orders
+         WHERE workspace_id = $1
+           AND created_at >= CURRENT_DATE
+           AND status IN ('submitted', 'confirmed', 'reconciled');`,
+        [workspaceId]
+      );
+      const dailySpentCents = BigInt(spendRes.rows[0]?.daily_spent_cents || 0);
+      const budgetLimitCents = BigInt(ws?.budget_daily_limit_cents || 100000);
+      const remainingDailyBudgetCents = Number(
+        budgetLimitCents > dailySpentCents ? budgetLimitCents - dailySpentCents : 0n
+      );
+
+      const now = new Date();
+      const candidates = candidatesRes.rows.map((row: any) => ({
+        quoteId: row.quote_id,
+        supplierId: row.supplier_id,
+        supplierName: row.supplier_name,
+        unitPriceCents: Number(row.unit_price_cents),
+        totalPriceCents: Number(row.total_price_cents),
+        validUntil: row.valid_until,
+        isExpired: new Date(row.valid_until) < now,
+        isVerifiedSupplier: Boolean(row.verified),
+        historicalMatchRate: 1.0,
+      }));
+
+      const jevEvaluation = await evaluateWithJevSystemOne({
+        workspaceId,
+        templateId: ws?.template_id || "kitchen-ops",
+        sku: quote.item_sku,
+        currentQuantity: Number(inv?.current_quantity || 0),
+        parLevel: Number(inv?.par_level || 10),
+        reorderQuantity: Number(inv?.reorder_quantity || proposal.quantity),
+        approvalThresholdCents: Number(ws?.approval_threshold_cents || 25000),
+        remainingDailyBudgetCents,
+        candidates:
+          candidates.length > 0
+            ? candidates
+            : [
+                {
+                  quoteId: proposal.quoteId,
+                  supplierId: proposal.supplierId,
+                  supplierName: quote.verified_supplier_name,
+                  unitPriceCents: Number(quote.unit_price_cents),
+                  totalPriceCents: Number(calculatedTotalCents),
+                  validUntil: quote.valid_until,
+                  isExpired: false,
+                  isVerifiedSupplier: true,
+                  historicalMatchRate: 1.0,
+                },
+              ],
+      });
+
+      // 6. Store validated proposal in workflow context
       const proposalRecord = {
         proposalId: `prop_${workflowId}`,
         workflowId,
@@ -257,6 +331,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         reasonCodes: proposal.reasonCodes,
         explanation: proposal.explanation,
         sourceRecordIds: proposal.sourceRecordIds,
+        jevEvaluation,
         validatedAt: new Date().toISOString(),
         status: "VALIDATED" as const,
       };
@@ -370,11 +445,13 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         proposal.supplierWallet.toLowerCase() ===
         CANONICAL_ARC_LOCK.whitelistedVendor.toLowerCase();
 
+      const jevHoldRequired = Boolean(proposal.jevEvaluation?.holdForOwnerReview);
+
       let nextState: WorkflowState;
       let policyDecision: PolicyDecision;
       let approvalId: string | undefined = undefined;
 
-      if (amountCents > approvalThresholdCents || !vendorWhitelisted) {
+      if (amountCents > approvalThresholdCents || !vendorWhitelisted || jevHoldRequired) {
         policyDecision = PolicyDecision.REQUIRE_APPROVAL;
         nextState = WorkflowState.AWAITING_APPROVAL;
         approvalId = `appr_${targetWorkflowId}`;
@@ -438,6 +515,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
           JSON.stringify({
             policyDecision,
             approvalId,
+            jevEvaluation: proposal.jevEvaluation,
             decisionRecord,
             decisionHash: decisionRecord.decisionHash,
             evidencePath: `workflows/${targetWorkflowId}/DECISION_EVIDENCE.md`,

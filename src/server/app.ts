@@ -9,6 +9,11 @@ import { ProcurementWorkflowRunner } from "../workflows/procurement.js";
 import { WorkflowCrashRecoveryRunner } from "../workflows/recovery.js";
 import { webhookReceiver } from "../adapters/web2/webhook-receiver.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
+import {
+  SocialSurfaceEventSchema,
+  assertSurfaceRoleAuthorized,
+  SurfaceAuthorizationError,
+} from "../adapters/socialSurface.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -180,8 +185,101 @@ export function createApp(): express.Express {
     }
   });
 
-  // Inbound Webhooks
+  // Inbound Webhooks (Standard and Social/POS Surface)
   app.post("/api/webhooks/incoming", async (req: Request, res: Response) => {
+    // 1. Check if incoming body is a Social / POS Surface event
+    const surfaceParsed = SocialSurfaceEventSchema.safeParse(req.body);
+    if (surfaceParsed.success) {
+      const event = surfaceParsed.data;
+      try {
+        assertSurfaceRoleAuthorized(event);
+      } catch (err: any) {
+        if (err instanceof SurfaceAuthorizationError) {
+          return res.status(403).json({ error: err.message });
+        }
+        return res.status(400).json({ error: err.message });
+      }
+
+      if (event.eventType === "SURFACE_STOCK_OBSERVED") {
+        const itemRes = await query(
+          `UPDATE inventory_items
+           SET current_quantity = $1, updated_at = NOW()
+           WHERE workspace_id = $2 AND sku = $3
+           RETURNING *;`,
+          [event.observedQuantity, event.workspaceId, event.sku]
+        );
+        const item = itemRes.rows[0];
+        let replenishmentResult = null;
+        if (item && Number(item.current_quantity) < Number(item.par_level)) {
+          replenishmentResult = await procurementRunner.startReplenishment(
+            event.workspaceId,
+            event.sku,
+            `surface_${event.surface}`
+          );
+        }
+        return res.json({
+          status: "processed",
+          eventType: event.eventType,
+          observedQuantity: event.observedQuantity,
+          parLevel: item ? Number(item.par_level) : undefined,
+          replenishmentTriggered: Boolean(replenishmentResult),
+          replenishmentResult,
+        });
+      }
+
+      if (event.eventType === "SURFACE_OWNER_APPROVAL_DECISION") {
+        if (event.decision === "approve") {
+          try {
+            const result = await procurementRunner.approveAndSubmit(
+              event.approvalId,
+              event.actorId
+            );
+            return res.json({
+              status: "processed",
+              eventType: event.eventType,
+              decision: "approve",
+              result,
+            });
+          } catch (err: any) {
+            return res.status(400).json({ error: err.message });
+          }
+        } else {
+          await query(
+            `UPDATE approvals
+             SET status = 'rejected', reason = $1, decided_by = $2, decided_at = NOW()
+             WHERE id = $3 AND status = 'pending';`,
+            [
+              event.reason || "Rejected by owner via surface card",
+              event.actorId,
+              event.approvalId,
+            ]
+          );
+          return res.json({
+            status: "processed",
+            eventType: event.eventType,
+            decision: "reject",
+            approvalId: event.approvalId,
+          });
+        }
+      }
+
+      if (event.eventType === "SURFACE_AGENT_PAUSE_TOGGLE") {
+        await query(
+          `UPDATE workspaces
+           SET updated_at = NOW()
+           WHERE id = $1;`,
+          [event.workspaceId]
+        );
+        return res.json({
+          status: "processed",
+          eventType: event.eventType,
+          workspaceId: event.workspaceId,
+          paused: event.paused,
+        });
+      }
+    }
+
+    // 2. Standard external webhooks with HMAC signature verification
     const sigHeader = (req.headers["x-bind-signature"] as string) || "";
     const timeHeader = Number(req.headers["x-bind-timestamp"] || 0);
 
