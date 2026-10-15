@@ -175,6 +175,17 @@ async function loadWorkflows() {
       return;
     }
 
+    const latestWfWithHash = workflows.find((w) => w.context_data?.decisionHash);
+    if (latestWfWithHash) {
+      const hash = latestWfWithHash.context_data.decisionHash;
+      const el = document.getElementById("ev-decision-hash");
+      if (el) el.textContent = hash;
+      const payEl = document.getElementById("ev-payment-status");
+      if (payEl && latestWfWithHash.state === "reconciled") {
+        payEl.textContent = "SETTLED_ON_ARC_TESTNET";
+      }
+    }
+
     list.innerHTML = workflows
       .map((wf) => {
         const orderId = wf.context_data?.orderId;

@@ -20,6 +20,7 @@ test-results/
 coverage/
 artifacts/
 cache/
+workflows/
 
 # Logs and temporary files
 *.log

@@ -8,6 +8,10 @@ import {
   WHITELISTED_VENDOR,
 } from "../../src/adapters/circleAgentStack.js";
 import { HybridMarketBenchmarkAdapter } from "../../src/adapters/marketBenchmark.js";
+import {
+  writeWorkflowAntiDriftFiles,
+  assertNoSpecDrift,
+} from "../../src/agents/antiDriftWriter.js";
 
 describe("Bind Template DeepAgent & Verifiable Decision Record", () => {
   const sampleQuotes = [
@@ -127,5 +131,40 @@ describe("Bind Template DeepAgent & Verifiable Decision Record", () => {
     expect(settleRes.contractAddress).toBe(BIND_SETTLEMENT_CONTRACT);
     expect(settleRes.paymentStatus).toBe("SETTLED_ON_ARC_TESTNET");
     expect(settleRes.fulfilmentStatus).toBe("AWAITING_PHYSICAL_DELIVERY_3WAY_MATCH");
+  });
+
+  it("writes and locks STATE_ANCHOR.md and DECISION_EVIDENCE.md and blocks spec drift", async () => {
+    const decision = await generateVerifiableDecisionRecord({
+      workflowId: "wf_test_antidrift",
+      templateId: "kitchen-ops",
+      skuName: "Organic Semolina Flour",
+      quantityRequested: 5,
+      candidateQuotes: sampleQuotes,
+      dailyLimitUsdc: "1.0",
+    });
+
+    const { stateAnchorMarkdown, decisionEvidenceMarkdown } =
+      await writeWorkflowAntiDriftFiles(decision, {
+        settlementTxHash: "0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb",
+        paymentStatusOverride: "SETTLED_ON_ARC_TESTNET",
+      });
+
+    expect(stateAnchorMarkdown).toContain("Workflow State Anchor: wf_test_antidrift");
+    expect(stateAnchorMarkdown).toContain("0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29");
+    expect(stateAnchorMarkdown).toContain("SETTLED_ON_ARC_TESTNET");
+    expect(decisionEvidenceMarkdown).toContain("Verifiable Procurement Decision Record");
+    expect(decisionEvidenceMarkdown).toContain("SIMULATED_SUPPLIER_ADAPTER");
+    expect(decisionEvidenceMarkdown).toContain("NOT_FULFILLED_AWAITING_3WAY_MATCH");
+
+    // Test drift detection
+    const driftedRecord = {
+      ...decision,
+      onChainPolicyPreFlight: {
+        ...decision.onChainPolicyPreFlight,
+        contractAddress: "0x0000000000000000000000000000000000000bad" as any,
+      },
+    };
+
+    expect(() => assertNoSpecDrift(driftedRecord)).toThrowError(/Contract address drifted/);
   });
 });

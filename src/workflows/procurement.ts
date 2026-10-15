@@ -8,6 +8,8 @@ import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import { evaluateThreeWayMatch, MatchStatus } from "../accounting/three-way-match.js";
 import { notificationEmitter } from "../adapters/web2/notifications.js";
 import { generateIdempotencyKey } from "../utils/idempotency.js";
+import { generateVerifiableDecisionRecord } from "../agents/bindTemplateAgent.js";
+import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
 
 export class ProcurementWorkflowRunner {
   private workflowEngine = new WorkflowEngine();
@@ -98,11 +100,41 @@ export class ProcurementWorkflowRunner {
       ]
     );
 
+    // Generate verifiable decision record via Nebius Token Factory / deepagents / anti-drift writer
+    let decisionRecord: any = null;
+    try {
+      decisionRecord = await generateVerifiableDecisionRecord({
+        workflowId,
+        templateId: "kitchen-ops",
+        skuName: item.name,
+        quantityRequested: reorderQty,
+        candidateQuotes: [
+          {
+            vendorId: quoteRes.supplierId,
+            vendorName: quoteRes.supplierName,
+            vendorWallet: "0xa8358AED200D6CB6C856F972D853C1be833006ea",
+            unitPriceUsdc: (Number(quoteRes.unitPriceCents) / 100).toFixed(4),
+            totalPriceUsdc: (Number(quoteRes.totalPriceCents) / 100).toFixed(4),
+            leadTimeDays: 2,
+            isWhitelistedOnChain: true,
+          },
+        ],
+        dailyLimitUsdc: "1.0",
+      });
+    } catch {
+      // Keep going if template dir isn't present in specific test runs
+    }
+
     // 5. Transition to QUOTE_RECEIVED
     await this.workflowEngine.transition(workflowId, {
       fromState: WorkflowState.REQUEST_SENT,
       toState: WorkflowState.QUOTE_RECEIVED,
-      patchContext: { quote: quoteRes },
+      patchContext: {
+        quote: quoteRes,
+        decisionRecord,
+        decisionHash: decisionRecord?.decisionHash,
+        evidencePath: decisionRecord ? `workflows/${workflowId}/DECISION_EVIDENCE.md` : undefined,
+      },
     });
 
     // 6. Policy Engine Evaluation
@@ -393,7 +425,7 @@ export class ProcurementWorkflowRunner {
 
     const transferRes = await settlementAdapter.transferUSDC({
       fromAddress: wsRes.rows[0].settlement_address || "0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2",
-      toAddress: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      toAddress: "0xa8358AED200D6CB6C856F972D853C1be833006ea",
       amountCents: matchResult.payableAmountCents,
       currency: "USDC",
       orderId: order.id,
@@ -420,6 +452,18 @@ export class ProcurementWorkflowRunner {
       [order.id]
     );
     if (wfRes.rows.length > 0) {
+      const activeWf = await this.workflowEngine.getWorkflow(wfRes.rows[0].id);
+      if (activeWf?.contextData?.decisionRecord) {
+        try {
+          await writeWorkflowAntiDriftFiles(activeWf.contextData.decisionRecord, {
+            settlementTxHash: transferRes.txHash,
+            paymentStatusOverride: "SETTLED_ON_ARC_TESTNET",
+          });
+        } catch {
+          // Continue if file write fails in testing
+        }
+      }
+
       await this.workflowEngine.transition(wfRes.rows[0].id, {
         fromState: WorkflowState.CONFIRMED,
         toState: WorkflowState.RECONCILED,

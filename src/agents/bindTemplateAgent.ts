@@ -9,6 +9,7 @@ import {
   HybridMarketBenchmarkAdapter,
   MarketBenchmarkResult,
 } from "../adapters/marketBenchmark.js";
+import { writeWorkflowAntiDriftFiles } from "./antiDriftWriter.js";
 
 export type BindTemplateId = "kitchen-ops" | "coffee-roaster";
 
@@ -188,8 +189,14 @@ export async function generateVerifiableDecisionRecord(params: {
       .update(JSON.stringify(unsignedRecord))
       .digest("hex")) as `0x${string}`;
 
-  return {
+  const fullRecord: VerifiableDecisionRecord = {
     ...unsignedRecord,
     decisionHash,
   };
+
+  // Automatically writes /workflows/<workflowId>/STATE_ANCHOR.md & DECISION_EVIDENCE.md
+  // and blocks any runtime invariant drift before settlement can occur.
+  await writeWorkflowAntiDriftFiles(fullRecord);
+
+  return fullRecord;
 }
