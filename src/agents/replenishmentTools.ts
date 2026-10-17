@@ -137,11 +137,12 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
       const quotesRes = await query(
         `SELECT q.id AS quote_id, q.rfq_id, q.supplier_id, q.supplier_name, q.item_sku,
                 q.quantity, q.unit_price_cents, q.total_price_cents, q.currency, q.valid_until,
+                q.provenance,
                 s.verified, s.is_simulated, s.adapter_type
          FROM quotes q
          JOIN suppliers s ON s.id = q.supplier_id AND s.workspace_id = q.workspace_id
          WHERE q.workspace_id = $1 AND q.item_sku = $2 AND s.verified = TRUE
-         ORDER BY q.created_at DESC;`,
+         ORDER BY (CASE WHEN q.provenance = 'OWNER_CONFIRMED' THEN 0 ELSE 1 END) ASC, q.unit_price_cents ASC, q.created_at DESC;`,
         [workspaceId, sku]
       );
 
@@ -158,6 +159,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
           totalPriceCents: row.total_price_cents.toString(),
           currency: row.currency,
           validUntil: row.valid_until,
+          provenance: row.provenance || "DEMO_WORKSPACE",
           isExpired,
           isSimulated: row.is_simulated,
           adapterType: row.adapter_type,
@@ -423,6 +425,42 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
       );
       const dailySpentCents = BigInt(spendRes.rows[0].daily_spent_cents || 0);
 
+      // Check canonical agent_roles policy in PostgreSQL
+      const roleRes = await query(
+        `SELECT * FROM agent_roles WHERE workspace_id = $1 AND role_name = 'procurement_agent' LIMIT 1;`,
+        [workspaceId]
+      );
+      const procRole = roleRes.rows[0];
+      if (procRole) {
+        if (!procRole.enabled) {
+          const reason = `Role 'procurement_agent' is disabled for workspace '${workspaceId}'.`;
+          await query(
+            `UPDATE workflows SET state = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2;`,
+            [reason, targetWorkflowId]
+          );
+          return JSON.stringify({
+            requestId: targetWorkflowId,
+            policyDecision: "DENY",
+            workflowState: WorkflowState.FAILED,
+            reason,
+          });
+        }
+        const permittedEffects: string[] = procRole.permitted_effects || [];
+        if (!permittedEffects.includes("commercial_commitment")) {
+          const reason = `Role 'procurement_agent' does not have 'commercial_commitment' permission in workspace '${workspaceId}'.`;
+          await query(
+            `UPDATE workflows SET state = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2;`,
+            [reason, targetWorkflowId]
+          );
+          return JSON.stringify({
+            requestId: targetWorkflowId,
+            policyDecision: "DENY",
+            workflowState: WorkflowState.FAILED,
+            reason,
+          });
+        }
+      }
+
       // Check against hard daily limit
       if (dailySpentCents + amountCents > dailyLimitCents) {
         await query(
@@ -445,13 +483,17 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         proposal.supplierWallet.toLowerCase() ===
         CANONICAL_ARC_LOCK.whitelistedVendor.toLowerCase();
 
+      // Model/scorer confidence may ONLY escalate to owner review, never grant financial authority
       const jevHoldRequired = Boolean(proposal.jevEvaluation?.holdForOwnerReview);
+      const roleLimitCents = procRole ? BigInt(procRole.spending_limit_cents || 0) : approvalThresholdCents;
+      const exceedsRoleOrWorkspaceGate =
+        amountCents > approvalThresholdCents || (roleLimitCents > 0n && amountCents > roleLimitCents);
 
       let nextState: WorkflowState;
       let policyDecision: PolicyDecision;
       let approvalId: string | undefined = undefined;
 
-      if (amountCents > approvalThresholdCents || !vendorWhitelisted || jevHoldRequired) {
+      if (exceedsRoleOrWorkspaceGate || !vendorWhitelisted || jevHoldRequired) {
         policyDecision = PolicyDecision.REQUIRE_APPROVAL;
         nextState = WorkflowState.AWAITING_APPROVAL;
         approvalId = `appr_${targetWorkflowId}`;

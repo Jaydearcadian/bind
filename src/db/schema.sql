@@ -184,9 +184,71 @@ CREATE TABLE IF NOT EXISTS inbound_webhooks (
     UNIQUE(provider, event_id)
 );
 
+-- Studio Extensions (Idempotent Columns & Tables)
+ALTER TABLE agent_roles
+  ADD COLUMN IF NOT EXISTS allowed_tools TEXT[] NOT NULL DEFAULT ARRAY[
+    'get_business_context',
+    'get_stock_snapshot',
+    'get_approved_supplier_quotes',
+    'create_replenishment_proposal',
+    'request_policy_evaluation',
+    'get_request_status'
+  ]::TEXT[];
+
+ALTER TABLE quotes
+  ADD COLUMN IF NOT EXISTS provenance TEXT NOT NULL DEFAULT 'SIMULATED_SUPPLIER_ADAPTER';
+
+CREATE TABLE IF NOT EXISTS surface_bindings (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    surface TEXT NOT NULL, -- 'whatsapp', 'telegram', 'instagram', 'slack', 'email', 'pos_webhook'
+    actor_id TEXT NOT NULL, -- phone number, handle, or email
+    actor_label TEXT,
+    actor_role TEXT NOT NULL, -- 'owner', 'staff'
+    integration_status TEXT NOT NULL DEFAULT 'simulated', -- 'simulated', 'configured_unverified', 'verified'
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(workspace_id, surface, actor_id)
+);
+
+CREATE TABLE IF NOT EXISTS staged_documents (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    doc_type TEXT NOT NULL, -- 'quote', 'delivery_receipt', 'supplier_bill'
+    source_label TEXT NOT NULL DEFAULT 'manual_upload',
+    raw_text TEXT NOT NULL,
+    extracted_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    warnings JSONB NOT NULL DEFAULT '[]'::jsonb,
+    status TEXT NOT NULL DEFAULT 'staged_unconfirmed', -- 'staged_unconfirmed', 'owner_confirmed', 'rejected'
+    linked_order_id VARCHAR(64),
+    confirmed_by TEXT,
+    confirmed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS accounting_journal_entries (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    order_id VARCHAR(64) REFERENCES orders(id) ON DELETE SET NULL,
+    entry_number TEXT NOT NULL,
+    debit_account TEXT NOT NULL,
+    credit_account TEXT NOT NULL,
+    amount_cents BIGINT NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'USDC',
+    memo TEXT NOT NULL,
+    provenance TEXT NOT NULL DEFAULT 'THREE_WAY_MATCH_VERIFIED',
+    tx_hash TEXT,
+    idempotency_key TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Indexes for fast workflow queries and audit trails
 CREATE INDEX IF NOT EXISTS idx_inventory_sku ON inventory_items(workspace_id, sku);
 CREATE INDEX IF NOT EXISTS idx_orders_workspace ON orders(workspace_id, status);
 CREATE INDEX IF NOT EXISTS idx_approvals_pending ON approvals(workspace_id, status);
 CREATE INDEX IF NOT EXISTS idx_workflows_state ON workflows(workspace_id, state);
 CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_logs(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_surface_bindings_ws ON surface_bindings(workspace_id, surface);
+CREATE INDEX IF NOT EXISTS idx_staged_docs_ws ON staged_documents(workspace_id, status);
+CREATE INDEX IF NOT EXISTS idx_journal_ws ON accounting_journal_entries(workspace_id, created_at DESC);
+

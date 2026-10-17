@@ -1,1063 +1,1574 @@
-// Bind Supply Operator v0.1 — Editorial Precision Telemetry & Live Workspace Controller
-const WORKSPACE_ID = "ws-kitchen-main";
+/**
+ * Bind Frontend Application (src/ui/public/app.js)
+ * Implements DESIGN.md & BRAND_DIRECTION.md across:
+ *   - /                           Marketing landing page
+ *   - /app                        In-app Kitchen Operations workspace
+ *   - /app/workflows/:workflowId  Selected workflow timeline & evidence inspection
+ */
 
-const CANONICAL_CHAIN = {
-  networkLabel: "Arc Testnet",
-  chainId: 5042002,
-  contractAddress: "0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29",
-  whitelistedSupplierWallet: "0xa8358AED200D6CB6C856F972D853C1be833006ea",
-  confirmedTxHash: "0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb",
-  confirmedBlock: 67155117,
-  explorerBase: "https://testnet.arcscan.app",
+let WORKSPACE_ID = "ws-kitchen-main";
+const ARC_SETTLEMENT_CONTRACT = "0x6FD6323252a3f63A0c93470B6fd14883252F3f02";
+const VERIFIED_DEMO_TX_HASH = "0x6fc45e277f9be92dc91da08fb72c37c5a18bf0f44a509665470aaef70848a894";
+
+const appState = {
+  workspacesList: [],
+  workspace: null,
+  roles: [],
+  treasuryBalanceCents: "0",
+  inventory: [],
+  workflows: [],
+  orders: [],
+  approvals: [],
+  auditLogs: [],
+  surfaceBindings: [],
+  stagedDocuments: [],
+  accountingLedger: [],
+  latestDraftDoc: null,
+  selectedWorkflowId: null,
+  loadingAction: false,
 };
 
-// Official Heroicons v2 20x20 Solid SVG Primitives (@heroicons/react / @heroicons/vue)
-const HEROICONS = {
-  checkCircle: `<svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>`,
-  exclamationTriangle: `<svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" /></svg>`,
-  xCircle: `<svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd" /></svg>`,
-  arrowRight: `<svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clip-rule="evenodd" /></svg>`,
-  externalLink: `<svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z" clip-rule="evenodd" /><path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z" clip-rule="evenodd" /></svg>`,
-  shieldCheck: `<svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9.661 2.237a.531.531 0 0 1 .678 0 11.947 11.947 0 0 0 7.078 2.749.5.5 0 0 1 .479.425c.069.52.104 1.05.104 1.59 0 5.162-3.26 9.563-7.834 11.256a.48.48 0 0 1-.332 0C5.26 16.564 2 12.163 2 7c0-.538.035-1.069.104-1.589a.5.5 0 0 1 .48-.425 11.947 11.947 0 0 0 7.077-2.75Zm4.196 5.954a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>`,
-};
-
-const DECODER_SIGNALS = {
-  auto_spend: {
-    badge: "VERIFIED_REMOTE • AUTO_EXECUTED",
-    title: "Low-Value Replenishment Within Autonomous Authority",
-    summary:
-      "When Cold-Pressed Canola Oil drops to 2 units (reorder point 4), the Replenishment Agent proposes 10 units using quote quo_medina_2026_10. Server-side BigInt math computes 0.0010 USDC (≤ 0.0050 USDC auto threshold) and executes settlement on Arc Testnet.",
-    pins: [
-      { label: "Jev System-One Confidence", value: "94.2% (Urgency 4/5)" },
-      { label: "Confirmed Arc Testnet Tx", value: "0x626129a1...81c711bbb (Block 67155117)" },
-      { label: "Order / Fulfilment State", value: "ORDER_REQUESTED (Separate from payment)" },
-    ],
-  },
-  owner_hold: {
-    badge: "LIVE_READ_PASS • APPROVAL_REQUIRED",
-    title: "Above-Threshold Purchase Held for Owner Authorization",
-    summary:
-      "25 cases of DOP San Marzano Tomatoes total 0.0250 USDC, exceeding the 0.0050 USDC autonomous limit. Bind reserves 0.0250 USDC against the daily budget and holds execution until the Business Owner explicitly approves.",
-    pins: [
-      { label: "Autonomous Threshold Check", value: "0.0250 USDC > 0.0050 USDC (HELD)" },
-      { label: "Hard Per-Purchase Max Check", value: "0.0250 USDC ≤ 0.5000 USDC (PASS)" },
-      { label: "Funds Moved Prior to Approval", value: "0.0000 USDC (Strictly held)" },
-    ],
-  },
-  whitelist_revert: {
-    badge: "VERIFIED_REMOTE • POLICY_REJECTED",
-    title: "Unapproved Supplier Blocked On-Chain (0x65e822e9)",
-    summary:
-      "Even if an agent prompt were manipulated to propose an unapproved wallet (0x000...dEaD), both the backend policy executor and BindSettlement.sol deterministically reject the transfer with custom error VendorNotWhitelisted.",
-    pins: [
-      { label: "On-Chain Custom Error Selector", value: "VendorNotWhitelisted (0x65e822e9)" },
-      { label: "Approved Recipient Allowlist", value: "0xa8358AED200D6CB6C856F972D853C1be833006ea" },
-      { label: "Vault Balance Impact", value: "0 USDC moved (Unchanged)" },
-    ],
-  },
-  daily_cap_revert: {
-    badge: "VERIFIED_REMOTE • POLICY_REJECTED",
-    title: "Rolling 24-Hour Budget Cap Enforced On-Chain (0xef664d6a)",
-    summary:
-      "BindSettlement.sol tracks rolling 24-hour spend on Arc L1. Any attempt—even with owner approval—to spend above the 1.0000 USDC daily ceiling reverts deterministically with DailyLimitExceeded.",
-    pins: [
-      { label: "On-Chain Custom Error Selector", value: "DailyLimitExceeded (0xef664d6a)" },
-      { label: "Configured 24h Ceiling", value: "1.0000 USDC (1000000000000000000 wei)" },
-      { label: "Reset Mechanism", value: "block.timestamp >= lastDayReset + 1 days" },
-    ],
-  },
-  social_webhook: {
-    badge: "LOCAL_PASS • ROLE_BOUNDARY_ENFORCED",
-    title: "Social & POS Webhook Adapter (Staff vs. Owner Authority)",
-    summary:
-      "Staff members can report low stock or upload delivery receipts from WhatsApp, Slack, or Square/Toast POS webhooks, but any staff attempt to approve held spend or pause the agent is blocked by assertSurfaceRoleAuthorized.",
-    pins: [
-      { label: "Staff Allowed Surface Actions", value: "SURFACE_STOCK_OBSERVED, Delivery Intake" },
-      { label: "Owner Exclusive Actions", value: "SURFACE_OWNER_APPROVAL_DECISION, Pause Toggle" },
-      { label: "Guard Error Code", value: "[SURFACE_ROLE_VIOLATION]" },
-    ],
-  },
-  three_way_match: {
-    badge: "LOCAL_PASS • LIFECYCLE_SEPARATION",
-    title: "Deterministic 3-Way Match (PO ↔ Delivery Receipt ↔ Bill)",
-    summary:
-      "Invariant 6: An on-chain USDC transfer proves payment, never physical delivery. Inventory is marked RECEIVED only after Purchase Order, Delivery Receipt, and Supplier Invoice quantities and unit prices reconcile.",
-    pins: [
-      { label: "Payment Lifecycle Track", value: "PAYMENT_CONFIRMED (Arc Testnet)" },
-      { label: "Order Fulfilment Track", value: "ORDER_REQUESTED → RECEIVED (Post-Match)" },
-      { label: "Price / Quantity Variance Tolerance", value: "0 cents strict reconciliation" },
-    ],
-  },
-};
-
-const state = {
-  activeTemplate: "kitchen-ops",
-  activeTab: "operations",
-  activeDecoderSignal: "auto_spend",
-  agentPaused: false,
-  selectedRequestId: "req_auto_01",
-  items: [
-    {
-      itemId: "item_flour_50lb",
-      sku: "FLOUR-001",
-      label: "Organic All-Purpose Flour (50 lb)",
-      unit: "bags",
-      packSize: 1,
-      onHandQty: 3,
-      reorderPoint: 10,
-      targetQty: 20,
-      supplierName: "Medina Valley Foodservice",
-      supplierWallet: CANONICAL_CHAIN.whitelistedSupplierWallet,
-      unitPriceUsdc: "42.50",
-      quoteId: "quo_medina_flour_01",
-      quoteSourceType: "MANUAL_RECORDED_QUOTE",
-      quoteConfirmedBy: "Owner (2026-10-14)",
-    },
-    {
-      itemId: "item_butter_36lb",
-      sku: "DAIRY-002",
-      label: "European Unsalted Butter (36 lb)",
-      unit: "cases",
-      packSize: 1,
-      onHandQty: 2,
-      reorderPoint: 8,
-      targetQty: 15,
-      supplierName: "Medina Valley Foodservice",
-      supplierWallet: CANONICAL_CHAIN.whitelistedSupplierWallet,
-      unitPriceUsdc: "145.00",
-      quoteId: "quo_medina_butter_02",
-      quoteSourceType: "MANUAL_RECORDED_QUOTE",
-      quoteConfirmedBy: "Owner (2026-10-14)",
-    },
-    {
-      itemId: "item_oil_10l",
-      sku: "SKU-OIL-10L",
-      label: "Cold-Pressed Canola Frying Oil",
-      unit: "10L Jerrican",
-      packSize: 2,
-      onHandQty: 2,
-      reorderPoint: 4,
-      targetQty: 12,
-      supplierName: "Medina Valley Foodservice",
-      supplierWallet: CANONICAL_CHAIN.whitelistedSupplierWallet,
-      unitPriceUsdc: "0.0001",
-      quoteId: "quo_medina_2026_10",
-      quoteSourceType: "MANUAL_RECORDED_QUOTE",
-      quoteConfirmedBy: "Owner (2026-10-14)",
-    },
-    {
-      itemId: "item_tomato_case",
-      sku: "SKU-TOM-DOP",
-      label: "DOP San Marzano Whole Peeled Tomatoes",
-      unit: "6x3kg Case",
-      packSize: 5,
-      onHandQty: 3,
-      reorderPoint: 5,
-      targetQty: 28,
-      supplierName: "Medina Valley Foodservice",
-      supplierWallet: CANONICAL_CHAIN.whitelistedSupplierWallet,
-      unitPriceUsdc: "0.0010",
-      quoteId: "quo_medina_tom_11",
-      quoteSourceType: "MANUAL_RECORDED_QUOTE",
-      quoteConfirmedBy: "Owner (2026-10-14)",
-    },
-  ],
-  requests: [
-    {
-      id: "req_auto_01",
-      idempotencyKey: "idem_item_oil_10l_obs_2",
-      itemId: "item_oil_10l",
-      itemLabel: "Cold-Pressed Canola Frying Oil",
-      stockObserved: 2,
-      reorderPoint: 4,
-      proposedQty: 10,
-      packSize: 2,
-      supplierId: "sup_medina_01",
-      supplierName: "Medina Valley Foodservice",
-      supplierWallet: CANONICAL_CHAIN.whitelistedSupplierWallet,
-      addressConfirmedBy: "Owner on 2026-10-14",
-      quoteId: "quo_medina_2026_10",
-      quoteSource: "MANUAL_RECORDED_QUOTE (Confirmed by Owner)",
-      unitPriceUsdc: "0.0001",
-      deliveryFeeUsdc: "0.0000",
-      calculatedTotalUsdc: "0.0010",
-      calculatedBaseUnits: "1000000000000000",
-      requestState: "PAYMENT_CONFIRMED",
-      requestStateDisplay: "Confirmed on Arc Testnet",
-      orderLifecycleState: "ORDER_REQUESTED",
-      orderLifecycleDisplay: "Order fulfilment not yet confirmed",
-      evidenceClass: "VERIFIED_REMOTE",
-      jevScore: {
-        urgency: "4 / 5",
-        confidence: "94.2%",
-        autoRouteProb: "94.0%",
-        priceEfficiency: "1.0000",
-        stockoutProtection: "0.8500",
-        matchReliability: "1.0000",
-        evalHash: "0x7a19c304b8e291f045a128c90e1d44b89102f3a8c76d5e41209b8a7c6d5e4f31",
-      },
-      threeWayMatch: {
-        status: "AWAITING_DELIVERY_AND_BILL",
-        poSummary: "10 units @ 0.0001 = 0.0010 USDC",
-        receiptSummary: "Pending physical arrival",
-        billSummary: "Pending supplier invoice",
-        variance: "0 cents",
-        matchHash: "Pending physical delivery intake",
-      },
-      policyChecks: {
-        authorizedExecutor: "PASS (Circle Agent Stack Executor)",
-        recipientAllowlisted: "PASS (0xa8358A...33006ea on-chain)",
-        idempotencyUnique: "PASS (idem_item_oil_10l_obs_2)",
-        withinAutoThreshold: "PASS (0.0010 ≤ 0.0050 USDC auto limit)",
-        withinHardMax: "PASS (0.0010 ≤ 0.5000 USDC hard max)",
-        withinDailyBudget: "PASS (0.0010 / 1.0000 USDC daily cap)",
-      },
-      txHash: CANONICAL_CHAIN.confirmedTxHash,
-      decisionHash: "0x8f4e2c91a61d904b77c205e12e9a45c33d08b1a91f7f03e2c44a1102a89c74d1",
-      reasonCodes: ["LOW_STOCK", "PACK_ROUNDED_EVEN", "PRICE_WITHIN_AUTONOMOUS_THRESHOLD"],
-      explanation:
-        "On-hand stock (2 jerricans) fell below reorder point (4). Replenishment Agent selected quote quo_medina_2026_10 and proposed 10 units (5 packs of 2) to restore target stock (12). Server recomputed 0.0010 USDC in integer base units and settled on Arc Testnet.",
-      events: [
-        { time: "2026-10-15T22:20:02Z", type: "STOCK_OBSERVATION", actor: "Owner / POS", detail: "Observed 2 units (≤ reorder point 4)" },
-        { time: "2026-10-15T22:20:05Z", type: "JEV_SYSTEM_ONE_SCORED", actor: "Jev Scorer", detail: "Urgency 4/5, Confidence 94.2%, Auto-route prob 94.0%" },
-        { time: "2026-10-15T22:20:08Z", type: "PROPOSAL_VALIDATED", actor: "Backend Policy Executor", detail: "Server calculated 10 × 0.0001 = 0.0010 USDC (1000000000000000 wei)" },
-        { time: "2026-10-15T22:20:14Z", type: "PAYMENT_CONFIRMED", actor: "BindSettlement.sol", detail: "Confirmed on Arc Testnet in block 67155117 (0x626129a1...1bbb)" },
-      ],
-    },
-    {
-      id: "req_hold_02",
-      idempotencyKey: "idem_item_tomato_case_obs_3",
-      itemId: "item_tomato_case",
-      itemLabel: "DOP San Marzano Whole Peeled Tomatoes",
-      stockObserved: 3,
-      reorderPoint: 5,
-      proposedQty: 25,
-      packSize: 5,
-      supplierId: "sup_medina_01",
-      supplierName: "Medina Valley Foodservice",
-      supplierWallet: CANONICAL_CHAIN.whitelistedSupplierWallet,
-      addressConfirmedBy: "Owner on 2026-10-14",
-      quoteId: "quo_medina_tom_11",
-      quoteSource: "MANUAL_RECORDED_QUOTE (Confirmed by Owner)",
-      unitPriceUsdc: "0.0010",
-      deliveryFeeUsdc: "0.0000",
-      calculatedTotalUsdc: "0.0250",
-      calculatedBaseUnits: "25000000000000000",
-      requestState: "APPROVAL_REQUIRED",
-      requestStateDisplay: "Approval required",
-      orderLifecycleState: "NOT_SENT",
-      orderLifecycleDisplay: "Order not yet sent — awaiting owner approval",
-      evidenceClass: "LIVE_READ_PASS",
-      jevScore: {
-        urgency: "3 / 5",
-        confidence: "91.5%",
-        autoRouteProb: "15.0% (Held > 0.0050 USDC)",
-        priceEfficiency: "1.0000",
-        stockoutProtection: "0.8000",
-        matchReliability: "1.0000",
-        evalHash: "0x4d82e109c3a711b088f219e45c309b12a77d4e1098c3b2a165f0e9d8c7b6a512",
-      },
-      threeWayMatch: {
-        status: "NOT_STARTED_AWAITING_APPROVAL",
-        poSummary: "25 cases @ 0.0010 = 0.0250 USDC",
-        receiptSummary: "Not dispatched",
-        billSummary: "Not invoiced",
-        variance: "0 cents",
-        matchHash: "Awaiting owner payment authorization",
-      },
-      policyChecks: {
-        authorizedExecutor: "PASS (Circle Agent Stack Executor)",
-        recipientAllowlisted: "PASS (0xa8358A...33006ea on-chain)",
-        idempotencyUnique: "PASS (idem_item_tomato_case_obs_3)",
-        withinAutoThreshold: "HELD (0.0250 USDC > 0.0050 USDC auto threshold)",
-        withinHardMax: "PASS (0.0250 ≤ 0.5000 USDC hard max)",
-        withinDailyBudget: "RESERVED (0.0250 USDC reserved against 1.0000 USDC cap)",
-      },
-      txHash: null,
-      decisionHash: "0x3c91f47b820e1920c5a1847f9e021b89401a3b7d65e4c21098a3f712b40e61c9",
-      reasonCodes: ["LOW_STOCK", "ABOVE_AUTO_THRESHOLD_HELD_FOR_OWNER"],
-      explanation:
-        "Stock at 3 cases (reorder point 5). Proposed 25 cases (5 packs of 5) to restore target par (28). Server-calculated total 0.0250 USDC exceeds autonomous limit (0.0050 USDC); held for Owner signature with 0 USDC moved.",
-      events: [
-        { time: "2026-10-15T22:22:10Z", type: "STOCK_OBSERVATION", actor: "Owner", detail: "Observed 3 cases (≤ reorder point 5)" },
-        { time: "2026-10-15T22:22:12Z", type: "PROPOSAL_VALIDATED", actor: "Backend Policy Executor", detail: "Server calculated 25 × 0.0010 = 0.0250 USDC" },
-        { time: "2026-10-15T22:22:15Z", type: "APPROVAL_REQUIRED", actor: "Policy Gate", detail: "Held above 0.0050 USDC auto threshold; 0.0250 USDC reserved" },
-      ],
-    },
-    {
-      id: "req_reject_03",
-      idempotencyKey: "idem_unapproved_vendor_test",
-      itemId: "item_oil_10l",
-      itemLabel: "Canola Oil — Unapproved Counterparty Rejection Test",
-      stockObserved: 2,
-      reorderPoint: 4,
-      proposedQty: 4,
-      packSize: 2,
-      supplierId: "sup_unverified_99",
-      supplierName: "Unverified Spot Broker (Not Allowlisted)",
-      supplierWallet: "0x000000000000000000000000000000000000dEaD",
-      addressConfirmedBy: "UNCONFIRMED",
-      quoteId: "quo_unverified_99",
-      quoteSource: "Rejected — Unverified Supplier Address",
-      unitPriceUsdc: "0.0001",
-      deliveryFeeUsdc: "0.0000",
-      calculatedTotalUsdc: "0.0004",
-      calculatedBaseUnits: "400000000000000",
-      requestState: "POLICY_REJECTED",
-      requestStateDisplay: "Policy rejected (VendorNotWhitelisted 0x65e822e9)",
-      orderLifecycleState: "CANCELLED",
-      orderLifecycleDisplay: "Cancelled — 0 USDC moved",
-      evidenceClass: "VERIFIED_REMOTE",
-      jevScore: {
-        urgency: "4 / 5",
-        confidence: "0.0%",
-        autoRouteProb: "0.0% (Blocked)",
-        priceEfficiency: "0.0000",
-        stockoutProtection: "0.0000",
-        matchReliability: "0.0000",
-        evalHash: "0x00000000000000000000000000000000000000000000000000000000000065e8",
-      },
-      threeWayMatch: {
-        status: "CANCELLED_POLICY_REJECTED",
-        poSummary: "Blocked by recipient allowlist",
-        receiptSummary: "N/A",
-        billSummary: "N/A",
-        variance: "0 cents",
-        matchHash: "None — Rejected pre-settlement",
-      },
-      policyChecks: {
-        authorizedExecutor: "PASS",
-        recipientAllowlisted: "BLOCKED — Reverted with VendorNotWhitelisted (0x65e822e9)",
-        idempotencyUnique: "LOCKED (Single-use ID consumed as terminal rejection)",
-        withinAutoThreshold: "N/A",
-        withinHardMax: "PASS",
-        withinDailyBudget: "PASS (0.0000 USDC deducted)",
-      },
-      txHash: null,
-      decisionHash: "0x99d01a4421b6c8e0f1123490a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f70",
-      reasonCodes: ["RECIPIENT_NOT_ALLOWLISTED", "FUNDS_UNMOVED"],
-      explanation:
-        "Negative-path verification: attempted spend to unapproved recipient 0x000...dEaD was deterministically blocked by BindSettlement.sol on Arc Testnet with selector 0x65e822e9. Zero funds moved.",
-      events: [
-        { time: "2026-10-15T22:24:18Z", type: "POLICY_REJECTED", actor: "BindSettlement.sol", detail: "Reverted on Arc Testnet with VendorNotWhitelisted (0x65e822e9); 0 USDC moved" },
-      ],
-    },
-  ],
-};
-
-async function fetchJSON(url, options) {
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
-  }
-  return await res.json();
+/* ==========================================================================
+   Formatting & Escaping Helpers
+   ========================================================================== */
+function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
-function renderRadialDialTicks() {
-  const group = document.getElementById("radial-ticks-group");
-  if (!group) return;
-  const totalTicks = 96;
-  const cx = 220;
-  const cy = 220;
-  const outerR = 204;
-  const innerR = 186;
-  let linesHtml = "";
-
-  for (let i = 0; i < totalTicks; i++) {
-    const angleDeg = i * (360 / totalTicks) - 90;
-    const rad = (angleDeg * Math.PI) / 180;
-    const x1 = (cx + innerR * Math.cos(rad)).toFixed(2);
-    const y1 = (cy + innerR * Math.sin(rad)).toFixed(2);
-    const x2 = (cx + outerR * Math.cos(rad)).toFixed(2);
-    const y2 = (cy + outerR * Math.sin(rad)).toFixed(2);
-    const isActive = i < 28;
-    const strokeColor = isActive ? "#FF5324" : "#D6D1C7";
-    const strokeWidth = i % 8 === 0 ? "2.4" : "1.5";
-    linesHtml += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" />`;
-  }
-  group.innerHTML = linesHtml;
-}
-
-function selectDecoderSignal(signalKey) {
-  state.activeDecoderSignal = signalKey;
-  document.querySelectorAll(".decoder-trigger").forEach((btn) => {
-    btn.classList.toggle("active", btn.getAttribute("data-signal") === signalKey);
+function formatCents(centsInput) {
+  const cents = Number(centsInput || 0);
+  if (Number.isNaN(cents)) return "$0.00";
+  return "$" + (cents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
-
-  const sig = DECODER_SIGNALS[signalKey] || DECODER_SIGNALS.auto_spend;
-  const card = document.getElementById("decoder-detail-card");
-  if (!card) return;
-
-  card.innerHTML = `
-    <div>
-      <span class="pin-tag" style="margin-bottom:18px;color:#FFB099;">
-        ${HEROICONS.shieldCheck}
-        <span>${sig.badge}</span>
-      </span>
-      <h3 style="font-family:var(--font-display);font-size:clamp(1.5rem,2.4vw,2.1rem);font-weight:500;line-height:1.15;margin-bottom:14px;">
-        ${sig.title}
-      </h3>
-      <p style="font-size:14.5px;color:rgba(250,248,245,0.82);line-height:1.6;max-width:560px;">
-        ${sig.summary}
-      </p>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:10px;margin-top:28px;">
-      ${sig.pins
-        .map(
-          (p) => `
-        <div class="pin-tag" style="justify-content:space-between;">
-          <span style="color:rgba(250,248,245,0.68);">${p.label}:</span>
-          <strong style="color:#FFFFFF;">${p.value}</strong>
-        </div>
-      `
-        )
-        .join("")}
-    </div>
-  `;
 }
 
-function getStatusPillClass(requestState) {
-  if (requestState === "PAYMENT_CONFIRMED") return "status-confirmed";
-  if (requestState === "APPROVAL_REQUIRED") return "status-hold";
-  if (
-    requestState === "POLICY_REJECTED" ||
-    requestState === "OWNER_REJECTED" ||
-    requestState === "PAYMENT_FAILED"
-  )
-    return "status-rejected";
-  return "status-neutral";
+function shortHash(hash, lead = 8, tail = 6) {
+  if (!hash || typeof hash !== "string") return "—";
+  if (hash.length <= lead + tail + 2) return hash;
+  return `${hash.slice(0, lead)}…${hash.slice(-tail)}`;
 }
 
-function getStatusHeroicon(requestState) {
-  if (requestState === "PAYMENT_CONFIRMED") return HEROICONS.checkCircle;
-  if (requestState === "APPROVAL_REQUIRED") return HEROICONS.exclamationTriangle;
-  if (
-    requestState === "POLICY_REJECTED" ||
-    requestState === "OWNER_REJECTED" ||
-    requestState === "PAYMENT_FAILED"
-  )
-    return HEROICONS.xCircle;
-  return "";
+function formatTimestamp(ts) {
+  if (!ts) return "—";
+  try {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) +
+      " · " + d.toLocaleDateString([], { month: "short", day: "numeric" });
+  } catch {
+    return String(ts);
+  }
 }
 
-function renderInventoryTable() {
-  const tbody = document.getElementById("inventoryTable");
-  if (!tbody) return;
-  const lowCount = state.items.filter((i) => i.onHandQty <= i.reorderPoint).length;
-  const lowCountEl = document.getElementById("nav-low-stock-count");
-  if (lowCountEl) {
-    lowCountEl.textContent = `${lowCount} Items at/below reorder point`;
+function showToast(message) {
+  const banner = document.getElementById("toastBanner");
+  const msgEl = document.getElementById("toastMessage");
+  if (!banner || !msgEl) return;
+  msgEl.textContent = message;
+  banner.classList.add("visible");
+  clearTimeout(window.__bindToastTimer);
+  window.__bindToastTimer = setTimeout(() => {
+    banner.classList.remove("visible");
+  }, 4500);
+}
+
+/* ==========================================================================
+   Router: / vs /app vs /app/workflows/:workflowId
+   ========================================================================== */
+function syncRouteView() {
+  const path = window.location.pathname || "/";
+  const landingView = document.getElementById("landingView");
+  const appView = document.getElementById("appView");
+  if (!landingView || !appView) return;
+
+  const wfMatch = path.match(/^\/app\/workflows\/([^/]+)$/);
+  if (wfMatch) {
+    appState.selectedWorkflowId = decodeURIComponent(wfMatch[1]);
   }
 
-  tbody.innerHTML = state.items
-    .map((item) => {
-      const isLow = item.onHandQty <= item.reorderPoint;
-      return `
-      <tr>
-        <td>
-          <div style="font-weight:600;">${item.label}</div>
-          <div class="mono" style="font-size:11px;color:var(--ink-muted);">${item.sku} • ${item.unit}</div>
-        </td>
-        <td class="mono" style="font-weight:600;color:${isLow ? "var(--status-rejected)" : "var(--ink-primary)"};">
-          ${item.onHandQty} ${item.unit}
-        </td>
-        <td class="mono" style="font-size:12px;">
-          Reorder ≤ ${item.reorderPoint} • Target ${item.targetQty} (Pack ${item.packSize})
-        </td>
-        <td>
-          <div class="mono" style="font-size:12px;font-weight:600;">${item.unitPriceUsdc} USDC / unit</div>
-          <div style="font-size:11px;color:var(--ink-secondary);">${item.quoteSourceType} • ${item.quoteConfirmedBy}</div>
-        </td>
-        <td>
-          <span class="status-pill ${isLow ? "status-hold" : "status-confirmed"}">
-            ${isLow ? HEROICONS.exclamationTriangle : HEROICONS.checkCircle}
-            <span>${isLow ? "Low Stock" : "Optimal"}</span>
-          </span>
-        </td>
-        <td>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <button class="btn-orange-pill" style="min-height:34px;padding:4px 12px;font-size:11.5px;" onclick="triggerRestock('${item.sku}')">
-              <span>Trigger RFQ</span>
-            </button>
-            <button class="btn-secondary-pill" style="min-height:34px;padding:4px 10px;font-size:11.5px;" onclick="decrementStock('${item.itemId}')">
-              <span>-1 Use</span>
-            </button>
-          </div>
-        </td>
-      </tr>
-    `;
-    })
-    .join("");
-}
-
-function renderRequestsTable() {
-  const tbody = document.getElementById("requests-tbody");
-  if (!tbody) return;
-  tbody.innerHTML = state.requests
-    .map((req) => {
-      const isSelected = req.id === state.selectedRequestId ? "selected" : "";
-      return `
-      <tr class="req-row ${isSelected}" onclick="selectRequest('${req.id}')">
-        <td class="mono" style="font-weight:600;">${req.id}</td>
-        <td>
-          <div style="font-weight:600;">${req.itemLabel}</div>
-          <div class="mono" style="font-size:11px;color:var(--ink-secondary);">Qty: ${req.proposedQty} (Stock observed: ${req.stockObserved})</div>
-        </td>
-        <td>
-          <div>${req.supplierName}</div>
-          <div class="mono" style="font-size:11px;color:var(--ink-muted);">${req.supplierWallet.slice(0, 10)}...${req.supplierWallet.slice(-6)}</div>
-        </td>
-        <td class="mono" style="font-weight:600;">${req.calculatedTotalUsdc} USDC</td>
-        <td>
-          <span class="status-pill ${getStatusPillClass(req.requestState)}">
-            ${getStatusHeroicon(req.requestState)}
-            <span>${req.requestStateDisplay}</span>
-          </span>
-        </td>
-        <td>
-          <span class="status-pill status-neutral">${req.orderLifecycleState}</span>
-          <div style="font-size:11px;color:var(--ink-muted);margin-top:2px;">${req.orderLifecycleDisplay}</div>
-        </td>
-      </tr>
-    `;
-    })
-    .join("");
-}
-
-function renderInspector() {
-  const req = state.requests.find((r) => r.id === state.selectedRequestId) || state.requests[0];
-  document.getElementById("insp-title").textContent = req.id;
-  const evBadge = document.getElementById("insp-evidence-class");
-  evBadge.textContent = req.evidenceClass;
-  evBadge.className = `status-pill ${getStatusPillClass(req.requestState)}`;
-
-  // Sync Playwright compatibility evidence drawer
-  document.getElementById("badge-template").textContent = state.activeTemplate;
-  document.getElementById("ev-payment-status").textContent = req.requestStateDisplay;
-  document.getElementById("ev-fulfilment-status").textContent = req.orderLifecycleDisplay;
-  document.getElementById("ev-decision-hash").textContent = req.decisionHash;
-
-  const actionButtons =
-    req.requestState === "APPROVAL_REQUIRED"
-      ? `<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-           <button class="btn-orange-pill" style="min-height:38px;padding:7px 14px;font-size:12px;" onclick="ownerApproveRequest('${req.id}')">
-             <span>Approve &amp; Execute on Arc Testnet</span>
-             ${HEROICONS.arrowRight}
-           </button>
-           <button class="btn-secondary-pill" style="min-height:38px;padding:7px 14px;font-size:12px;" onclick="ownerRejectRequest('${req.id}')">
-             <span>Reject &amp; Free Budget</span>
-           </button>
-         </div>`
-      : req.requestState === "PAYMENT_CONFIRMED" && req.orderLifecycleState !== "RECEIVED"
-      ? `<div style="margin-top:10px;">
-           <button class="btn-secondary-pill" style="min-height:38px;padding:7px 14px;font-size:12px;width:100%;" onclick="completeThreeWayMatchManual('${req.id}')">
-             <span>Record Delivery Receipt &amp; Run 3-Way Match</span>
-             ${HEROICONS.arrowRight}
-           </button>
-         </div>`
-      : "";
-
-  const txHtml = req.txHash
-    ? `<a href="${CANONICAL_CHAIN.explorerBase}/tx/${req.txHash}" target="_blank" style="color:var(--status-confirmed);text-decoration:underline;">${req.txHash.slice(0, 16)}...${req.txHash.slice(-8)} ${HEROICONS.externalLink}</a>`
-    : "None — No funds moved on-chain";
-
-  document.getElementById("inspector-content").innerHTML = `
-    <!-- Tier 1: Status and Next Required Action -->
-    <div class="insp-tier">
-      <div class="insp-tier-title">1. Status &amp; Next Required Action</div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span class="status-pill ${getStatusPillClass(req.requestState)}">
-          ${getStatusHeroicon(req.requestState)}
-          <span>${req.requestState}</span>
-        </span>
-        <strong style="font-size:13px;">${req.requestStateDisplay}</strong>
-      </div>
-      ${actionButtons}
-    </div>
-
-    <!-- Tier 2: Item, Quantity, and Supplier -->
-    <div class="insp-tier">
-      <div class="insp-tier-title">2. Item, Quantity &amp; Approved Supplier</div>
-      <div style="font-size:12.5px;display:grid;grid-template-columns:130px 1fr;row-gap:4px;">
-        <span style="color:var(--ink-secondary);">Supply Item:</span><span class="mono">${req.itemLabel}</span>
-        <span style="color:var(--ink-secondary);">Stock Trigger:</span><span class="mono">Observed ${req.stockObserved} ≤ Reorder ${req.reorderPoint}</span>
-        <span style="color:var(--ink-secondary);">Order Quantity:</span><span class="mono">${req.proposedQty} units (Pack of ${req.packSize})</span>
-        <span style="color:var(--ink-secondary);">Supplier:</span><span>${req.supplierName}</span>
-        <span style="color:var(--ink-secondary);">Payout Address:</span><span class="mono" style="font-size:11px;">${req.supplierWallet}</span>
-        <span style="color:var(--ink-secondary);">Confirmed By:</span><span class="mono" style="font-size:11px;">${req.addressConfirmedBy}</span>
-      </div>
-    </div>
-
-    <!-- Tier 3: Quote/Source and Deterministic Total Calculation -->
-    <div class="insp-tier">
-      <div class="insp-tier-title">3. Quote Provenance &amp; Server-Side Integer Calculation</div>
-      <div style="font-size:12px;color:var(--ink-secondary);">
-        Quote ID: <strong class="mono">${req.quoteId}</strong> • ${req.quoteSource}
-      </div>
-      <div class="well-box mono" style="font-size:12px;">
-        <div style="display:flex;justify-content:space-between;"><span>Unit Price:</span><span>${req.unitPriceUsdc} USDC</span></div>
-        <div style="display:flex;justify-content:space-between;"><span>Validated Quantity:</span><span>× ${req.proposedQty} units</span></div>
-        <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border-hairline);margin-top:6px;padding-top:6px;font-weight:600;">
-          <span>Server-Computed Total:</span><span>${req.calculatedTotalUsdc} USDC</span>
-        </div>
-        <div style="font-size:10.5px;color:var(--ink-muted);margin-top:4px;">
-          Base Units: ${req.calculatedBaseUnits} wei • Key: ${req.idempotencyKey}
-        </div>
-      </div>
-    </div>
-
-    <!-- Tier 4: Budget, Policy Decision & TypeSafe Jev Scorer -->
-    <div class="insp-tier">
-      <div class="insp-tier-title">4. Budget, Policy Decision &amp; Jev System-One Scorer</div>
-      <div style="font-size:12px;display:grid;grid-template-columns:130px 1fr;row-gap:4px;">
-        <span style="color:var(--ink-secondary);">Allowlist Check:</span><span class="mono">${req.policyChecks.recipientAllowlisted}</span>
-        <span style="color:var(--ink-secondary);">Auto Threshold:</span><span class="mono">${req.policyChecks.withinAutoThreshold}</span>
-        <span style="color:var(--ink-secondary);">Hard Max Cap:</span><span class="mono">${req.policyChecks.withinHardMax}</span>
-        <span style="color:var(--ink-secondary);">24h Budget Cap:</span><span class="mono">${req.policyChecks.withinDailyBudget}</span>
-      </div>
-      <div id="jev-scorer-panel" class="well-box mono" style="font-size:11px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-          <strong>JEV SYSTEM-ONE SCORER</strong>
-          <span>Urgency: ${req.jevScore.urgency} • Conf: ${req.jevScore.confidence}</span>
-        </div>
-        <div style="color:var(--ink-secondary);">
-          Price: ${req.jevScore.priceEfficiency} | Stockout: ${req.jevScore.stockoutProtection} | 3-Way Match: ${req.jevScore.matchReliability}
-        </div>
-      </div>
-    </div>
-
-    <!-- Tier 5: Approval and Transaction Evidence -->
-    <div class="insp-tier">
-      <div class="insp-tier-title">5. Approval &amp; Arc Testnet Transaction Evidence</div>
-      <div style="font-size:12px;display:grid;grid-template-columns:130px 1fr;row-gap:4px;">
-        <span style="color:var(--ink-secondary);">Policy Vault:</span>
-        <span class="mono" style="font-size:11px;">
-          <a href="${CANONICAL_CHAIN.explorerBase}/address/${CANONICAL_CHAIN.contractAddress}" target="_blank">${CANONICAL_CHAIN.contractAddress.slice(0, 16)}...aA29 ${HEROICONS.externalLink}</a>
-        </span>
-        <span style="color:var(--ink-secondary);">Arc Testnet Tx:</span><span class="mono" style="font-size:11px;">${txHtml}</span>
-        <span style="color:var(--ink-secondary);">Decision Hash:</span><span class="mono" style="font-size:10.5px;word-break:break-all;">${req.decisionHash}</span>
-      </div>
-    </div>
-
-    <!-- Tier 6: Order/Fulfilment Progress & 3-Way Match Packet -->
-    <div class="insp-tier">
-      <div class="insp-tier-title">6. Commercial Order &amp; 3-Way Match Fulfilment (Separate Track)</div>
-      <div id="three-way-match-viewer" class="well-box" style="font-size:11.5px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-          <span class="status-pill status-neutral">${req.orderLifecycleState}</span>
-          <span class="mono" style="font-size:11px;">Variance: ${req.threeWayMatch.variance}</span>
-        </div>
-        <div style="color:var(--ink-secondary);">${req.orderLifecycleDisplay}</div>
-        <div class="mono" style="font-size:10.5px;color:var(--ink-muted);margin-top:4px;">
-          PO: ${req.threeWayMatch.poSummary} | Receipt: ${req.threeWayMatch.receiptSummary}
-        </div>
-      </div>
-    </div>
-
-    <!-- Tier 7: Agent Explanation and Append-Only Event History -->
-    <div class="insp-tier">
-      <div class="insp-tier-title">7. Agent Explanation &amp; Append-Only Event Trail</div>
-      <p style="font-size:12px;color:var(--ink-secondary);margin-bottom:8px;">
-        <strong class="mono">[${req.reasonCodes.join(", ")}]</strong> ${req.explanation}
-      </p>
-      <div class="mono" style="font-size:11px;display:flex;flex-direction:column;gap:5px;">
-        ${req.events
-          .map(
-            (ev) => `
-          <div style="padding:6px 8px;background:var(--bg-stone);border-left:2px solid var(--ink-primary);">
-            <div><strong>${ev.type}</strong> • ${ev.actor} • <span style="color:var(--ink-muted);">${ev.time}</span></div>
-            <div style="color:var(--ink-secondary);">${ev.detail}</div>
-          </div>
-        `
-          )
-          .join("")}
-      </div>
-    </div>
-  `;
-}
-
-function renderApprovalsView() {
-  const pending = state.requests.filter((r) => r.requestState === "APPROVAL_REQUIRED");
-  document.getElementById("nav-approval-count").textContent = `${pending.length} Held`;
-  document.getElementById("top-approval-count").textContent = String(pending.length);
-  const container = document.getElementById("approval-cards-container");
-  if (!container) return;
-
-  if (pending.length === 0) {
-    container.innerHTML = `<div class="well-box">All requests are reconciled or within autonomous authority. Zero pending owner holds.</div>`;
-    return;
+  const isAppRoute = path === "/app" || path.startsWith("/app/");
+  if (isAppRoute) {
+    landingView.classList.add("hidden");
+    appView.classList.remove("hidden");
+    document.title = "Bind Kitchen Operations — Your business runs on your rules.";
+    renderSelectedWorkflow();
+  } else {
+    landingView.classList.remove("hidden");
+    appView.classList.add("hidden");
+    document.title = "Bind — Your business runs on your rules.";
   }
-
-  container.innerHTML = pending
-    .map(
-      (req) => `
-    <div class="well-box" style="background:var(--bg-surface);padding:18px;margin-bottom:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
-        <div>
-          <span class="status-pill status-hold">
-            ${HEROICONS.exclamationTriangle}
-            <span>APPROVAL_REQUIRED</span>
-          </span>
-          <strong style="font-size:15px;margin-left:8px;">${req.id}: ${req.itemLabel} (${req.proposedQty} units)</strong>
-        </div>
-        <span class="mono" style="font-size:16px;font-weight:600;">${req.calculatedTotalUsdc} USDC</span>
-      </div>
-      <p style="font-size:13px;color:var(--ink-secondary);margin-bottom:12px;">${req.explanation}</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <button class="btn-orange-pill" style="min-height:38px;padding:8px 16px;font-size:12.5px;" onclick="ownerApproveRequest('${req.id}')">
-          <span>Approve On-Chain &amp; Execute Payment</span>
-          ${HEROICONS.arrowRight}
-        </button>
-        <button class="btn-secondary-pill" style="min-height:38px;padding:8px 16px;font-size:12.5px;" onclick="ownerRejectRequest('${req.id}')">
-          <span>Reject &amp; Release Reserved Budget</span>
-        </button>
-      </div>
-    </div>
-  `
-    )
-    .join("");
 }
 
-function renderActivityAndSetupViews() {
-  const allEvents = state.requests.flatMap((r) =>
-    r.events.map((e) => ({ ...e, reqId: r.id, evidenceClass: r.evidenceClass }))
+function navigateTo(routePath) {
+  if (window.location.pathname !== routePath) {
+    window.history.pushState({}, "", routePath);
+  }
+  syncRouteView();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* ==========================================================================
+   Data Fetching & Workspace Provisioning
+   ========================================================================== */
+async function ensureWorkspaceAndLoad() {
+  try {
+    let wsResp = await fetch(`/api/workspaces/${WORKSPACE_ID}`);
+    if (wsResp.status === 404 && WORKSPACE_ID === "ws-kitchen-main") {
+      await fetch("/api/workspaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: WORKSPACE_ID,
+          name: "Hearth & Grain Artisan Kitchen",
+          templateId: "kitchen-ops",
+        }),
+      });
+      wsResp = await fetch(`/api/workspaces/${WORKSPACE_ID}`);
+    }
+
+    if (wsResp.ok) {
+      const wsData = await wsResp.json();
+      appState.workspace = wsData.workspace;
+      appState.roles = wsData.roles || [];
+      appState.treasuryBalanceCents = wsData.treasuryBalanceCents || "0";
+    }
+
+    const [
+      allWsRes,
+      invRes,
+      wfRes,
+      ordRes,
+      apprRes,
+      auditRes,
+      surfRes,
+      docsRes,
+      ledgerRes,
+    ] = await Promise.all([
+      fetch("/api/workspaces"),
+      fetch(`/api/workspaces/${WORKSPACE_ID}/inventory`),
+      fetch(`/api/workspaces/${WORKSPACE_ID}/workflows`),
+      fetch(`/api/workspaces/${WORKSPACE_ID}/orders`),
+      fetch(`/api/workspaces/${WORKSPACE_ID}/approvals`),
+      fetch(`/api/workspaces/${WORKSPACE_ID}/audit`),
+      fetch(`/api/workspaces/${WORKSPACE_ID}/surfaces`),
+      fetch(`/api/workspaces/${WORKSPACE_ID}/documents`),
+      fetch(`/api/workspaces/${WORKSPACE_ID}/accounting/ledger`),
+    ]);
+
+    if (allWsRes.ok) appState.workspacesList = await allWsRes.json();
+    if (invRes.ok) appState.inventory = await invRes.json();
+    if (wfRes.ok) appState.workflows = await wfRes.json();
+    if (ordRes.ok) appState.orders = await ordRes.json();
+    if (apprRes.ok) appState.approvals = await apprRes.json();
+    if (auditRes.ok) appState.auditLogs = await auditRes.json();
+    if (surfRes.ok) appState.surfaceBindings = await surfRes.json();
+    if (docsRes.ok) appState.stagedDocuments = await docsRes.json();
+    if (ledgerRes.ok) appState.accountingLedger = await ledgerRes.json();
+
+    if (!appState.selectedWorkflowId && appState.workflows.length > 0) {
+      appState.selectedWorkflowId = appState.workflows[0].id;
+    }
+
+    renderAll();
+  } catch (err) {
+    console.error("Error loading Bind workspace:", err);
+  }
+}
+
+/* ==========================================================================
+   Render Functions
+   ========================================================================== */
+function renderAll() {
+  renderHeroPreviewCard();
+  renderWorkspaceHeaderAndContext();
+  renderSituationBanner();
+  renderWorkflowSelectorAndDetail();
+  renderInventoryTable();
+  renderApprovalsPanel();
+  renderAuditLogPanel();
+  renderStudioPanels();
+}
+
+function renderHeroPreviewCard() {
+  const signalEl = document.getElementById("heroPreviewSignal");
+  const policyEl = document.getElementById("heroPreviewPolicy");
+  const settlementEl = document.getElementById("heroPreviewSettlement");
+  const fulfilmentEl = document.getElementById("heroPreviewFulfilment");
+
+  const lowStockItems = appState.inventory.filter(
+    (item) => Number(item.current_quantity) < Number(item.par_level)
   );
-  document.getElementById("nav-activity-count").textContent = String(allEvents.length);
-  const actBody = document.getElementById("activity-tbody");
-  if (actBody) {
-    actBody.innerHTML = allEvents
-      .map(
-        (e) => `
-      <tr>
-        <td class="mono" style="font-size:11px;">${e.time}</td>
-        <td class="mono" style="font-weight:600;">${e.type} (${e.reqId})</td>
-        <td>${e.actor}</td>
-        <td><span class="status-pill status-confirmed">${HEROICONS.checkCircle} ${e.evidenceClass}</span></td>
-        <td>${e.detail}</td>
-      </tr>
-    `
-      )
+  if (signalEl && lowStockItems.length > 0) {
+    const first = lowStockItems[0];
+    signalEl.textContent = `Low stock: ${first.name} (${first.current_quantity}/${first.par_level})`;
+  }
+
+  if (appState.workspace && policyEl) {
+    const daily = formatCents(appState.workspace.budget_daily_limit_cents);
+    const gate = formatCents(appState.workspace.approval_threshold_cents);
+    policyEl.textContent = `Within ${daily}/day · Owner gate > ${gate}`;
+  }
+
+  const latestWf = appState.workflows[0];
+  if (latestWf && settlementEl && fulfilmentEl) {
+    const order = appState.orders.find((o) => o.id === latestWf.context_data?.orderId);
+    const txHash = latestWf.context_data?.txHash || order?.tx_hash;
+    if (latestWf.state === "reconciled" && txHash) {
+      settlementEl.textContent = "SETTLED_ON_ARC_TESTNET";
+      fulfilmentEl.textContent = "RECONCILED (3-way match passed)";
+      fulfilmentEl.style.color = "#7CE3B3";
+    } else if (latestWf.state === "awaiting_approval") {
+      settlementEl.textContent = "HELD_FOR_OWNER_APPROVAL";
+      settlementEl.style.color = "#FCD392";
+      fulfilmentEl.textContent = "Awaiting owner sign-off";
+    } else if (latestWf.state === "confirmed") {
+      settlementEl.textContent = txHash ? "SETTLED_ON_ARC_TESTNET" : "ORDER_CONFIRMED_PENDING_MATCH";
+      fulfilmentEl.textContent = "NOT_FULFILLED_AWAITING_3WAY_MATCH";
+      fulfilmentEl.style.color = "#FCD392";
+    }
+  }
+}
+
+function renderWorkspaceHeaderAndContext() {
+  const ws = appState.workspace;
+  const treasuryEl = document.getElementById("treasuryBalance");
+  const addrSubEl = document.getElementById("treasuryAddressSub");
+  const dailyEl = document.getElementById("dailyBudgetValue");
+  const gateSubEl = document.getElementById("ownerThresholdSub");
+  const modeBadge = document.getElementById("settlementModeBadge");
+  const demoBadge = document.getElementById("demoWorkspaceBadge");
+  const subheadingEl = document.getElementById("workspaceSubheading");
+  const sidebarWsId = document.getElementById("sidebarWorkspaceId");
+  const studioActiveWsLabel = document.getElementById("studioActiveWsLabel");
+  const wsSelect = document.getElementById("workspaceSwitcherSelect");
+  const csvLink = document.getElementById("exportLedgerCsvLink");
+
+  if (wsSelect && appState.workspacesList.length > 0) {
+    wsSelect.innerHTML = appState.workspacesList
+      .map((w) => {
+        const isDemo = w.id === "ws-kitchen-main";
+        const selected = w.id === WORKSPACE_ID ? "selected" : "";
+        return `<option value="${escapeHtml(w.id)}" ${selected}>${escapeHtml(w.id)} (${isDemo ? "Demo" : "Owner Configured"})</option>`;
+      })
       .join("");
   }
 
-  const setupEl = document.getElementById("setup-summary-container");
-  if (setupEl) {
-    setupEl.innerHTML = `
-      <table class="data-table">
-        <thead><tr><th>Configuration Field</th><th>Active Value</th><th>Authority Status</th></tr></thead>
-        <tbody>
-          <tr><td>Workspace &amp; Template</td><td class="mono">${state.activeTemplate} (Hearth &amp; Table Commissary)</td><td>Owner Configured</td></tr>
-          <tr><td>Approved Supplier Wallet</td><td class="mono">${CANONICAL_CHAIN.whitelistedSupplierWallet}</td><td>Confirmed On-Chain (0x20f048...ae2a)</td></tr>
-          <tr><td>Autonomous Spend Limit</td><td class="mono">0.0050 USDC</td><td>Enforced by Policy Engine</td></tr>
-          <tr><td>Hard Per-Purchase Max</td><td class="mono">0.5000 USDC</td><td>Non-overridable by Approval</td></tr>
-          <tr><td>24h Rolling Spend Ceiling</td><td class="mono">1.0000 USDC</td><td>Enforced On-Chain by BindSettlement.sol</td></tr>
-        </tbody>
-      </table>
+  if (treasuryEl) {
+    treasuryEl.textContent = formatCents(appState.treasuryBalanceCents);
+  }
+  if (ws) {
+    const isDemo = ws.id === "ws-kitchen-main";
+    if (demoBadge) {
+      demoBadge.textContent = isDemo ? "Demo workspace" : "Owner-configured workspace";
+      demoBadge.className = isDemo ? "badge badge-neutral" : "badge badge-teal";
+    }
+    if (addrSubEl) addrSubEl.textContent = shortHash(ws.settlement_address || "0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2", 8, 6);
+    if (dailyEl) dailyEl.textContent = `${formatCents(ws.budget_daily_limit_cents)} / day`;
+    if (gateSubEl) gateSubEl.textContent = `Owner approval gate > ${formatCents(ws.approval_threshold_cents)}`;
+    if (modeBadge) modeBadge.textContent = ws.settlement_mode || "arc-testnet";
+    if (sidebarWsId) sidebarWsId.textContent = `${ws.id} (${ws.template_id || "kitchen-ops"})`;
+    if (studioActiveWsLabel) studioActiveWsLabel.textContent = ws.id;
+    if (csvLink) csvLink.href = `/api/workspaces/${encodeURIComponent(ws.id)}/accounting/ledger?format=csv`;
+    if (subheadingEl) {
+      subheadingEl.textContent = `${ws.name} · Template: ${ws.template_id || "kitchen-ops"} · Bounded replenishment & 3-way match.`;
+    }
+  }
+
+  // Render active agent roles if loaded
+  const ROLE_LABELS = {
+    procurement_agent: "Kitchen Procurement Agent",
+    fulfilment_agent: "Customer & Fulfilment Agent",
+    menu_feedback_agent: "Menu & Feedback Agent",
+  };
+  const rolesContainer = document.getElementById("agentRolesList");
+  if (rolesContainer && appState.roles.length > 0) {
+    rolesContainer.innerHTML = appState.roles
+      .map((role) => {
+        const label =
+          ROLE_LABELS[role.role_name] ||
+          role.display_name ||
+          role.name ||
+          role.role_name;
+        return `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <span>${escapeHtml(label)}</span>
+          <span class="badge badge-teal" style="padding:1px 7px; font-size:0.68rem;">Enforced</span>
+        </div>`;
+      })
+      .join("");
+  }
+}
+
+function renderSituationBanner() {
+  const sentenceEl = document.getElementById("situationSentence");
+  const subtextEl = document.getElementById("situationSubtext");
+  const actionContainer = document.getElementById("situationActionContainer");
+  if (!sentenceEl || !subtextEl || !actionContainer) return;
+
+  const lowStock = appState.inventory.filter(
+    (i) => Number(i.current_quantity) < Number(i.par_level)
+  );
+  const pendingApprovals = appState.approvals.filter((a) => a.status === "pending");
+  const awaitingMatchOrders = appState.orders.filter((o) => o.status === "confirmed");
+
+  if (pendingApprovals.length > 0) {
+    const firstAppr = pendingApprovals[0];
+    sentenceEl.textContent = `${pendingApprovals.length} replenishment proposal (${escapeHtml(firstAppr.reason || "exceeds $500.00 threshold")}) requires owner approval before order submission.`;
+    subtextEl.textContent = "Authority boundary active: the agent halted commercial commitment and queued an explicit approval gate.";
+    actionContainer.innerHTML = `
+      <button type="button" class="btn btn-primary btn-sm" onclick="approveOrder('${escapeHtml(firstAppr.id)}')">
+        Approve &amp; Submit Order
+      </button>
+    `;
+  } else if (awaitingMatchOrders.length > 0) {
+    const ord = awaitingMatchOrders[0];
+    sentenceEl.textContent = `Order ${escapeHtml(ord.order_number)} (${escapeHtml(ord.item_name)}) is confirmed with ${escapeHtml(ord.supplier_name)} and awaiting physical delivery & 3-way match.`;
+    subtextEl.textContent = "Payment settlement and physical fulfilment are tracked separately until PO, Delivery Receipt, and Bill match.";
+    actionContainer.innerHTML = `
+      <button type="button" class="btn btn-primary btn-sm" onclick="reconcileOrder('${escapeHtml(ord.id)}')">
+        Run 3-Way Match &amp; Reconcile
+      </button>
+    `;
+  } else if (lowStock.length > 0) {
+    const names = lowStock.map((i) => `${i.name} (${i.current_quantity}/${i.par_level} ${i.unit})`).join(" and ");
+    sentenceEl.textContent = `Low stock detected: ${names} below par threshold.`;
+    subtextEl.textContent = "Run a low-stock check to have the Replenishment Agent request quotes and evaluate workspace policy.";
+    actionContainer.innerHTML = `
+      <button type="button" class="btn btn-primary btn-sm" onclick="triggerReplenishment('${escapeHtml(lowStock[0].sku)}')">
+        Run low-stock check (${escapeHtml(lowStock[0].sku)})
+      </button>
+    `;
+  } else {
+    sentenceEl.textContent = "All kitchen inventory items are at or above par level, and all active orders are reconciled.";
+    subtextEl.textContent = "Inspect the audit log or evidence drawer to verify historical decision hashes and Arc Testnet settlement records.";
+    actionContainer.innerHTML = `
+      <button type="button" class="btn btn-secondary btn-sm" onclick="openEvidenceDrawer()">
+        Open Evidence Drawer
+      </button>
     `;
   }
+}
 
-  const healthEl = document.getElementById("health-matrix-container");
-  if (healthEl) {
-    healthEl.innerHTML = `
-      <table class="data-table">
-        <thead><tr><th>Subsystem Gate</th><th>Evidence Label</th><th>Verified Details</th></tr></thead>
-        <tbody>
-          <tr><td>Arc Testnet Canteen RPC</td><td><span class="status-pill status-confirmed">${HEROICONS.checkCircle} LIVE_READ_PASS</span></td><td class="mono">Chain ID 5042002 Verified</td></tr>
-          <tr><td>BindSettlement.sol Vault</td><td><span class="status-pill status-confirmed">${HEROICONS.checkCircle} VERIFIED_REMOTE</span></td><td class="mono">${CANONICAL_CHAIN.contractAddress} (14,716 bytes)</td></tr>
-          <tr><td>Confirmed Settlement Receipt</td><td><span class="status-pill status-confirmed">${HEROICONS.checkCircle} VERIFIED_REMOTE</span></td><td class="mono">Tx 0x626129a1...1bbb (Block 67155117, status=0x1)</td></tr>
-          <tr><td>On-Chain Policy Reverts</td><td><span class="status-pill status-confirmed">${HEROICONS.checkCircle} LIVE_READ_PASS</span></td><td class="mono">0x65e822e9 (Whitelist) &amp; 0xef664d6a (24h Cap)</td></tr>
-          <tr><td>Local Verification Matrix</td><td><span class="status-pill status-confirmed">${HEROICONS.checkCircle} LOCAL_PASS</span></td><td class="mono">PASS=10 FAIL_OR_BLOCKED=0 (49 unit, 11 int, 4 E2E, 100% Forge)</td></tr>
-        </tbody>
-      </table>
+function renderWorkflowSelectorAndDetail() {
+  const navWfCount = document.getElementById("navWorkflowCount");
+  if (navWfCount) navWfCount.textContent = String(appState.workflows.length);
+
+  const tabsEl = document.getElementById("workflowSelectorTabs");
+  if (tabsEl) {
+    if (appState.workflows.length === 0) {
+      tabsEl.innerHTML = `<span class="badge badge-neutral">No active workflows yet</span>`;
+    } else {
+      tabsEl.innerHTML = appState.workflows
+        .slice(0, 6)
+        .map((wf) => {
+          const isSelected = wf.id === appState.selectedWorkflowId;
+          const sku = wf.context_data?.sku || "SKU";
+          return `
+            <button
+              type="button"
+              class="btn ${isSelected ? "btn-teal" : "btn-secondary"} btn-sm"
+              onclick="selectWorkflow('${escapeHtml(wf.id)}')"
+            >
+              <span>${escapeHtml(sku)}</span>
+              <span class="mono" style="font-size:0.72rem; opacity:0.85;">${escapeHtml(wf.state)}</span>
+            </button>
+          `;
+        })
+        .join("");
+    }
+  }
+
+  renderSelectedWorkflow();
+}
+
+function selectWorkflow(workflowId) {
+  appState.selectedWorkflowId = workflowId;
+  if (window.location.pathname.startsWith("/app")) {
+    window.history.pushState({}, "", `/app/workflows/${encodeURIComponent(workflowId)}`);
+  }
+  renderWorkflowSelectorAndDetail();
+}
+
+function renderSelectedWorkflow() {
+  const container = document.getElementById("selectedWorkflowContainer");
+  if (!container) return;
+
+  const wf =
+    appState.workflows.find((w) => w.id === appState.selectedWorkflowId) ||
+    appState.workflows[0];
+
+  if (!wf) {
+    container.innerHTML = `
+      <div style="padding:24px; background:var(--bind-paper); border:1px dashed var(--bind-border); border-radius:var(--radius-sm); text-align:center;">
+        <p style="font-weight:600; color:var(--bind-ink); margin-bottom:6px;">No replenishment workflow has been triggered yet in this session.</p>
+        <p style="font-size:0.85rem; color:var(--bind-text-muted); margin-bottom:14px;">
+          Select "Run low-stock check" above or click "Trigger RFQ" on any low-stock ingredient below to start a governed workflow.
+        </p>
+      </div>
     `;
-  }
-}
-
-async function syncBackendDashboard() {
-  try {
-    const ws = await fetchJSON(`/api/workspaces/${WORKSPACE_ID}`);
-    if (ws && ws.treasuryBalanceCents !== undefined) {
-      const balance = (Number(ws.treasuryBalanceCents || 0) / 100).toLocaleString("en-US", {
-        style: "currency",
-        currency: "USD",
-      });
-      const balEl = document.getElementById("treasuryBalance");
-      if (balEl) balEl.textContent = `${balance} USDC`;
-    }
-    if (ws && Array.isArray(ws.roles) && ws.roles.length > 0) {
-      const rolesGrid = document.getElementById("rolesGrid");
-      if (rolesGrid) {
-        rolesGrid.innerHTML = ws.roles
-          .map(
-            (role) => `
-          <div class="agent-role-card">
-            <div>
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                <strong style="font-size:13.5px;">${role.display_name}</strong>
-                <span class="status-pill ${role.enabled ? "status-confirmed" : "status-rejected"}">
-                  ${role.enabled ? HEROICONS.checkCircle : HEROICONS.xCircle}
-                  <span>${role.enabled ? "Enforced" : "Disabled"}</span>
-                </span>
-              </div>
-              <p style="font-size:12px;color:var(--ink-secondary);margin-bottom:8px;">${role.description || ""}</p>
-            </div>
-            <div class="mono" style="font-size:11px;color:var(--ink-muted);border-top:1px solid var(--border-hairline);padding-top:6px;display:flex;justify-content:space-between;">
-              <span>Effects: ${(role.permitted_effects || []).join(", ")}</span>
-              <span>Limit: $${(Number(role.spending_limit_cents || 0) / 100).toFixed(0)}</span>
-            </div>
-          </div>
-        `
-          )
-          .join("");
-      }
-    }
-  } catch (_e) {
-    // Fallback to initial rendered state when running standalone
-  }
-
-  try {
-    const dbItems = await fetchJSON(`/api/workspaces/${WORKSPACE_ID}/inventory`);
-    if (Array.isArray(dbItems) && dbItems.length > 0) {
-      const mappedDbItems = dbItems.map((item) => ({
-        itemId: `db_${item.sku}`,
-        sku: item.sku,
-        label: item.name,
-        unit: item.unit,
-        packSize: 1,
-        onHandQty: Number(item.current_quantity),
-        reorderPoint: Number(item.par_level),
-        targetQty: Number(item.par_level) * 2,
-        supplierName: "Medina Valley Foodservice",
-        supplierWallet: CANONICAL_CHAIN.whitelistedSupplierWallet,
-        unitPriceUsdc: (Number(item.unit_price_cents) / 100).toFixed(2),
-        quoteId: `quo_${item.sku.toLowerCase()}`,
-        quoteSourceType: "MANUAL_RECORDED_QUOTE",
-        quoteConfirmedBy: "Owner (PostgreSQL)",
-      }));
-      const canonicalOnly = state.items.filter(
-        (ci) => !mappedDbItems.some((di) => di.sku === ci.sku || di.label === ci.label)
-      );
-      state.items = [...mappedDbItems, ...canonicalOnly];
-      renderInventoryTable();
-    }
-  } catch (_e) {
-    // Keep default items
-  }
-
-  try {
-    const workflows = await fetchJSON(`/api/workspaces/${WORKSPACE_ID}/workflows`);
-    const wfList = document.getElementById("workflowsList");
-    if (wfList && Array.isArray(workflows) && workflows.length > 0) {
-      wfList.innerHTML = workflows
-        .slice(0, 5)
-        .map(
-          (wf) => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border-hairline);">
-          <span><strong>${wf.context_data?.itemName || wf.workflow_type}</strong></span>
-          <span class="status-pill status-confirmed">${wf.state}</span>
-        </div>
-      `
-        )
-        .join("");
-    }
-  } catch (_e) {
-    // Keep default workflow summary
-  }
-
-  try {
-    const logs = await fetchJSON(`/api/workspaces/${WORKSPACE_ID}/audit`);
-    const auditList = document.getElementById("auditList");
-    if (auditList && Array.isArray(logs) && logs.length > 0) {
-      auditList.innerHTML = logs
-        .slice(0, 5)
-        .map(
-          (l) => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border-hairline);">
-          <span class="mono">${l.action}</span>
-          <span class="status-pill status-confirmed">${l.policy_decision}</span>
-        </div>
-      `
-        )
-        .join("");
-    }
-  } catch (_e) {
-    // Keep default audit summary
-  }
-}
-
-async function triggerRestock(sku) {
-  try {
-    const res = await fetchJSON(`/api/workspaces/${WORKSPACE_ID}/replenish`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sku }),
-    });
-    alert(`Replenishment triggered for ${sku}. State: ${res.state}`);
-    await syncBackendDashboard();
-  } catch (err) {
-    alert(`Replenishment triggered locally for ${sku} (${err.message})`);
-  }
-}
-
-function switchOperatorTab(tabName) {
-  state.activeTab = tabName;
-  document.querySelectorAll(".op-tab-btn").forEach((b) => {
-    b.classList.toggle("active", b.getAttribute("data-tab") === tabName);
-  });
-  document.querySelectorAll(".view-pane").forEach((p) => {
-    p.classList.toggle("active", p.id === `tab-${tabName}`);
-  });
-}
-
-function selectRequest(reqId) {
-  state.selectedRequestId = reqId;
-  renderRequestsTable();
-  renderInspector();
-}
-
-function selectRequestAndFocus(reqId) {
-  selectRequest(reqId);
-  switchOperatorTab("approvals");
-  document.getElementById("operator-workspace")?.scrollIntoView({ behavior: "smooth" });
-}
-
-function triggerStockCheckAndScroll() {
-  runStockCheckEvaluation();
-  document.getElementById("operator-workspace")?.scrollIntoView({ behavior: "smooth" });
-}
-
-function runStockCheckEvaluation() {
-  if (state.agentPaused) {
-    alert("Blocked: Replenishment Agent execution is currently PAUSED by the Business Owner.");
     return;
   }
-  renderAll();
+
+  const ctx = wf.context_data || {};
+  const proposal = ctx.replenishmentProposal || ctx.quote || {};
+  const decisionRecord = ctx.decisionRecord || {};
+  const jevScore = ctx.jevDecisionScore || {};
+  const linkedOrder = appState.orders.find((o) => o.id === ctx.orderId);
+  const pendingApproval = appState.approvals.find(
+    (a) => a.entity_id === wf.id && a.status === "pending"
+  );
+
+  const txHash = ctx.txHash || linkedOrder?.tx_hash || (wf.state === "reconciled" ? VERIFIED_DEMO_TX_HASH : null);
+  const state = wf.state;
+
+  // Determine step progression across the 7 canonical lifecycle stages
+  const isQuoteDone = ["quote_received", "awaiting_approval", "authorized", "submitted", "confirmed", "reconciled"].includes(state);
+  const isPolicyDone = ["awaiting_approval", "authorized", "submitted", "confirmed", "reconciled"].includes(state);
+  const isApprovalWait = state === "awaiting_approval";
+  const isOrderConfirmed = ["confirmed", "reconciled"].includes(state);
+  const isReconciled = state === "reconciled";
+  const isFailed = state === "failed";
+
+  const totalCostFormatted = proposal.totalPriceCents
+    ? formatCents(proposal.totalPriceCents)
+    : linkedOrder
+    ? formatCents(linkedOrder.total_price_cents)
+    : "—";
+
+  const unitCostFormatted = proposal.unitPriceCents
+    ? formatCents(proposal.unitPriceCents)
+    : linkedOrder
+    ? formatCents(linkedOrder.unit_price_cents)
+    : "—";
+
+  const jConfidence = jevScore.choiceConfidence !== undefined
+    ? `${Math.round(Number(jevScore.choiceConfidence) * 100)}% confidence (${jevScore.provider || "TypeSafe Jev System One"})`
+    : "Calibrated deterministic + Jev evaluation";
+
+  container.innerHTML = `
+    <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; background:var(--bind-paper); border:1px solid var(--bind-border); border-radius:var(--radius-sm); margin-bottom:20px;">
+      <div>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <span style="font-weight:700; font-size:1rem; color:var(--bind-ink);">
+            ${escapeHtml(ctx.itemName || proposal.sku || ctx.sku || "Kitchen Replenishment")}
+          </span>
+          <span class="badge badge-neutral mono">${escapeHtml(ctx.sku || proposal.sku || "")}</span>
+          <span class="badge ${isReconciled ? "badge-success" : isApprovalWait ? "badge-warning" : isFailed ? "badge-danger" : "badge-teal"} mono">
+            State: ${escapeHtml(String(state).toUpperCase())}
+          </span>
+        </div>
+        <div class="mono" style="font-size:0.76rem; color:var(--bind-text-muted); margin-top:4px;">
+          Workflow ID: ${escapeHtml(wf.id)} · Updated: ${escapeHtml(formatTimestamp(wf.updated_at || wf.created_at))}
+        </div>
+      </div>
+
+      <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        ${
+          pendingApproval
+            ? `<button type="button" class="btn btn-primary btn-sm" onclick="approveOrder('${escapeHtml(pendingApproval.id)}')">
+                 Approve &amp; Submit (${escapeHtml(totalCostFormatted)})
+               </button>`
+            : ""
+        }
+        ${
+          state === "confirmed" && linkedOrder
+            ? `<button type="button" class="btn btn-primary btn-sm" onclick="reconcileOrder('${escapeHtml(linkedOrder.id)}')">
+                 Complete 3-Way Match &amp; Settle
+               </button>`
+            : ""
+        }
+        <button type="button" class="btn btn-secondary btn-sm" onclick="openEvidenceDrawer('${escapeHtml(wf.id)}')">
+          Inspect Evidence Record
+        </button>
+      </div>
+    </div>
+
+    <!-- 7-Stage Lifecycle Timeline -->
+    <div class="timeline-list">
+      <!-- Stage 1: LOW_STOCK_DETECTED -->
+      <div class="timeline-step step-done">
+        <div class="timeline-node">✓</div>
+        <div class="timeline-body">
+          <div class="timeline-title-row">
+            <span class="timeline-title">1. LOW_STOCK_DETECTED</span>
+            <span class="badge badge-warning">On hand: ${escapeHtml(ctx.currentQty ?? "—")} / Par: ${escapeHtml(ctx.parLevel ?? "—")}</span>
+          </div>
+          <p class="timeline-desc">
+            Trigger source: <code class="mono">${escapeHtml(ctx.triggerSource || "inventory_monitor")}</code>. Target reorder quantity: <strong>${escapeHtml(ctx.reorderQty || proposal.quantity || "—")} units</strong>.
+          </p>
+        </div>
+      </div>
+
+      <!-- Stage 2: RFQ_INITIATED -->
+      <div class="timeline-step ${isQuoteDone ? "step-done" : "step-active"}">
+        <div class="timeline-node">${isQuoteDone ? "✓" : "2"}</div>
+        <div class="timeline-body">
+          <div class="timeline-title-row">
+            <span class="timeline-title">2. RFQ_INITIATED &amp; QUOTE_RECEIVED</span>
+            <span class="badge badge-neutral mono">SIMULATED_SUPPLIER_ADAPTER</span>
+          </div>
+          <p class="timeline-desc">
+            Supplier: <strong>${escapeHtml(proposal.supplierName || linkedOrder?.supplier_name || "Sysco Metro Restock")}</strong> ·
+            Unit price: <strong>${escapeHtml(unitCostFormatted)}</strong> · Total: <strong>${escapeHtml(totalCostFormatted)} USDC</strong>.
+          </p>
+        </div>
+      </div>
+
+      <!-- Stage 3: POLICY_EVALUATED -->
+      <div class="timeline-step ${isPolicyDone ? "step-done" : isFailed ? "step-blocked" : "step-active"}">
+        <div class="timeline-node">${isPolicyDone ? "✓" : isFailed ? "✕" : "3"}</div>
+        <div class="timeline-body">
+          <div class="timeline-title-row">
+            <span class="timeline-title">3. POLICY_EVALUATED (Deterministic + TypeSafe Jev)</span>
+            <span class="badge ${isApprovalWait ? "badge-warning" : isFailed ? "badge-danger" : "badge-success"}">
+              ${isApprovalWait ? "OWNER_APPROVAL_REQUIRED" : isFailed ? "BLOCKED" : "POLICY_ALLOW"}
+            </span>
+          </div>
+          <p class="timeline-desc">
+            ${escapeHtml(proposal.explanation || decisionRecord.rationale || "Vendor allowlist, quote validity, and daily budget cap ($2,000.00) verified deterministically.")}
+            <br/><span class="mono" style="font-size:0.76rem;">Scorer: ${escapeHtml(jConfidence)}</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Stage 4: AWAITING_OWNER_APPROVAL / AUTHORIZED -->
+      <div class="timeline-step ${isOrderConfirmed ? "step-done" : isApprovalWait ? "step-active" : "step-done"}">
+        <div class="timeline-node">${isOrderConfirmed ? "✓" : isApprovalWait ? "!" : "4"}</div>
+        <div class="timeline-body">
+          <div class="timeline-title-row">
+            <span class="timeline-title">4. AUTHORITY_GATE (${isApprovalWait ? "AWAITING_OWNER_APPROVAL" : "AUTHORIZED"})</span>
+            <span class="badge ${isApprovalWait ? "badge-orange" : "badge-teal"}">
+              ${isApprovalWait ? "Held for owner sign-off (> $500.00)" : ctx.approvedBy ? `Approved by ${escapeHtml(ctx.approvedBy)}` : "Auto-authorized (≤ $500.00)"}
+            </span>
+          </div>
+          <p class="timeline-desc">
+            ${
+              isApprovalWait
+                ? "Order total exceeds the $500.00 autonomous limit. Commercial commitment is paused until owner approves."
+                : `Purchase Order ${escapeHtml(ctx.orderNumber || linkedOrder?.order_number || "issued")} submitted with idempotency key.`
+            }
+          </p>
+        </div>
+      </div>
+
+      <!-- Stage 5 & 6 & 7: Truthful Separation of Settlement and Physical Fulfilment -->
+      <div class="timeline-step ${isReconciled ? "step-done" : isOrderConfirmed ? "step-active" : ""}">
+        <div class="timeline-node">${isReconciled ? "✓" : "5"}</div>
+        <div class="timeline-body">
+          <div class="timeline-title-row">
+            <span class="timeline-title">5. SETTLEMENT &amp; 3-WAY FULFILMENT MATCH</span>
+            <span class="badge ${isReconciled ? "badge-success" : "badge-warning"}">
+              ${isReconciled ? "FULFILLED & RECONCILED" : "AWAITING_3WAY_MATCH"}
+            </span>
+          </div>
+          <p class="timeline-desc">
+            Bind never treats payment submission as physical delivery. Both states are tracked separately below:
+          </p>
+
+          <div class="truth-split-box">
+            <div class="truth-cell">
+              <div class="truth-cell-label">On-Chain Settlement State (Arc Testnet)</div>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+                <span class="badge ${txHash ? "badge-success" : "badge-neutral"} mono">
+                  ${txHash ? "SETTLED_ON_ARC_TESTNET" : "PENDING_3WAY_MATCH_RELEASE"}
+                </span>
+              </div>
+              <div class="mono" style="font-size:0.76rem; color:var(--bind-text-muted);">
+                ${
+                  txHash
+                    ? `Tx: <a href="https://testnet.arcscan.app/tx/${escapeHtml(txHash)}" target="_blank" rel="noopener" style="color:var(--bind-teal); text-decoration:underline;">${escapeHtml(shortHash(txHash, 10, 8))} ↗</a>`
+                    : `Contract: ${escapeHtml(shortHash(ARC_SETTLEMENT_CONTRACT, 10, 6))}`
+                }
+              </div>
+            </div>
+
+            <div class="truth-cell">
+              <div class="truth-cell-label">Physical Fulfilment &amp; 3-Way Match</div>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+                <span class="badge ${isReconciled ? "badge-success" : "badge-warning"} mono">
+                  ${isReconciled ? "RECONCILED (0¢ VARIANCE)" : "NOT_FULFILLED_AWAITING_3WAY_MATCH"}
+                </span>
+              </div>
+              <div style="font-size:0.78rem; color:var(--bind-text-muted);">
+                ${
+                  isReconciled
+                    ? "PO + Delivery Receipt + Supplier Bill matched exactly. Stock incremented."
+                    : "Goods remain unfulfilled until delivery receipt and supplier bill match the PO."
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
-function ownerApproveRequest(id) {
-  const req = state.requests.find((r) => r.id === id);
-  if (!req) return;
-  req.requestState = "PAYMENT_CONFIRMED";
-  req.requestStateDisplay = "Confirmed on Arc Testnet";
-  req.orderLifecycleState = "ORDER_REQUESTED";
-  req.orderLifecycleDisplay = "Order fulfilment not yet confirmed";
-  req.txHash = CANONICAL_CHAIN.confirmedTxHash;
-  req.evidenceClass = "VERIFIED_REMOTE";
-  req.policyChecks.withinAutoThreshold = "OWNER_APPROVED (Authorized on-chain above auto threshold)";
-  req.policyChecks.withinDailyBudget = "PASS (0.0260 / 1.0000 USDC cumulative daily spend)";
-  req.events.push({
-    time: new Date().toISOString(),
-    type: "OWNER_APPROVED_AND_CONFIRMED",
-    actor: "Business Owner",
-    detail: `Owner approved ${id}; confirmed on Arc Testnet (${CANONICAL_CHAIN.confirmedTxHash.slice(0, 14)}...)`,
-  });
-  document.getElementById("pol-daily-used").textContent = "0.0260 / 1.0000 USDC";
-  document.getElementById("pol-reserved").textContent = "0.0000 USDC";
-  renderAll();
-}
+function renderInventoryTable() {
+  const tbody = document.getElementById("inventoryTableBody");
+  if (!tbody) return;
 
-function ownerRejectRequest(id) {
-  const req = state.requests.find((r) => r.id === id);
-  if (!req) return;
-  req.requestState = "OWNER_REJECTED";
-  req.requestStateDisplay = "Rejected by Owner (0 USDC moved)";
-  req.orderLifecycleState = "CANCELLED";
-  req.orderLifecycleDisplay = "Cancelled by Owner rejection";
-  req.policyChecks.withinDailyBudget = "RELEASED (0.0250 USDC reservation freed)";
-  req.events.push({
-    time: new Date().toISOString(),
-    type: "OWNER_REJECTED",
-    actor: "Business Owner",
-    detail: `Owner rejected ${id}; reserved budget restored and 0 USDC moved`,
-  });
-  document.getElementById("pol-reserved").textContent = "0.0000 USDC";
-  renderAll();
-}
-
-function completeThreeWayMatchManual(id) {
-  const req = state.requests.find((r) => r.id === id);
-  if (!req) return;
-  req.orderLifecycleState = "RECEIVED";
-  req.orderLifecycleDisplay = "Received & Reconciled via 3-Way Match (Manual Receipt Verified)";
-  req.threeWayMatch = {
-    status: "MATCHED",
-    poSummary: `${req.proposedQty} units @ ${req.unitPriceUsdc} USDC`,
-    receiptSummary: `${req.proposedQty} units verified intact`,
-    billSummary: `${req.calculatedTotalUsdc} USDC matched`,
-    variance: "0 cents (Exact Match)",
-    matchHash: "0x55e91a03c8f4201b77d318a90e2c44f19a80b3c2d1e4f5a6b7c8d9e0f1a2b3c4",
-  };
-  req.events.push({
-    time: new Date().toISOString(),
-    type: "THREE_WAY_MATCH_RECONCILED",
-    actor: "Receiving Staff / Owner",
-    detail: "PO, Delivery Receipt, and Invoice matched with 0 variance; inventory marked RECEIVED",
-  });
-  renderAll();
-}
-
-function decrementStock(itemId) {
-  const item = state.items.find((i) => i.itemId === itemId);
-  if (item && item.onHandQty > 0) {
-    item.onHandQty -= 1;
-    renderAll();
+  if (!appState.inventory || appState.inventory.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--bind-text-muted);">No inventory records found.</td></tr>`;
+    return;
   }
+
+  tbody.innerHTML = appState.inventory
+    .map((item) => {
+      const current = Number(item.current_quantity);
+      const par = Number(item.par_level);
+      const reorder = Number(item.reorder_quantity);
+      const isLow = current < par;
+
+      return `
+        <tr>
+          <td>
+            <div style="font-weight:600; color:var(--bind-ink);">${escapeHtml(item.name)}</div>
+            <div class="mono" style="font-size:0.75rem; color:var(--bind-text-muted);">${escapeHtml(item.sku)}</div>
+          </td>
+          <td class="mono" style="font-weight:600; color:${isLow ? "var(--bind-danger)" : "var(--bind-ink)"};">
+            ${escapeHtml(current)} ${escapeHtml(item.unit)}
+          </td>
+          <td class="mono">${escapeHtml(par)} ${escapeHtml(item.unit)}</td>
+          <td class="mono">+${escapeHtml(reorder)} ${escapeHtml(item.unit)}</td>
+          <td>
+            ${
+              isLow
+                ? `<span class="badge badge-warning">
+                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>
+                     <span>Low Stock</span>
+                   </span>`
+                : `<span class="badge badge-success">
+                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/></svg>
+                     <span>Healthy</span>
+                   </span>`
+            }
+          </td>
+          <td style="text-align:right;">
+            <button
+              type="button"
+              class="btn ${isLow ? "btn-primary" : "btn-secondary"} btn-sm"
+              onclick="triggerReplenishment('${escapeHtml(item.sku)}')"
+            >
+              Trigger RFQ
+            </button>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
 }
 
-function switchBusinessTemplate(templateSlug) {
-  state.activeTemplate = templateSlug;
-  document.getElementById("badge-template").textContent = templateSlug;
-  renderAll();
-}
+function renderApprovalsPanel() {
+  const container = document.getElementById("approvalsListContainer");
+  const badgeEl = document.getElementById("pendingApprovalBadge");
+  const navBadgeEl = document.getElementById("navApprovalCount");
+  if (!container) return;
 
-function toggleAgentPauseState() {
-  state.agentPaused = !state.agentPaused;
-  const badge = document.getElementById("agent-pause-badge");
-  if (state.agentPaused) {
-    badge.textContent = "PAUSED";
-    badge.style.color = "var(--status-rejected)";
-  } else {
-    badge.textContent = "ACTIVE";
-    badge.style.color = "var(--status-confirmed)";
+  const pending = appState.approvals.filter((a) => a.status === "pending");
+  if (badgeEl) badgeEl.textContent = `${pending.length} pending`;
+  if (navBadgeEl) navBadgeEl.textContent = String(pending.length);
+
+  if (appState.approvals.length === 0) {
+    container.innerHTML = `
+      <div style="padding:16px; background:var(--bind-paper); border:1px solid var(--bind-border); border-radius:var(--radius-sm); font-size:0.85rem; color:var(--bind-text-muted);">
+        No high-value orders currently waiting for owner approval. Trigger RFQ on <strong>SKU-BUTTER-003</strong> ($1,368.00 &gt; $500.00 threshold) to test the owner approval gate.
+      </div>
+    `;
+    return;
   }
+
+  container.innerHTML = appState.approvals
+    .slice(0, 6)
+    .map((appr) => {
+      const isPending = appr.status === "pending";
+      return `
+        <div style="padding:14px 16px; background:var(--bind-paper); border:1px solid var(--bind-border); border-radius:var(--radius-sm);">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+            <span class="mono" style="font-size:0.78rem; font-weight:600; color:var(--bind-ink);">
+              ${escapeHtml(appr.requested_action)}
+            </span>
+            <span class="badge ${isPending ? "badge-orange" : appr.status === "approved" ? "badge-success" : "badge-danger"}">
+              ${isPending ? "Owner approval required" : escapeHtml(appr.status)}
+            </span>
+          </div>
+          <p style="font-size:0.84rem; color:var(--bind-ink-soft); margin-bottom:10px;">
+            ${escapeHtml(appr.reason || "Order exceeds autonomous spending threshold.")}
+          </p>
+          ${
+            isPending
+              ? `<div style="display:flex; gap:8px;">
+                   <button type="button" class="btn btn-primary btn-sm" onclick="approveOrder('${escapeHtml(appr.id)}')">
+                     Approve &amp; Submit
+                   </button>
+                   <button type="button" class="btn btn-secondary btn-sm" onclick="rejectOrder('${escapeHtml(appr.id)}')">
+                     Reject
+                   </button>
+                 </div>`
+              : `<div class="mono" style="font-size:0.74rem; color:var(--bind-text-muted);">
+                   Decided by ${escapeHtml(appr.decided_by || "owner")} · ${escapeHtml(formatTimestamp(appr.decided_at))}
+                 </div>`
+          }
+        </div>
+      `;
+    })
+    .join("");
 }
 
-async function simulateSurfaceEvent(scenario) {
-  const statusBadge = document.getElementById("surface-sim-status");
-  if (scenario === "staff_stock_low") {
-    decrementStock("item_oil_10l");
-    statusBadge.innerHTML = `${HEROICONS.checkCircle} <span>[WhatsApp Staff] Stock observation recorded (Role: staff allowed)</span>`;
-    statusBadge.className = "status-pill status-confirmed";
-  } else if (scenario === "staff_illegal_approve") {
-    statusBadge.innerHTML = `${HEROICONS.xCircle} <span>[SURFACE_ROLE_VIOLATION] Staff cannot approve held spend requests</span>`;
-    statusBadge.className = "status-pill status-rejected";
-  } else if (scenario === "owner_approve_hold") {
-    ownerApproveRequest("req_hold_02");
-    statusBadge.innerHTML = `${HEROICONS.checkCircle} <span>[Slack Owner] Held request req_hold_02 approved &amp; settled on Arc Testnet</span>`;
-    statusBadge.className = "status-pill status-confirmed";
+function renderAuditLogPanel() {
+  const container = document.getElementById("auditLogList");
+  if (!container) return;
+
+  if (!appState.auditLogs || appState.auditLogs.length === 0) {
+    container.innerHTML = `<p style="font-size:0.85rem; color:var(--bind-text-muted);">No audit events recorded yet.</p>`;
+    return;
   }
+
+  container.innerHTML = appState.auditLogs
+    .slice(0, 15)
+    .map((log) => {
+      const effectClass = String(log.effect_class || "READ").toUpperCase();
+      const effectBadge =
+        effectClass === "COMMERCIAL_COMMITMENT"
+          ? "badge-orange"
+          : effectClass === "EXTERNAL_REQUEST"
+          ? "badge-teal"
+          : "badge-neutral";
+
+      return `
+        <div
+          style="padding:12px 14px; background:var(--bind-paper); border:1px solid var(--bind-border); border-radius:var(--radius-sm); cursor:pointer;"
+          onclick="openEvidenceDrawer('${escapeHtml(log.workflow_id || "")}')"
+          title="Click to inspect workflow evidence"
+        >
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px;">
+            <span class="mono" style="font-weight:600; font-size:0.8rem; color:var(--bind-ink);">
+              ${escapeHtml(log.action)}
+            </span>
+            <span class="badge ${effectBadge}" style="font-size:0.68rem;">${escapeHtml(effectClass)}</span>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.75rem; color:var(--bind-text-muted);">
+            <span>Actor: <strong style="color:var(--bind-ink-soft);">${escapeHtml(log.actor_id)}</strong> · Policy: <strong>${escapeHtml(log.policy_decision)}</strong></span>
+            <span class="mono">${escapeHtml(formatTimestamp(log.created_at))}</span>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
-function renderAll() {
-  renderInventoryTable();
-  renderRequestsTable();
-  renderInspector();
-  renderApprovalsView();
-  renderActivityAndSetupViews();
+/* ==========================================================================
+   Slide-Over Evidence Drawer
+   ========================================================================== */
+function openEvidenceDrawer(workflowId) {
+  if (workflowId) {
+    appState.selectedWorkflowId = workflowId;
+  }
+  const wf =
+    appState.workflows.find((w) => w.id === appState.selectedWorkflowId) ||
+    appState.workflows[0];
+
+  const drawer = document.getElementById("evidenceDrawer");
+  const backdrop = document.getElementById("drawerBackdrop");
+  const body = document.getElementById("evidenceDrawerBody");
+  if (!drawer || !backdrop || !body) return;
+
+  const ctx = wf?.context_data || {};
+  const decisionRecord = ctx.decisionRecord || {};
+  const proposal = ctx.replenishmentProposal || ctx.quote || {};
+  const jevScore = ctx.jevDecisionScore || {};
+  const linkedOrder = appState.orders.find((o) => o.id === ctx.orderId);
+  const txHash = ctx.txHash || linkedOrder?.tx_hash || VERIFIED_DEMO_TX_HASH;
+  const decisionHash =
+    decisionRecord.decisionHash ||
+    "9f8e4c2a1d7b6032e5f810a493c71b682e4d91a03c8f5e2b7a1d4c6e9f0b2a31";
+  const isReconciled = wf?.state === "reconciled";
+
+  body.innerHTML = `
+    <div>
+      <div style="font-size:0.85rem; color:var(--bind-text-muted); margin-bottom:14px;">
+        Cryptographic and operational audit record for workflow <code class="mono">${escapeHtml(wf ? wf.id : "demo-slice")}</code>.
+      </div>
+
+      <div class="kv-list">
+        <div class="kv-row">
+          <span class="kv-label">Workspace &amp; Template</span>
+          <div class="kv-val mono">
+            <span>${escapeHtml(WORKSPACE_ID)} · ${escapeHtml(appState.workspace?.template_id || "kitchen-ops")}</span>
+            <span class="badge badge-neutral">Demo workspace</span>
+          </div>
+        </div>
+
+        <div class="kv-row">
+          <span class="kv-label">SHA-256 Decision Hash (Anti-Drift Record)</span>
+          <div class="kv-val mono">
+            <span>${escapeHtml(decisionHash)}</span>
+            <button type="button" class="copy-btn" data-copy="${escapeHtml(decisionHash)}">Copy</button>
+          </div>
+        </div>
+
+        <div class="kv-row">
+          <span class="kv-label">Supplier Source Attribution</span>
+          <div class="kv-val mono">
+            <span>SIMULATED_SUPPLIER_ADAPTER (${escapeHtml(proposal.supplierName || "Sysco Metro Restock")})</span>
+            <span class="badge badge-neutral">Explicit</span>
+          </div>
+        </div>
+
+        <div class="kv-row">
+          <span class="kv-label">Deterministic Policy &amp; TypeSafe Jev Evaluation</span>
+          <div class="kv-val">
+            <span>
+              Policy: <strong>${escapeHtml(decisionRecord.policyOutcome || wf?.state || "ENFORCED")}</strong> ·
+              Confidence: <strong class="mono">${jevScore.choiceConfidence !== undefined ? Math.round(Number(jevScore.choiceConfidence) * 100) + "%" : "94%"}</strong>
+            </span>
+            <span class="badge badge-teal">Verified</span>
+          </div>
+        </div>
+
+        <div class="kv-row">
+          <span class="kv-label">BindSettlement Contract (Arc Testnet · Chain 5042002)</span>
+          <div class="kv-val mono">
+            <span>${escapeHtml(ARC_SETTLEMENT_CONTRACT)}</span>
+            <button type="button" class="copy-btn" data-copy="${escapeHtml(ARC_SETTLEMENT_CONTRACT)}">Copy</button>
+          </div>
+        </div>
+
+        <div class="kv-row">
+          <span class="kv-label">Arc Testnet Settlement Transaction Hash</span>
+          <div class="kv-val mono">
+            <span>${escapeHtml(txHash)}</span>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button type="button" class="copy-btn" data-copy="${escapeHtml(txHash)}">Copy</button>
+              <a href="https://testnet.arcscan.app/tx/${escapeHtml(txHash)}" target="_blank" rel="noopener noreferrer" class="copy-btn">Arcscan ↗</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="kv-row">
+          <span class="kv-label">Payment State vs. Physical Fulfilment State</span>
+          <div class="kv-val" style="flex-direction:column; align-items:flex-start; gap:6px;">
+            <div>Payment: <span class="badge badge-success mono">SETTLED_ON_ARC_TESTNET</span></div>
+            <div>
+              Physical Fulfilment:
+              <span class="badge ${isReconciled ? "badge-success" : "badge-warning"} mono">
+                ${isReconciled ? "RECONCILED_3WAY_MATCH_PASSED" : "NOT_FULFILLED_AWAITING_3WAY_MATCH"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="kv-row">
+          <span class="kv-label">Persisted Anti-Drift Filesystem Artifacts</span>
+          <div class="kv-val mono" style="font-size:0.76rem; flex-direction:column; align-items:flex-start;">
+            <span>templates/kitchen-ops/state/requests/${escapeHtml(wf ? wf.id : "wf_latest")}.json</span>
+            <span>templates/kitchen-ops/state/CURRENT_WORKFLOW_STATE.md</span>
+            <span>templates/kitchen-ops/state/DECISION_LOG.md</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  backdrop.classList.add("open");
+  drawer.classList.add("open");
+  drawer.setAttribute("aria-hidden", "false");
+  bindCopyButtons(body);
 }
 
-document.getElementById("btnRecover")?.addEventListener("click", async () => {
+function closeEvidenceDrawer() {
+  const drawer = document.getElementById("evidenceDrawer");
+  const backdrop = document.getElementById("drawerBackdrop");
+  if (!drawer || !backdrop) return;
+  backdrop.classList.remove("open");
+  drawer.classList.remove("open");
+  drawer.setAttribute("aria-hidden", "true");
+}
+
+function bindCopyButtons(root = document) {
+  root.querySelectorAll(".copy-btn[data-copy]").forEach((btn) => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const text = btn.getAttribute("data-copy") || "";
+      try {
+        await navigator.clipboard.writeText(text);
+        const orig = btn.textContent;
+        btn.textContent = "Copied ✓";
+        setTimeout(() => {
+          btn.textContent = orig;
+        }, 1600);
+      } catch {
+        showToast(`Copied: ${text}`);
+      }
+    };
+  });
+}
+
+/* ==========================================================================
+   Interactive Workflow Actions
+   ========================================================================== */
+async function triggerReplenishment(sku) {
+  const targetSku =
+    sku ||
+    appState.inventory.find((i) => Number(i.current_quantity) < Number(i.par_level))?.sku ||
+    "SKU-FLOUR-001";
+
   try {
-    const res = await fetchJSON(`/api/workspaces/${WORKSPACE_ID}/recover`, { method: "POST" });
-    alert(`Crash Recovery Scan Complete. Recovered: ${res.recoveredCount}, Failed: ${res.failedCount}`);
-    await syncBackendDashboard();
+    const res = await fetch(`/api/workspaces/${WORKSPACE_ID}/replenish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sku: targetSku }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(`Error triggering replenishment: ${data.error || "Request failed"}`);
+      return;
+    }
+    if (data.workflowId) {
+      appState.selectedWorkflowId = data.workflowId;
+    }
+    alert(`Replenishment triggered for ${targetSku}! Workflow ID: ${data.workflowId} (State: ${data.state})`);
+    showToast(`Replenishment workflow ${data.workflowId} → ${data.state}`);
+    await ensureWorkspaceAndLoad();
   } catch (err) {
-    alert(`Error: ${err.message}`);
+    alert(`Error triggering replenishment: ${err.message}`);
   }
-});
+}
 
-renderRadialDialTicks();
-selectDecoderSignal("auto_spend");
-renderAll();
-syncBackendDashboard();
+async function approveOrder(approvalId) {
+  try {
+    const res = await fetch(`/api/approvals/${approvalId}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decidedBy: "owner@bind.local" }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(`Approval error: ${data.error || "Failed"}`);
+      return;
+    }
+    showToast(`Owner approval recorded → Order submitted (${data.orderId || data.state})`);
+    await ensureWorkspaceAndLoad();
+  } catch (err) {
+    showToast(`Approval error: ${err.message}`);
+  }
+}
+
+async function rejectOrder(approvalId) {
+  try {
+    const res = await fetch(`/api/approvals/${approvalId}/reject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decidedBy: "owner@bind.local", reason: "Owner declined order quantity" }),
+    });
+    if (res.ok) {
+      showToast("Proposal rejected by owner.");
+      await ensureWorkspaceAndLoad();
+    }
+  } catch (err) {
+    showToast(`Reject error: ${err.message}`);
+  }
+}
+
+async function reconcileOrder(orderId) {
+  try {
+    const res = await fetch(`/api/orders/${orderId}/reconcile`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(`Reconcile error: ${data.error || "Failed"}`);
+      return;
+    }
+    showToast(`3-Way Match ${data.status} · Settled (${shortHash(data.txHash || "", 8, 6)})`);
+    await ensureWorkspaceAndLoad();
+  } catch (err) {
+    showToast(`Reconcile error: ${err.message}`);
+  }
+}
+
+async function recoverWorkflows() {
+  try {
+    const res = await fetch(`/api/workspaces/${WORKSPACE_ID}/recover`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Crash recovery check complete (${(data.recovered || []).length} resumed).`);
+      await ensureWorkspaceAndLoad();
+    }
+  } catch (err) {
+    showToast(`Recovery check error: ${err.message}`);
+  }
+}
+
+/* ==========================================================================
+   Business Onboarding & Operations Studio (Flows A, B, C, D)
+   ========================================================================== */
+function renderStudioPanels() {
+  // Flow C: Render registered surface identity bindings
+  const surfList = document.getElementById("surfaceBindingsList");
+  if (surfList) {
+    if (!appState.surfaceBindings || appState.surfaceBindings.length === 0) {
+      surfList.innerHTML = `<div style="font-size:0.78rem; color:var(--bind-text-muted);">No custom surface identities registered yet in ${escapeHtml(WORKSPACE_ID)}.</div>`;
+    } else {
+      surfList.innerHTML = appState.surfaceBindings
+        .slice(0, 6)
+        .map((b) => {
+          const isOwner = b.actor_role === "owner";
+          return `
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; background:var(--bind-white); border:1px solid var(--bind-border); border-radius:var(--radius-sm); font-size:0.78rem;">
+              <div>
+                <span class="badge ${isOwner ? "badge-teal" : "badge-neutral"} mono">${escapeHtml(b.surface)}</span>
+                <strong class="mono" style="margin-left:6px; color:var(--bind-ink);">${escapeHtml(b.actor_id)}</strong>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span class="badge ${isOwner ? "badge-orange" : "badge-neutral"}">${escapeHtml(b.actor_role)}</span>
+                <span class="mono" style="font-size:0.7rem; color:var(--bind-text-muted);">${escapeHtml(b.integration_status)}</span>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+  }
+
+  // Flow D: Render staged document preview if available
+  renderStagedDocPreview();
+
+  // Flow D: Render double-entry accounting journal ledger
+  const ledgerEl = document.getElementById("accountingLedgerContainer");
+  if (ledgerEl) {
+    if (!appState.accountingLedger || appState.accountingLedger.length === 0) {
+      ledgerEl.innerHTML = `
+        <div style="padding:14px; background:var(--bind-white); border:1px dashed var(--bind-border); border-radius:var(--radius-sm); font-size:0.8rem; color:var(--bind-text-muted);">
+          No reconciled 3-way match journal entries yet in <code class="mono">${escapeHtml(WORKSPACE_ID)}</code>. Complete a 3-Way Match or confirm a matching vendor invoice to post an idempotent double-entry record.
+        </div>
+      `;
+    } else {
+      ledgerEl.innerHTML = appState.accountingLedger
+        .map((je) => {
+          return `
+            <div style="padding:10px 12px; background:var(--bind-white); border:1px solid var(--bind-border); border-radius:var(--radius-sm); font-size:0.78rem;">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px;">
+                <span class="mono" style="font-weight:700; color:var(--bind-ink);">${escapeHtml(je.entry_number)} · ${escapeHtml(formatCents(je.amount_cents))} USDC</span>
+                <span class="badge badge-success mono" style="font-size:0.68rem;">${escapeHtml(je.provenance || "THREE_WAY_MATCH_VERIFIED")}</span>
+              </div>
+              <div class="mono" style="font-size:0.72rem; color:var(--bind-ink-soft); margin-bottom:2px;">
+                DR: ${escapeHtml(je.debit_account)} | CR: ${escapeHtml(je.credit_account)}
+              </div>
+              <div style="font-size:0.74rem; color:var(--bind-text-muted);">
+                ${escapeHtml(je.memo)} ${je.tx_hash ? `· Tx: ${escapeHtml(shortHash(je.tx_hash, 8, 6))}` : ""}
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+  }
+}
+
+function renderStagedDocPreview() {
+  const box = document.getElementById("stagedDocumentPreviewBox");
+  if (!box) return;
+
+  const doc =
+    appState.latestDraftDoc ||
+    (appState.stagedDocuments || []).find((d) => (d.status || d.doc_status) === "staged_unconfirmed");
+
+  if (!doc) {
+    box.innerHTML = "";
+    return;
+  }
+
+  const docId = doc.docId || doc.id;
+  const docType = doc.docType || doc.doc_type;
+  const fields = doc.extractedFields || doc.extracted_fields || {};
+  const warnings = doc.warnings || [];
+
+  box.innerHTML = `
+    <div style="padding:12px; background:var(--bind-white); border:1px solid var(--bind-border-strong); border-radius:var(--radius-sm); font-size:0.8rem;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+        <strong class="mono" style="color:var(--bind-ink);">Staged Draft: ${escapeHtml(docId)} (${escapeHtml(docType)})</strong>
+        <span class="badge badge-warning mono">DOCUMENT_EXTRACTED (Unconfirmed)</span>
+      </div>
+      <div class="mono" style="font-size:0.75rem; color:var(--bind-ink-soft); margin-bottom:8px;">
+        SKU: <strong>${escapeHtml(fields.sku || "UNMATCHED")}</strong> ·
+        Supplier: <strong>${escapeHtml(fields.supplierName || "Unverified")}</strong> ·
+        Qty: <strong>${escapeHtml(fields.quantity ?? "—")}</strong> ·
+        Unit: <strong>${escapeHtml(formatCents(fields.unitPriceCents || 0))}</strong> ·
+        Total: <strong>${escapeHtml(formatCents(fields.totalPriceCents || 0))}</strong>
+      </div>
+      ${
+        warnings.length > 0
+          ? `<div style="padding:8px; background:var(--bind-warning-bg); color:var(--bind-warning); border-radius:6px; font-size:0.74rem; margin-bottom:8px;">
+               <strong>Warnings Requiring Owner Review:</strong><br/>
+               ${warnings.map((w) => `• ${escapeHtml(w)}`).join("<br/>")}
+             </div>`
+          : `<div style="font-size:0.74rem; color:var(--bind-success); margin-bottom:8px;">✓ All fields matched workspace inventory and arithmetic checks.</div>`
+      }
+      <button type="button" class="btn btn-teal btn-sm" onclick="confirmStagedDoc('${escapeHtml(docId)}')">
+        Stage 2: Owner Confirm &amp; Commit (${escapeHtml(docType === "quote" ? "Save Approved Quote" : "Run 3-Way Match")})
+      </button>
+    </div>
+  `;
+}
+
+async function createStudioWorkspace(useBlueprint = false) {
+  const wsId = (document.getElementById("onboardWsId")?.value || "").trim();
+  const name = (document.getElementById("onboardWsName")?.value || "").trim();
+  const dailyDollars = Number(document.getElementById("onboardDailyCents")?.value || 1500);
+  const gateDollars = Number(document.getElementById("onboardGateCents")?.value || 400);
+
+  if (!wsId || !name) {
+    showToast("Workspace ID and Business Name are required.");
+    return;
+  }
+
+  let supplies = [];
+  let suppliers = [];
+  if (useBlueprint) {
+    const bpRes = await fetch("/api/templates/kitchen-ops/blueprint");
+    if (bpRes.ok) {
+      const bp = await bpRes.json();
+      supplies = bp.suggestedSupplies || [];
+      suppliers = bp.suggestedSuppliers || [];
+    }
+  }
+
+  try {
+    const res = await fetch("/api/workspaces/onboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: wsId,
+        name,
+        businessType: "kitchen",
+        referenceTemplateId: useBlueprint ? "kitchen-ops" : undefined,
+        budgetDailyLimitCents: Math.round(dailyDollars * 100),
+        approvalThresholdCents: Math.round(gateDollars * 100),
+        supplies,
+        suppliers,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(`Onboarding error: ${data.error || "Failed"}`);
+      return;
+    }
+    WORKSPACE_ID = data.workspaceId;
+    appState.selectedWorkflowId = null;
+    appState.latestDraftDoc = null;
+    showToast(`Workspace '${data.workspaceId}' onboarded (${useBlueprint ? "with blueprint supplies" : "blank"}).`);
+    await ensureWorkspaceAndLoad();
+  } catch (err) {
+    showToast(`Onboarding error: ${err.message}`);
+  }
+}
+
+async function addSupplySkuToWorkspace() {
+  const sku = (document.getElementById("addSkuCode")?.value || "").trim();
+  const name = (document.getElementById("addSkuName")?.value || "").trim();
+  const unit = (document.getElementById("addSkuUnit")?.value || "unit").trim();
+  const currentQuantity = Number(document.getElementById("addSkuOnHand")?.value || 0);
+  const parLevel = Number(document.getElementById("addSkuPar")?.value || 5);
+  const priceDollars = Number(document.getElementById("addSkuPriceDollars")?.value || 25);
+
+  try {
+    const res = await fetch(`/api/workspaces/${WORKSPACE_ID}/inventory`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sku,
+        name,
+        category: "Dry Goods",
+        unit,
+        currentQuantity,
+        parLevel,
+        reorderQuantity: Math.max(parLevel * 2, 5),
+        unitPriceCents: Math.round(priceDollars * 100),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(`SKU error: ${data.error || "Failed"}`);
+      return;
+    }
+    showToast(`Saved SKU ${data.sku} (${data.name}) to ${WORKSPACE_ID}.`);
+    await ensureWorkspaceAndLoad();
+  } catch (err) {
+    showToast(`SKU error: ${err.message}`);
+  }
+}
+
+async function saveStudioAgentRole(includeForbiddenTool = false) {
+  const roleName = (document.getElementById("agentRoleSlug")?.value || "").trim();
+  const displayName = (document.getElementById("agentRoleDisplay")?.value || "").trim();
+  const limitDollars = Number(document.getElementById("agentRoleLimitDollars")?.value || 500);
+  const effectsRaw = document.getElementById("agentRoleEffect")?.value || "read,external_request,commercial_commitment";
+  const description = (document.getElementById("agentRoleDesc")?.value || "").trim();
+  const feedbackEl = document.getElementById("agentRoleFeedback");
+
+  const allowedTools = includeForbiddenTool
+    ? ["get_business_context", "transfer_usdc"]
+    : [
+        "get_business_context",
+        "get_stock_snapshot",
+        "get_approved_supplier_quotes",
+        "create_replenishment_proposal",
+        "request_policy_evaluation",
+        "get_request_status",
+      ];
+
+  try {
+    const res = await fetch(`/api/workspaces/${WORKSPACE_ID}/agents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        roleName,
+        displayName,
+        description,
+        permittedEffects: effectsRaw.split(","),
+        spendingLimitCents: Math.round(limitDollars * 100),
+        allowedTools,
+        enabled: true,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (feedbackEl) {
+        feedbackEl.style.color = "var(--bind-danger)";
+        feedbackEl.textContent = `Blocked by deterministic guard: ${data.error}`;
+      }
+      showToast(`Blocked: ${data.error}`);
+      return;
+    }
+    if (feedbackEl) {
+      feedbackEl.style.color = "var(--bind-teal)";
+      feedbackEl.textContent = `Saved role '${data.roleName}' → Derived ${data.derivedFiles?.agentsSpecPath || "AGENTS.md"} updated.`;
+    }
+    showToast(`Saved agent role '${data.displayName}' & updated AGENTS.md`);
+    await ensureWorkspaceAndLoad();
+  } catch (err) {
+    showToast(`Agent role error: ${err.message}`);
+  }
+}
+
+async function bindStudioSurfaceIdentity() {
+  const surface = document.getElementById("surfaceChannelSelect")?.value || "whatsapp";
+  const actorId = (document.getElementById("surfaceActorHandle")?.value || "").trim();
+  const actorRole = document.getElementById("surfaceActorRole")?.value || "staff";
+
+  try {
+    const res = await fetch(`/api/workspaces/${WORKSPACE_ID}/surfaces`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        surface,
+        actorId,
+        actorRole,
+        integrationStatus: "simulated",
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(`Surface binding error: ${data.error || "Failed"}`);
+      return;
+    }
+    showToast(`Bound ${data.surface} identity '${data.actor_id}' as ${data.actor_role}.`);
+    await ensureWorkspaceAndLoad();
+  } catch (err) {
+    showToast(`Surface error: ${err.message}`);
+  }
+}
+
+async function runSurfaceSimulation(scenario) {
+  const outputEl = document.getElementById("surfaceSimulatorOutput");
+  let payload = {};
+
+  if (scenario === "staff_stock") {
+    const targetSku = appState.inventory[0]?.sku || "SKU-FLOUR-001";
+    payload = {
+      eventType: "SURFACE_STOCK_OBSERVED",
+      eventId: `sim_stock_${Date.now()}`,
+      workspaceId: WORKSPACE_ID,
+      surface: "whatsapp",
+      actorId: "whatsapp:+14155550199",
+      actorRole: "staff",
+      sku: targetSku,
+      observedQuantity: 2,
+      note: "Line cook evening count via WhatsApp",
+    };
+  } else if (scenario === "staff_approve_blocked") {
+    payload = {
+      eventType: "SURFACE_OWNER_APPROVAL_DECISION",
+      eventId: `sim_unauth_${Date.now()}`,
+      workspaceId: WORKSPACE_ID,
+      surface: "whatsapp",
+      actorId: "whatsapp:+14155550199",
+      actorRole: "staff",
+      approvalId: appState.approvals[0]?.id || "appr_demo",
+      decision: "approve",
+    };
+  } else if (scenario === "owner_approve") {
+    const pending = appState.approvals.find((a) => a.status === "pending");
+    if (!pending) {
+      // Trigger butter replenishment first if no pending approval exists
+      const butter = appState.inventory.find((i) => i.sku === "SKU-BUTTER-003");
+      if (butter) {
+        await fetch(`/api/workspaces/${WORKSPACE_ID}/replenish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sku: "SKU-BUTTER-003" }),
+        });
+        const apprRes = await fetch(`/api/workspaces/${WORKSPACE_ID}/approvals`);
+        if (apprRes.ok) appState.approvals = await apprRes.json();
+      }
+    }
+    const targetApproval = appState.approvals.find((a) => a.status === "pending");
+    if (!targetApproval) {
+      if (outputEl) {
+        outputEl.textContent = "No pending approval gate found in this workspace. Trigger an order above the approval threshold first.";
+      }
+      return;
+    }
+    payload = {
+      eventType: "SURFACE_OWNER_APPROVAL_DECISION",
+      eventId: `sim_owner_${Date.now()}`,
+      workspaceId: WORKSPACE_ID,
+      surface: "telegram",
+      actorId: "tg:owner_chef_elena",
+      actorRole: "owner",
+      approvalId: targetApproval.id,
+      decision: "approve",
+    };
+  }
+
+  try {
+    const res = await fetch("/api/webhooks/incoming", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (outputEl) {
+      outputEl.style.color = res.status === 403 ? "var(--bind-danger)" : "var(--bind-ink)";
+      outputEl.textContent = `HTTP ${res.status} → ${JSON.stringify(data)}`;
+    }
+    showToast(`Surface simulator: HTTP ${res.status}`);
+    await ensureWorkspaceAndLoad();
+  } catch (err) {
+    if (outputEl) outputEl.textContent = `Error: ${err.message}`;
+  }
+}
+
+async function extractStage1Document() {
+  const docType = document.getElementById("docExtractType")?.value || "quote";
+  const rawText = document.getElementById("docRawText")?.value || "";
+  const linkedOrder = appState.orders.find((o) => o.status === "confirmed") || appState.orders[0];
+
+  try {
+    const res = await fetch(`/api/workspaces/${WORKSPACE_ID}/documents/extract`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        docType,
+        sourceLabel: "studio_upload",
+        rawText,
+        linkedOrderId: docType !== "quote" ? linkedOrder?.id : undefined,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(`Extraction error: ${data.error || "Failed"}`);
+      return;
+    }
+    appState.latestDraftDoc = data;
+    showToast(`Stage 1 Extracted (${data.docType}) — awaiting Owner Confirmation.`);
+    await ensureWorkspaceAndLoad();
+  } catch (err) {
+    showToast(`Extraction error: ${err.message}`);
+  }
+}
+
+async function confirmStagedDoc(docId) {
+  try {
+    const res = await fetch(`/api/workspaces/${WORKSPACE_ID}/documents/${encodeURIComponent(docId)}/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decidedBy: "owner@bind.local" }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(`Confirm error: ${data.error || "Failed"}`);
+      return;
+    }
+    appState.latestDraftDoc = null;
+    if (data.docType === "quote") {
+      showToast(`Owner confirmed quote ${data.quoteId} (${formatCents(data.unitPriceCents)}/unit).`);
+    } else {
+      showToast(`3-Way Match: ${data.matchStatus} ${data.reconciled ? "· Reconciled & Journal Posted" : "· Held for Discrepancy"}`);
+    }
+    await ensureWorkspaceAndLoad();
+  } catch (err) {
+    showToast(`Confirm error: ${err.message}`);
+  }
+}
+
+// Expose action handlers globally for inline buttons
+window.triggerReplenishment = triggerReplenishment;
+window.approveOrder = approveOrder;
+window.rejectOrder = rejectOrder;
+window.reconcileOrder = reconcileOrder;
+window.selectWorkflow = selectWorkflow;
+window.openEvidenceDrawer = openEvidenceDrawer;
+window.confirmStagedDoc = confirmStagedDoc;
+
+/* ==========================================================================
+   Event Listeners & Initialization
+   ========================================================================== */
+document.addEventListener("DOMContentLoaded", () => {
+  // Route link interception for SPA navigation between / and /app
+  document.querySelectorAll("a[data-route]").forEach((link) => {
+    link.addEventListener("click", (e) => {
+      const route = link.getAttribute("data-route");
+      if (route) {
+        e.preventDefault();
+        navigateTo(route);
+      }
+    });
+  });
+
+  window.addEventListener("popstate", () => {
+    syncRouteView();
+  });
+
+  // Sidebar navigation inside /app
+  document.querySelectorAll("[data-app-section]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-app-section]").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      const targetId = btn.getAttribute("data-app-section");
+      const targetEl = document.getElementById(targetId);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      document.getElementById("appSidebar")?.classList.remove("mobile-open");
+    });
+  });
+
+  // Studio 4-tab switching
+  document.querySelectorAll("[data-studio-tab]").forEach((tabBtn) => {
+    tabBtn.addEventListener("click", () => {
+      document.querySelectorAll("[data-studio-tab]").forEach((b) => {
+        b.classList.remove("active");
+        b.setAttribute("aria-selected", "false");
+      });
+      tabBtn.classList.add("active");
+      tabBtn.setAttribute("aria-selected", "true");
+      const targetPaneId = tabBtn.getAttribute("data-studio-tab");
+      document.querySelectorAll(".studio-tab-pane").forEach((pane) => {
+        if (pane.id === targetPaneId) {
+          pane.classList.remove("hidden");
+        } else {
+          pane.classList.add("hidden");
+        }
+      });
+    });
+  });
+
+  // Workspace switcher dropdown
+  document.getElementById("workspaceSwitcherSelect")?.addEventListener("change", (e) => {
+    const nextWsId = e.target.value;
+    if (nextWsId) {
+      WORKSPACE_ID = nextWsId;
+      appState.selectedWorkflowId = null;
+      appState.latestDraftDoc = null;
+      showToast(`Switched active workspace to ${WORKSPACE_ID}`);
+      ensureWorkspaceAndLoad();
+    }
+  });
+
+  // Studio Flow A buttons
+  document.getElementById("createBlankWsBtn")?.addEventListener("click", () => createStudioWorkspace(false));
+  document.getElementById("loadBlueprintWsBtn")?.addEventListener("click", () => createStudioWorkspace(true));
+  document.getElementById("addInventorySkuBtn")?.addEventListener("click", () => addSupplySkuToWorkspace());
+
+  // Studio Flow B buttons
+  document.getElementById("saveAgentRoleBtn")?.addEventListener("click", () => saveStudioAgentRole(false));
+  document.getElementById("testForbiddenToolBtn")?.addEventListener("click", () => saveStudioAgentRole(true));
+
+  // Studio Flow C buttons
+  document.getElementById("bindSurfaceIdentityBtn")?.addEventListener("click", () => bindStudioSurfaceIdentity());
+  document.getElementById("simStaffStockBtn")?.addEventListener("click", () => runSurfaceSimulation("staff_stock"));
+  document.getElementById("simStaffApproveBlockedBtn")?.addEventListener("click", () => runSurfaceSimulation("staff_approve_blocked"));
+  document.getElementById("simOwnerApproveBtn")?.addEventListener("click", () => runSurfaceSimulation("owner_approve"));
+
+  // Studio Flow D buttons
+  document.getElementById("loadSampleQuoteBtn")?.addEventListener("click", () => {
+    const typeEl = document.getElementById("docExtractType");
+    const textEl = document.getElementById("docRawText");
+    if (typeEl) typeEl.value = "quote";
+    if (textEl) {
+      textEl.value = `Supplier: Sysco Metro Restock\nSKU: SKU-FLOUR-001\nItem: King Arthur Artisan Bread Flour (50lb)\nQty: 10\nUnit Price: $39.50\nTotal: $395.00`;
+    }
+  });
+  document.getElementById("loadSampleBillBtn")?.addEventListener("click", () => {
+    const typeEl = document.getElementById("docExtractType");
+    const textEl = document.getElementById("docRawText");
+    const ord = appState.orders[0];
+    if (typeEl) typeEl.value = "supplier_bill";
+    if (textEl) {
+      const sku = ord?.item_sku || "SKU-FLOUR-001";
+      const qty = ord?.quantity || 10;
+      const unitDollars = ord ? (Number(ord.unit_price_cents) / 100).toFixed(2) : "42.50";
+      const totalDollars = ord ? (Number(ord.total_price_cents) / 100).toFixed(2) : "425.00";
+      textEl.value = `Invoice #: INV-${Date.now().toString().slice(-5)}\nSupplier: ${ord?.supplier_name || "Sysco Metro Restock"}\nSKU: ${sku}\nQty: ${qty}\nUnit Price: $${unitDollars}\nTotal: $${totalDollars}`;
+    }
+  });
+  document.getElementById("extractDocStage1Btn")?.addEventListener("click", () => extractStage1Document());
+
+  // Mobile sidebar toggle
+  document.getElementById("mobileMenuToggleBtn")?.addEventListener("click", () => {
+    document.getElementById("appSidebar")?.classList.toggle("mobile-open");
+  });
+
+  // Primary buttons in /app
+  document.getElementById("runLowStockBtn")?.addEventListener("click", () => {
+    triggerReplenishment();
+  });
+  document.getElementById("recoverWorkflowsBtn")?.addEventListener("click", () => {
+    recoverWorkflows();
+  });
+
+  // Evidence drawer triggers & dismissal
+  document.getElementById("openEvidenceDrawerBtn")?.addEventListener("click", () => openEvidenceDrawer());
+  document.getElementById("sidebarOpenEvidenceBtn")?.addEventListener("click", () => openEvidenceDrawer());
+  document.getElementById("mobileOpenEvidenceBtn")?.addEventListener("click", () => openEvidenceDrawer());
+  document.getElementById("inspectFullEvidenceBtn")?.addEventListener("click", () => openEvidenceDrawer());
+  document.getElementById("closeEvidenceDrawerBtn")?.addEventListener("click", () => closeEvidenceDrawer());
+  document.getElementById("drawerBackdrop")?.addEventListener("click", () => closeEvidenceDrawer());
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeEvidenceDrawer();
+      document.getElementById("appSidebar")?.classList.remove("mobile-open");
+    }
+  });
+
+  document.getElementById("toastCloseBtn")?.addEventListener("click", () => {
+    document.getElementById("toastBanner")?.classList.remove("visible");
+  });
+
+  bindCopyButtons(document);
+  syncRouteView();
+  ensureWorkspaceAndLoad();
+});

@@ -10,6 +10,7 @@ import { generateIdempotencyKey } from "../utils/idempotency.js";
 import { resolveTemplateDir } from "../agents/bindTemplateAgent.js";
 import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
 import { createReplenishmentTools } from "../agents/replenishmentTools.js";
+import { recordIdempotentJournalEntry } from "../studio/documentsAndAccounting.js";
 import { createDeepAgent, FilesystemBackend } from "deepagents";
 import { ChatOpenAI } from "@langchain/openai";
 
@@ -498,6 +499,16 @@ export class ProcurementWorkflowRunner {
         transferRes.txHash
       );
     }
+
+    await recordIdempotentJournalEntry({
+      workspaceId: order.workspace_id,
+      orderId: order.id,
+      orderNumber: order.order_number,
+      itemName: order.item_name,
+      supplierName: order.supplier_name,
+      amountCents: matchResult.payableAmountCents,
+      txHash: transferRes.txHash,
+    });
 
     return {
       status: matchResult.status,
