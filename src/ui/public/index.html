@@ -1,238 +1,1484 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bind | Autonomous Business Agent Engine</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bind Supply Operator v0.1 — Operational Agent & Treasury Workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    @keyframes pulse-subtle {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
+    @layer reset, tokens, base, layout, components, glass, utilities, motion;
+
+    @layer reset {
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html { scroll-behavior: smooth; }
     }
-    .status-pulse { animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+    @layer tokens {
+      :root {
+        /* Warm Alabaster Canvas & Structural Surfaces (Perceptual OKLCH + Hex Fallbacks) */
+        --bg-canvas: #FAF8F5;
+        --bg-surface: #FFFFFF;
+        --bg-stone: #F2EFE9;
+        --bg-stone-deep: #E6E1D8;
+        --bg-hero-abyss: #0D222C;
+        --bg-decoder-terracotta: #4A1814;
+
+        /* Smoked Glass Surfaces */
+        --glass-nav: rgba(18, 17, 16, 0.86);
+        --glass-hud: rgba(20, 19, 18, 0.80);
+        --glass-border: rgba(255, 255, 255, 0.14);
+        --border-hairline: #E3DED5;
+        --border-strong: #141312;
+
+        /* Typography Ink */
+        --ink-primary: #121110;
+        --ink-secondary: #5A5650;
+        --ink-muted: #888279;
+        --ink-ghost: #CBC6BD;
+
+        /* High-Signal Vermilion Punctuation */
+        --accent-orange: #FF5324;
+        --accent-orange-hover: #E04114;
+        --accent-orange-soft: rgba(255, 83, 36, 0.12);
+
+        /* Semantic Policy & Verification Statuses */
+        --status-confirmed: #1F9D63;
+        --status-confirmed-bg: rgba(31, 157, 99, 0.14);
+        --status-hold: #D97706;
+        --status-hold-bg: rgba(217, 119, 6, 0.15);
+        --status-rejected: #D92D20;
+        --status-rejected-bg: rgba(217, 45, 32, 0.14);
+
+        /* Typography Families */
+        --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        --font-mono: 'IBM Plex Mono', monospace;
+
+        /* Motion Constants (LottieFiles motion-design-skill) */
+        --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+        --ease-in-quad: cubic-bezier(0.55, 0.085, 0.68, 0.53);
+        --spring-tactile: cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+    }
+
+    @layer base {
+      body {
+        background-color: var(--bg-canvas);
+        color: var(--ink-primary);
+        font-family: var(--font-sans);
+        font-size: 15px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+      .mono {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+      }
+      a { color: inherit; }
+      .heroicon {
+        width: 16px;
+        height: 16px;
+        display: inline-block;
+        vertical-align: -3px;
+        flex-shrink: 0;
+      }
+      .heroicon-sm {
+        width: 14px;
+        height: 14px;
+        display: inline-block;
+        vertical-align: -2px;
+        flex-shrink: 0;
+      }
+      .heroicon-md {
+        width: 18px;
+        height: 18px;
+        display: inline-block;
+        vertical-align: -3px;
+        flex-shrink: 0;
+      }
+    }
+
+    @layer layout {
+      .page-wrap {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 14px 20px 80px;
+      }
+      .section-block {
+        margin-top: 96px;
+      }
+      .section-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 20px;
+        margin-bottom: 36px;
+        flex-wrap: wrap;
+      }
+      .eyebrow {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-muted);
+        margin-bottom: 8px;
+      }
+      .section-h2 {
+        font-family: var(--font-display);
+        font-size: clamp(1.85rem, 3.4vw, 2.75rem);
+        font-weight: 500;
+        line-height: 1.1;
+        letter-spacing: -0.03em;
+        color: var(--ink-primary);
+      }
+    }
+
+    @layer glass {
+      /* Floating Obsidian Pill Navbar */
+      .pill-nav-shell {
+        position: sticky;
+        top: 16px;
+        z-index: 60;
+        max-width: 1180px;
+        margin: 0 auto 14px;
+        padding: 8px 10px 8px 20px;
+        border-radius: 9999px;
+        background: var(--glass-nav);
+        backdrop-filter: blur(18px) saturate(160%);
+        -webkit-backdrop-filter: blur(18px) saturate(160%);
+        border: 1px solid var(--glass-border);
+        box-shadow: 0 18px 38px -12px rgba(12, 11, 10, 0.32);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        color: #FAF8F5;
+      }
+      .nav-links-group {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex-wrap: wrap;
+      }
+      .nav-pill-btn {
+        background: transparent;
+        border: none;
+        color: rgba(250, 248, 245, 0.72);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        font-weight: 500;
+        padding: 7px 12px;
+        border-radius: 9999px;
+        cursor: pointer;
+        min-height: 36px;
+        transition: color 180ms ease, background 180ms ease;
+      }
+      .nav-pill-btn:hover, .nav-pill-btn.active {
+        color: #FFFFFF;
+        background: rgba(255, 255, 255, 0.12);
+      }
+      .brand-wordmark-nav {
+        font-family: var(--font-display);
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.045em;
+        color: #FFFFFF;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      /* Smoked-Glass HUD Overlay Cards */
+      .hud-glass-card {
+        background: linear-gradient(
+          160deg,
+          rgba(28, 26, 24, 0.84) 0%,
+          rgba(16, 15, 14, 0.94) 100%
+        );
+        backdrop-filter: blur(20px) saturate(160%);
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        box-shadow:
+          0 24px 48px -16px rgba(0, 0, 0, 0.45),
+          inset 0 1px 0 0 rgba(255, 255, 255, 0.18);
+        border-radius: 18px;
+        color: #FAF8F5;
+        padding: 20px;
+      }
+    }
+
+    @layer components {
+      /* Pill CTA Buttons */
+      .btn-orange-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        background: var(--accent-orange);
+        color: #FFFFFF;
+        border: none;
+        border-radius: 9999px;
+        padding: 10px 20px;
+        min-height: 44px;
+        font-family: var(--font-sans);
+        font-size: 13.5px;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 8px 22px -6px rgba(255, 83, 36, 0.55);
+        transition: transform 220ms var(--spring-tactile), background 160ms ease, box-shadow 160ms ease;
+      }
+      .btn-orange-pill:hover {
+        background: var(--accent-orange-hover);
+        transform: translateY(-1px);
+      }
+      .btn-orange-pill:active {
+        transform: scale(0.97);
+        box-shadow: 0 3px 10px -3px rgba(255, 83, 36, 0.4);
+      }
+      .btn-secondary-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        background: var(--bg-surface);
+        color: var(--ink-primary);
+        border: 1px solid var(--border-hairline);
+        border-radius: 9999px;
+        padding: 9px 16px;
+        min-height: 44px;
+        font-family: var(--font-sans);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 160ms ease, border-color 160ms ease;
+      }
+      .btn-secondary-pill:hover {
+        background: var(--bg-stone);
+        border-color: var(--ink-primary);
+      }
+
+      /* Multi-Sensory Status Pills (Heroicon + Prefix + Color) */
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 10px;
+        border-radius: 9999px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+      }
+      .status-confirmed {
+        background: var(--status-confirmed-bg);
+        color: #157347;
+        border: 1px solid rgba(31, 157, 99, 0.32);
+      }
+      .status-hold {
+        background: var(--status-hold-bg);
+        color: #9A5404;
+        border: 1px solid rgba(217, 119, 6, 0.32);
+      }
+      .status-rejected {
+        background: var(--status-rejected-bg);
+        color: #B42318;
+        border: 1px solid rgba(217, 45, 32, 0.32);
+      }
+      .status-neutral {
+        background: var(--bg-stone);
+        color: var(--ink-secondary);
+        border: 1px solid var(--border-hairline);
+      }
+
+      /* BAND 1: Rounded Dark Petrol Hero Frame */
+      .hero-frame {
+        position: relative;
+        min-height: 540px;
+        border-radius: 26px;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 72% 28%, rgba(255, 83, 36, 0.22), transparent 48%),
+          radial-gradient(circle at 22% 75%, rgba(28, 110, 140, 0.38), transparent 55%),
+          linear-gradient(145deg, #091820 0%, #0D222C 52%, #171312 100%);
+        color: #FAF8F5;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        align-items: center;
+        text-align: center;
+        padding: 64px 24px 56px;
+        box-shadow: 0 28px 60px -20px rgba(13, 34, 44, 0.35);
+      }
+      .hero-grid-overlay {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px);
+        background-size: 56px 56px;
+        pointer-events: none;
+      }
+      .hero-content {
+        position: relative;
+        z-index: 2;
+        max-width: 760px;
+      }
+      .hero-title {
+        font-family: var(--font-display);
+        font-size: clamp(2.35rem, 5vw, 4.1rem);
+        font-weight: 400;
+        line-height: 1.05;
+        letter-spacing: -0.035em;
+        margin-bottom: 16px;
+      }
+      .hero-sub {
+        font-size: clamp(0.95rem, 1.5vw, 1.12rem);
+        color: rgba(250, 248, 245, 0.78);
+        max-width: 580px;
+        margin: 0 auto 28px;
+      }
+      .hero-toast {
+        position: absolute;
+        right: 24px;
+        bottom: 24px;
+        z-index: 3;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-radius: 16px;
+        background: rgba(18, 17, 16, 0.82);
+        backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        text-align: left;
+        font-size: 12px;
+      }
+
+      /* BAND 2: 100-Tick Radial Telemetry Dial */
+      .dial-section {
+        position: relative;
+        display: grid;
+        grid-template-columns: 260px 1fr 260px;
+        align-items: center;
+        gap: 24px;
+        padding: 20px 0;
+      }
+      .tool-stack-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .tool-chip {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+        border-radius: 12px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-hairline);
+        font-size: 12.5px;
+        color: var(--ink-secondary);
+        transition: transform 220ms var(--ease-out-expo), border-color 180ms ease;
+      }
+      .tool-chip.active-tool {
+        color: var(--ink-primary);
+        font-weight: 600;
+        border-color: var(--ink-primary);
+        box-shadow: 0 8px 20px -8px rgba(18, 17, 16, 0.12);
+      }
+      .dial-center-wrap {
+        position: relative;
+        width: min(100%, 460px);
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .dial-svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .dial-inner-copy {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 48px;
+        pointer-events: none;
+      }
+      .dial-float-card {
+        margin-top: -54px;
+        position: relative;
+        z-index: 4;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-hairline);
+        border-radius: 18px;
+        padding: 18px 22px;
+        width: min(92%, 340px);
+        text-align: center;
+        box-shadow: 0 20px 44px -14px rgba(18, 17, 16, 0.12);
+      }
+
+      /* BAND 3: 3-Column Numbered Bento Row */
+      .bento-grid-3 {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 22px;
+      }
+      .bento-col {
+        container-type: inline-size;
+        display: flex;
+        flex-direction: column;
+      }
+      .bento-meta {
+        padding-top: 14px;
+        border-top: 1px solid var(--border-hairline);
+        margin-bottom: 18px;
+      }
+      .bento-title {
+        font-family: var(--font-display);
+        font-size: 18px;
+        font-weight: 600;
+        margin: 6px 0 6px;
+      }
+      .bento-desc {
+        font-size: 13.5px;
+        color: var(--ink-secondary);
+        min-height: 42px;
+      }
+      .bento-stage {
+        position: relative;
+        height: 340px;
+        border-radius: 22px;
+        padding: 22px;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .stage-green {
+        background:
+          radial-gradient(circle at 30% 25%, rgba(56, 161, 105, 0.35), transparent 60%),
+          linear-gradient(155deg, #16281F 0%, #0E1914 100%);
+      }
+      .stage-amber {
+        background:
+          radial-gradient(circle at 75% 25%, rgba(255, 120, 40, 0.32), transparent 60%),
+          linear-gradient(155deg, #2D221C 0%, #171210 100%);
+      }
+      .stage-terracotta {
+        background:
+          radial-gradient(circle at 50% 20%, rgba(255, 83, 36, 0.42), transparent 62%),
+          linear-gradient(155deg, #3A1912 0%, #180C09 100%);
+      }
+      .pill-check-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-top: 12px;
+      }
+      @container (max-width: 330px) {
+        .pill-check-grid { grid-template-columns: 1fr; }
+      }
+      .mini-hud-pill {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 10px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: #FAF8F5;
+      }
+
+      /* BAND 4: Interactive 2-Column Signal Decoder */
+      .decoder-grid {
+        display: grid;
+        grid-template-columns: 5fr 7fr;
+        gap: 36px;
+        align-items: stretch;
+      }
+      .decoder-list {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 8px;
+      }
+      .decoder-trigger {
+        background: transparent;
+        border: none;
+        text-align: left;
+        padding: 8px 0;
+        font-family: var(--font-display);
+        font-size: clamp(1.35rem, 2.3vw, 2.05rem);
+        font-weight: 500;
+        line-height: 1.2;
+        letter-spacing: -0.025em;
+        color: var(--ink-ghost);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        transition: color 220ms var(--ease-out-expo), transform 220ms var(--ease-out-expo);
+      }
+      .decoder-trigger:hover {
+        color: var(--ink-secondary);
+      }
+      .decoder-trigger.active {
+        color: var(--ink-primary);
+        transform: translateX(4px);
+      }
+      .decoder-badge-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: var(--status-confirmed);
+        color: #FFFFFF;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-family: var(--font-mono);
+        font-size: 13px;
+        flex-shrink: 0;
+      }
+      .decoder-card {
+        position: relative;
+        border-radius: 24px;
+        background:
+          radial-gradient(circle at 78% 22%, rgba(255, 83, 36, 0.35), transparent 55%),
+          linear-gradient(145deg, #4A1814 0%, #240B09 65%, #120706 100%);
+        color: #FAF8F5;
+        padding: 36px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        min-height: 420px;
+        box-shadow: 0 28px 56px -18px rgba(74, 24, 20, 0.38);
+      }
+      .pin-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-radius: 12px;
+        background: rgba(18, 17, 16, 0.72);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+
+      /* BAND 5: Live Operator Workspace & 7-Tier Inspector */
+      .operator-shell {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-hairline);
+        border-radius: 24px;
+        overflow: hidden;
+        box-shadow: 0 20px 50px -20px rgba(18, 17, 16, 0.08);
+      }
+      .operator-topbar {
+        background: var(--bg-stone);
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border-hairline);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .operator-tabs {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .op-tab-btn {
+        padding: 8px 14px;
+        border-radius: 9999px;
+        border: 1px solid transparent;
+        background: transparent;
+        font-family: var(--font-sans);
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--ink-secondary);
+        cursor: pointer;
+        min-height: 40px;
+      }
+      .op-tab-btn.active {
+        background: var(--bg-surface);
+        color: var(--ink-primary);
+        border-color: var(--border-hairline);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+      }
+      .operator-grid {
+        display: grid;
+        grid-template-columns: 1fr 450px;
+      }
+      .operator-main {
+        padding: 24px;
+        border-right: 1px solid var(--border-hairline);
+      }
+      .operator-inspector {
+        padding: 24px;
+        background: #FCFBF9;
+      }
+
+      /* Tactile Metallic Vermilion Vault Card */
+      .vault-membership-card {
+        border-radius: 18px;
+        padding: 22px;
+        color: #FFFFFF;
+        background:
+          radial-gradient(circle at 20% 15%, #FF8552 0%, #FF5324 45%, #B82906 90%, #7A1902 100%);
+        box-shadow:
+          0 18px 36px -10px rgba(224, 65, 20, 0.42),
+          inset 0 1px 0 rgba(255, 255, 255, 0.35);
+        margin-bottom: 22px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+
+      /* Agent Team Cards Row */
+      .agent-roles-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 24px;
+      }
+      .agent-role-card {
+        background: var(--bg-stone);
+        border: 1px solid var(--border-hairline);
+        border-radius: 14px;
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      /* Data Tables */
+      .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 24px;
+        font-size: 13.5px;
+      }
+      .data-table th {
+        text-align: left;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--ink-muted);
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border-hairline);
+        background: var(--bg-stone);
+      }
+      .data-table td {
+        padding: 12px;
+        border-bottom: 1px solid var(--border-hairline);
+        vertical-align: middle;
+      }
+      .data-table tr.req-row {
+        cursor: pointer;
+        transition: background 140ms ease;
+      }
+      .data-table tr.req-row:hover {
+        background: var(--bg-stone);
+      }
+      .data-table tr.req-row.selected {
+        background: #F5EFE6;
+        outline: 1px solid var(--ink-primary);
+      }
+
+      /* 7-Tier Inspector Blocks */
+      .insp-tier {
+        padding: 13px 0;
+        border-bottom: 1px solid var(--border-hairline);
+      }
+      .insp-tier:last-child { border-bottom: none; }
+      .insp-tier-title {
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--ink-muted);
+        margin-bottom: 6px;
+      }
+      .well-box {
+        background: var(--bg-stone);
+        border: 1px solid var(--border-hairline);
+        border-radius: 12px;
+        padding: 12px;
+        margin-top: 8px;
+      }
+
+      /* Dual Sub-Panels for Workflows & Auditable Event Log */
+      .sub-panels-2 {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+      }
+
+      /* BAND 6: Oversized Gradient Wordmark Footer */
+      .giant-wordmark {
+        font-family: var(--font-display);
+        font-size: clamp(4.8rem, 19vw, 15.5rem);
+        font-weight: 700;
+        letter-spacing: -0.055em;
+        line-height: 0.84;
+        text-align: center;
+        margin: 72px 0 28px;
+        background: linear-gradient(90deg, #141210 0%, #8A2C12 52%, #FF5324 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        user-select: none;
+      }
+      .footer-cols {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 20px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border-hairline);
+        font-size: 12.5px;
+        color: var(--ink-secondary);
+      }
+
+      .view-pane { display: none; }
+      .view-pane.active { display: block; }
+      .hidden { display: none !important; }
+    }
+
+    @layer motion {
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+      @media (prefers-contrast: more) {
+        :root {
+          --border-hairline: #121110;
+          --ink-ghost: #5A5650;
+        }
+      }
+      @media (max-width: 1080px) {
+        .dial-section { grid-template-columns: 1fr; }
+        .tool-stack-list { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+        .bento-grid-3 { grid-template-columns: 1fr; }
+        .decoder-grid { grid-template-columns: 1fr; }
+        .operator-grid { grid-template-columns: 1fr; }
+        .operator-main { border-right: none; border-bottom: 1px solid var(--border-hairline); }
+        .agent-roles-grid { grid-template-columns: 1fr; }
+        .sub-panels-2 { grid-template-columns: 1fr; }
+      }
+      @media (max-width: 720px) {
+        .hero-toast { position: static; margin-top: 24px; width: 100%; }
+        .footer-cols { grid-template-columns: repeat(2, 1fr); }
+      }
+    }
   </style>
 </head>
-<body class="h-full flex flex-col font-sans antialiased">
-  <!-- Top Navigation Bar -->
-  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
-    <div class="flex items-center space-x-3">
-      <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20 text-white font-bold text-xl">
-        <i class="fa-solid fa-cube"></i>
+<body>
+
+  <div class="page-wrap">
+    <!-- FLOATING OBSIDIAN PILL NAVBAR (Reference Band 0) -->
+    <nav class="pill-nav-shell" aria-label="Primary Workspace & Overview Navigation">
+      <div class="nav-links-group">
+        <button class="nav-pill-btn active" onclick="switchOperatorTab('operations')">Operations</button>
+        <button class="nav-pill-btn" onclick="switchOperatorTab('approvals')">Approvals (<span id="top-approval-count">1</span>)</button>
+        <button class="nav-pill-btn" onclick="switchOperatorTab('activity')">Activity</button>
+        <button class="nav-pill-btn" onclick="switchOperatorTab('setup')">Business Setup</button>
+        <button class="nav-pill-btn" onclick="switchOperatorTab('settings')">Settings</button>
       </div>
-      <div>
-        <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-          Bind
-          <span class="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium">Kitchen Vertical Slice</span>
+
+      <a href="#operator-workspace" class="brand-wordmark-nav">
+        <svg class="heroicon-md" style="color:var(--accent-orange);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M10.362 1.093a.75.75 0 0 0-.724 0L2.523 5.018 10 9.143l7.477-4.125-7.115-3.925ZM18 6.443l-7.25 4v8.25l6.862-3.786A.75.75 0 0 0 18 14.25V6.443ZM9.25 18.693v-8.25l-7.25-4v7.807a.75.75 0 0 0 .388.657l6.862 3.786Z" />
+        </svg>
+        <span>bind</span>
+      </a>
+
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span class="mono" style="font-size:11px;color:rgba(250,248,245,0.75);padding:4px 10px;border-radius:9999px;background:rgba(255,255,255,0.08);">
+          ARC-TESTNET • 5042002
+        </span>
+        <button id="hero-check-stock-btn" class="btn-orange-pill" style="padding:7px 16px;min-height:38px;font-size:12.5px;" onclick="triggerStockCheckAndScroll()">
+          <span>Check Stock</span>
+          <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+    </nav>
+
+    <!-- BAND 1: ROUNDED DARK PETROL HERO + FLOATING GLASS TOAST -->
+    <header class="hero-frame">
+      <div class="hero-grid-overlay"></div>
+      <div class="hero-content">
+        <div class="status-pill status-hold" style="margin-bottom:18px;background:rgba(255,83,36,0.18);color:#FFB099;border-color:rgba(255,83,36,0.4);">
+          <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+          </svg>
+          <span>Kitchen Vertical Slice • Demo Seed &amp; Testnet Workspace</span>
+        </div>
+        <h1 class="hero-title">
+          Every business has<br />autonomous potential with Bind
         </h1>
-        <p class="text-xs text-slate-400">Autonomous Business Agent Deployment & Policy Enforcement</p>
-      </div>
-    </div>
-
-    <!-- Workspace & Treasury Info -->
-    <div class="flex items-center gap-4 flex-wrap">
-      <div class="bg-slate-800/80 px-4 py-2 rounded-lg border border-slate-700 flex items-center gap-3">
-        <div class="text-right">
-          <div class="text-xs text-slate-400 font-medium">Treasury Balance</div>
-          <div id="treasuryBalance" class="text-sm font-bold text-emerald-400">$10,000.00 USDC</div>
-        </div>
-        <div class="h-8 w-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold">
-          $
-        </div>
-      </div>
-
-      <div class="bg-slate-800/80 px-4 py-2 rounded-lg border border-slate-700 text-xs">
-        <div class="text-slate-400">Network / Settlement</div>
-        <div class="font-semibold text-slate-200 flex items-center gap-1.5">
-          <span class="h-2 w-2 rounded-full bg-emerald-500 status-pulse"></span>
-          Arc Testnet (5042002)
+        <p class="hero-sub">
+          Bind brings role-specific AI agents into your existing inventory, supplier quotes, and team surfaces—governed by deterministic server math and an on-chain policy vault on Arc Testnet.
+        </p>
+        <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap;">
+          <button class="btn-orange-pill" onclick="triggerStockCheckAndScroll()">
+            <span>Run Stock &amp; Replenishment Check</span>
+            <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clip-rule="evenodd" />
+            </svg>
+          </button>
+          <a href="https://testnet.arcscan.app/address/0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29" target="_blank" class="btn-secondary-pill" style="background:rgba(255,255,255,0.1);color:#FFF;border-color:rgba(255,255,255,0.22);text-decoration:none;">
+            <span>Inspect Arc Policy Vault</span>
+            <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z" clip-rule="evenodd" />
+              <path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z" clip-rule="evenodd" />
+            </svg>
+          </a>
         </div>
       </div>
 
-      <button id="btnRecover" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium border border-slate-700 transition flex items-center gap-2">
-        <i class="fa-solid fa-rotate-right"></i>
-        <span>Scan & Recover</span>
-      </button>
-    </div>
-  </header>
-
-  <!-- Main Container -->
-  <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-8">
-    <!-- Active Agent Roles Grid -->
-    <section>
-      <div class="flex items-center justify-between mb-4">
+      <!-- Bottom-Right Floating Glass Toast -->
+      <div class="hero-toast">
+        <svg class="heroicon-md" style="color:var(--status-confirmed);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" />
+        </svg>
         <div>
-          <h2 class="text-lg font-bold text-white">Active Agent Team</h2>
-          <p class="text-xs text-slate-400">Deterministic code-enforced authority matrix (BIND_BUILD_SPEC.md)</p>
+          <div style="font-weight:600;color:#FFFFFF;">Confirmed on Arc Testnet • Block 67155117</div>
+          <div class="mono" style="font-size:11px;color:rgba(250,248,245,0.7);">
+            BindSettlement.sol: 0x16E1Bd42...05f2aA29 • 0.0010 USDC
+          </div>
         </div>
-        <span class="text-xs text-slate-400 bg-slate-800 px-2.5 py-1 rounded-md border border-slate-700">3 Agents Coordinated</span>
+      </div>
+    </header>
+
+    <!-- BAND 2: THE 100-TICK RADIAL DIAL ("It starts with deterministic checks") -->
+    <section class="section-block dial-section" aria-label="Deterministic Agent & Policy Telemetry">
+      <!-- Left Column: The 6 Typed Agent Tools (Spec Section 9.2) -->
+      <div class="tool-stack-list">
+        <div class="eyebrow">6 Typed Agent Tools (No Raw Signer)</div>
+        <div class="tool-chip active-tool">
+          <svg class="heroicon-sm" style="color:var(--accent-orange);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h6.572l-1.305 6.093a.75.75 0 0 0 1.292.657l8.5-9.5A.75.75 0 0 0 17.25 8h-6.572l1.305-6.093Z" /></svg>
+          <span class="mono">01</span> get_business_context
+        </div>
+        <div class="tool-chip active-tool">
+          <svg class="heroicon-sm" style="color:var(--accent-orange);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10.362 1.093a.75.75 0 0 0-.724 0L2.523 5.018 10 9.143l7.477-4.125-7.115-3.925ZM18 6.443l-7.25 4v8.25l6.862-3.786A.75.75 0 0 0 18 14.25V6.443ZM9.25 18.693v-8.25l-7.25-4v7.807a.75.75 0 0 0 .388.657l6.862 3.786Z" /></svg>
+          <span class="mono">02</span> get_stock_snapshot
+        </div>
+        <div class="tool-chip active-tool">
+          <svg class="heroicon-sm" style="color:var(--accent-orange);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Zm10.857 5.691a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 0 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+          <span class="mono">03</span> get_approved_supplier_quotes
+        </div>
+        <div class="tool-chip active-tool">
+          <svg class="heroicon-sm" style="color:var(--accent-orange);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M15.98 1.804a1 1 0 0 0-1.96 0l-.24 1.192a1 1 0 0 1-.784.785l-1.192.238a1 1 0 0 0 0 1.962l1.192.238a1 1 0 0 1 .785.785l.238 1.192a1 1 0 0 0 1.962 0l.238-1.192a1 1 0 0 1 .785-.785l1.192-.238a1 1 0 0 0 0-1.962l-1.192-.238a1 1 0 0 1-.785-.785l-.238-1.192ZM6.949 5.684a1 1 0 0 0-1.898 0l-.683 2.051a1 1 0 0 1-.633.633l-2.051.683a1 1 0 0 0 0 1.898l2.051.684a1 1 0 0 1 .633.632l.683 2.051a1 1 0 0 0 1.898 0l.683-2.051a1 1 0 0 1 .633-.633l2.051-.683a1 1 0 0 0 0-1.898l-2.051-.683a1 1 0 0 1-.633-.633L6.95 5.684ZM13.949 13.684a1 1 0 0 0-1.898 0l-.184.551a1 1 0 0 1-.632.633l-.551.183a1 1 0 0 0 0 1.898l.551.183a1 1 0 0 1 .633.633l.183.551a1 1 0 0 0 1.898 0l.184-.551a1 1 0 0 1 .632-.633l.551-.183a1 1 0 0 0 0-1.898l-.551-.184a1 1 0 0 1-.633-.632l-.183-.551Z" /></svg>
+          <span class="mono">04</span> create_replenishment_proposal
+        </div>
+        <div class="tool-chip active-tool">
+          <svg class="heroicon-sm" style="color:var(--accent-orange);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.661 2.237a.531.531 0 0 1 .678 0 11.947 11.947 0 0 0 7.078 2.749.5.5 0 0 1 .479.425c.069.52.104 1.05.104 1.59 0 5.162-3.26 9.563-7.834 11.256a.48.48 0 0 1-.332 0C5.26 16.564 2 12.163 2 7c0-.538.035-1.069.104-1.589a.5.5 0 0 1 .48-.425 11.947 11.947 0 0 0 7.077-2.75Zm4.196 5.954a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+          <span class="mono">05</span> request_policy_evaluation
+        </div>
+        <div class="tool-chip active-tool">
+          <svg class="heroicon-sm" style="color:var(--accent-orange);" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-13a.75.75 0 0 0-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 0 0 0-1.5h-3.25V5Z" clip-rule="evenodd" /></svg>
+          <span class="mono">06</span> get_request_status
+        </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="rolesGrid">
-        <!-- Roles rendered via app.js -->
-        <div class="p-5 rounded-xl border border-slate-800 bg-slate-900/50 animate-pulse h-36"></div>
-        <div class="p-5 rounded-xl border border-slate-800 bg-slate-900/50 animate-pulse h-36"></div>
-        <div class="p-5 rounded-xl border border-slate-800 bg-slate-900/50 animate-pulse h-36"></div>
+      <!-- Center: 100-Tick Radial Dial + Overlapping Action Card -->
+      <div class="dial-center-wrap">
+        <svg id="radial-dial-svg" class="dial-svg" viewBox="0 0 440 440" role="img" aria-label="100-Tick Policy & Budget Dial">
+          <g id="radial-ticks-group"></g>
+        </svg>
+        <div class="dial-inner-copy">
+          <div class="eyebrow">Circle Agent Stack × Arc L1</div>
+          <h2 class="section-h2" style="font-size:clamp(1.65rem,2.8vw,2.35rem);">
+            It starts with<br />deterministic checks
+          </h2>
+          <p style="font-size:13px;color:var(--ink-secondary);margin-top:8px;max-width:250px;">
+            The LLM proposes quantities from approved quotes. Trusted backend code recomputes integer base units and enforces on-chain policy.
+          </p>
+        </div>
+
+        <!-- Overlapping White Notification Card -->
+        <div class="dial-float-card">
+          <div class="status-pill status-hold" style="margin-bottom:8px;">
+            <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" /></svg>
+            <span>[HOLD] APPROVAL_REQUIRED</span>
+          </div>
+          <div style="font-weight:600;font-size:14px;">REQ-2026-0102 Held for Owner</div>
+          <p style="font-size:12px;color:var(--ink-secondary);margin:4px 0 12px;">
+            25 cases DOP Tomatoes (<span class="mono">0.0250 USDC</span>) exceeds the <span class="mono">0.0050 USDC</span> autonomous spend limit.
+          </p>
+          <button class="btn-secondary-pill" style="width:100%;min-height:38px;font-size:12px;" onclick="selectRequestAndFocus('req_hold_02')">
+            <span>Review in Approval Queue</span>
+            <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clip-rule="evenodd" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Right Column: Live Verification Gates -->
+      <div class="tool-stack-list">
+        <div class="eyebrow">Canonical Verification Status</div>
+        <div class="tool-chip">
+          <span class="status-pill status-confirmed">
+            <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+            LIVE_READ_PASS
+          </span>
+          Arc RPC 5042002
+        </div>
+        <div class="tool-chip">
+          <span class="status-pill status-confirmed">
+            <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+            VERIFIED_REMOTE
+          </span>
+          Vault Bytecode
+        </div>
+        <div class="tool-chip">
+          <span class="status-pill status-confirmed">
+            <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+            VERIFIED_REMOTE
+          </span>
+          Revert 0x65e822e9
+        </div>
+        <div class="tool-chip">
+          <span class="status-pill status-confirmed">
+            <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+            VERIFIED_REMOTE
+          </span>
+          Revert 0xef664d6a
+        </div>
+        <div class="tool-chip">
+          <span class="status-pill status-confirmed">
+            <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+            LOCAL_PASS
+          </span>
+          10/10 Suite Gates
+        </div>
       </div>
     </section>
 
-    <!-- Pending Approvals Banner (Hidden when empty) -->
-    <section id="approvalsSection" class="hidden">
-      <div class="p-5 rounded-xl border border-amber-500/40 bg-gradient-to-r from-amber-950/40 to-slate-900 shadow-xl">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="h-8 w-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
-            <i class="fa-solid fa-triangle-exclamation"></i>
+    <!-- BAND 3: 3-COLUMN NUMBERED BENTO WITH SMOKED-GLASS OVERLAYS -->
+    <section class="section-block" aria-label="How Bind Coordinates Replenishment">
+      <div class="section-header-row">
+        <div>
+          <div class="eyebrow">THE THREEFOLD BIND</div>
+          <h2 class="section-h2">Know your stock,<br />govern what happens next</h2>
+        </div>
+        <button class="btn-orange-pill" onclick="triggerStockCheckAndScroll()">
+          <span>Evaluate Replenishment</span>
+          <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clip-rule="evenodd" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="bento-grid-3">
+        <!-- Bento 01: Stock & Quote Provenance -->
+        <article class="bento-col">
+          <div class="bento-meta">
+            <div class="mono" style="font-size:12px;color:var(--ink-muted);">01</div>
+            <h3 class="bento-title">Context &amp; Recorded Quotes</h3>
+            <p class="bento-desc">
+              Replenishment triggers only when on-hand stock falls to or below reorder point using confirmed supplier quotes.
+            </p>
+          </div>
+          <div class="bento-stage stage-green">
+            <div class="hud-glass-card" style="width:100%;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                  <div class="mono" style="font-size:11px;color:rgba(250,248,245,0.65);">CANOLA FRYING OIL (10L)</div>
+                  <div style="font-size:13px;color:#8CE99A;margin-top:2px;">Below Reorder Point (Par: 4)</div>
+                </div>
+                <div class="mono" style="font-size:42px;font-weight:500;line-height:1;">2</div>
+              </div>
+              <div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.12);font-size:12px;display:flex;justify-content:space-between;">
+                <span style="color:rgba(250,248,245,0.7);">Quote: quo_medina_2026_10</span>
+                <span class="mono" style="color:#FFF;">0.0001 USDC/u</span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Bento 02: TypeSafe Jev & On-Chain Policy Gate -->
+        <article class="bento-col">
+          <div class="bento-meta">
+            <div class="mono" style="font-size:12px;color:var(--ink-muted);">02</div>
+            <h3 class="bento-title">TypeSafe Jev &amp; Policy Gate</h3>
+            <p class="bento-desc">
+              System-One Jev scores urgency and supplier reliability while BindSettlement.sol enforces hard spend limits.
+            </p>
+          </div>
+          <div class="bento-stage stage-amber">
+            <div class="hud-glass-card" style="width:100%;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-weight:600;font-size:14px;">Policy &amp; Jev Telemetry</span>
+                <span class="mono" style="font-size:11px;color:#FDBA74;">Jev Conf: 94.2%</span>
+              </div>
+              <div class="pill-check-grid">
+                <div class="mini-hud-pill">
+                  <svg class="heroicon-sm" style="color:#4ADE80;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+                  Allowlist: PASS
+                </div>
+                <div class="mini-hud-pill">
+                  <svg class="heroicon-sm" style="color:#4ADE80;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+                  24h Cap: PASS
+                </div>
+                <div class="mini-hud-pill">
+                  <svg class="heroicon-sm" style="color:#4ADE80;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+                  BigInt Math: PASS
+                </div>
+                <div class="mini-hud-pill">
+                  <svg class="heroicon-sm" style="color:#4ADE80;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd" /></svg>
+                  Idempotent ID
+                </div>
+                <div class="mini-hud-pill">
+                  <svg class="heroicon-sm" style="color:#FBBF24;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" /></svg>
+                  Auto ≤ 0.0050
+                </div>
+                <div class="mini-hud-pill">
+                  <svg class="heroicon-sm" style="color:#F87171;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.661 2.237a.531.531 0 0 1 .678 0 11.947 11.947 0 0 0 7.078 2.749.5.5 0 0 1 .479.425c.069.52.104 1.05.104 1.59 0 5.162-3.26 9.563-7.834 11.256a.48.48 0 0 1-.332 0C5.26 16.564 2 12.163 2 7c0-.538.035-1.069.104-1.589a.5.5 0 0 1 .48-.425 11.947 11.947 0 0 0 7.077-2.75Z" clip-rule="evenodd" /></svg>
+                  Hard ≤ 0.5000
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Bento 03: Circle Agent Stack Settlement vs Fulfilment -->
+        <article class="bento-col">
+          <div class="bento-meta">
+            <div class="mono" style="font-size:12px;color:var(--ink-muted);">03</div>
+            <h3 class="bento-title">Arc Settlement ≠ Fulfilment</h3>
+            <p class="bento-desc">
+              Authorized spend moves testnet USDC via Circle Agent Stack, while physical delivery awaits 3-way match.
+            </p>
+          </div>
+          <div class="bento-stage stage-terracotta">
+            <div class="hud-glass-card" style="width:100%;background:rgba(255,255,255,0.95);color:var(--ink-primary);">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <span class="status-pill status-confirmed">
+                  <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+                  Confirmed on Arc Testnet
+                </span>
+                <span class="mono" style="font-size:12px;font-weight:600;">0.0010 USDC</span>
+              </div>
+              <div class="mono" style="font-size:11px;color:var(--ink-secondary);margin-bottom:10px;">
+                Tx: 0x626129a1...81c711bbb (Block 67155117)
+              </div>
+              <div style="padding:8px 10px;border-radius:10px;background:var(--bg-stone);font-size:11.5px;display:flex;justify-content:space-between;">
+                <span>Commercial Fulfilment:</span>
+                <strong class="mono" style="color:var(--status-hold);">ORDER_REQUESTED (Separate)</strong>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- BAND 4: INTERACTIVE 2-COLUMN SIGNAL DECODER -->
+    <section class="section-block" aria-label="Interactive Operational Signal Decoder">
+      <div style="text-align:center;max-width:620px;margin:0 auto 42px;">
+        <div class="eyebrow">DETERMINISTIC SCENARIO VERIFICATION</div>
+        <h2 class="section-h2">Your operations emit signals<br />We coordinate them under policy</h2>
+      </div>
+
+      <div class="decoder-grid">
+        <div class="decoder-list" role="tablist" aria-label="Operational Scenarios">
+          <button class="decoder-trigger active" data-signal="auto_spend" onclick="selectDecoderSignal('auto_spend')">
+            <span class="decoder-badge-icon">
+              <svg class="heroicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+            </span>
+            <span>Autonomous low-value spend</span>
+          </button>
+          <button class="decoder-trigger" data-signal="owner_hold" onclick="selectDecoderSignal('owner_hold')">
+            <span class="decoder-badge-icon" style="background:var(--status-hold);">
+              <svg class="heroicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" /></svg>
+            </span>
+            <span>Above-threshold owner hold</span>
+          </button>
+          <button class="decoder-trigger" data-signal="whitelist_revert" onclick="selectDecoderSignal('whitelist_revert')">
+            <span class="decoder-badge-icon" style="background:var(--status-rejected);">
+              <svg class="heroicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd" /></svg>
+            </span>
+            <span>Unapproved supplier revert</span>
+          </button>
+          <button class="decoder-trigger" data-signal="daily_cap_revert" onclick="selectDecoderSignal('daily_cap_revert')">
+            <span class="decoder-badge-icon" style="background:var(--status-rejected);">
+              <svg class="heroicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd" /></svg>
+            </span>
+            <span>Daily budget cap enforcement</span>
+          </button>
+          <button class="decoder-trigger" data-signal="social_webhook" onclick="selectDecoderSignal('social_webhook')">
+            <span class="decoder-badge-icon" style="background:var(--accent-orange);">
+              <svg class="heroicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M13.2 2.24a.75.75 0 0 0 .04 1.06l2.1 1.95H6.75a.75.75 0 0 0 0 1.5h8.59l-2.1 1.95a.75.75 0 1 0 1.02 1.1l3.5-3.25a.75.75 0 0 0 0-1.1l-3.5-3.25a.75.75 0 0 0-1.06.04Zm-6.4 8a.75.75 0 0 0-1.06-.04l-3.5 3.25a.75.75 0 0 0 0 1.1l3.5 3.25a.75.75 0 1 0 1.02-1.1l-2.1-1.95h8.59a.75.75 0 0 0 0-1.5H4.66l2.1-1.95a.75.75 0 0 0 .04-1.06Z" clip-rule="evenodd" /></svg>
+            </span>
+            <span>Social &amp; POS surface role guard</span>
+          </button>
+          <button class="decoder-trigger" data-signal="three_way_match" onclick="selectDecoderSignal('three_way_match')">
+            <span class="decoder-badge-icon" style="background:#2563EB;">
+              <svg class="heroicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Zm10.857 5.691a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 0 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+            </span>
+            <span>3-Way Match reconciliation</span>
+          </button>
+        </div>
+
+        <div class="decoder-card" id="decoder-detail-card">
+          <!-- Populated dynamically by app.js -->
+        </div>
+      </div>
+    </section>
+
+    <!-- BAND 5: LIVE OPERATOR WORKSPACE (5 PRD VIEWS + 7-TIER REQUEST INSPECTOR) -->
+    <section class="section-block" id="operator-workspace" aria-label="Bind Supply Operator Live Workspace">
+      <div class="section-header-row">
+        <div>
+          <div class="eyebrow">LIVE OPERATOR WORKSPACE • BIND SUPPLY OPERATOR V0.1</div>
+          <h2 class="section-h2">Operational Control &amp; Evidence Ledger</h2>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <label class="mono" style="font-size:12px;color:var(--ink-secondary);">
+            Template:
+            <select id="template-selector" onchange="switchBusinessTemplate(this.value)" style="margin-left:6px;padding:8px 12px;border-radius:9999px;border:1px solid var(--border-hairline);background:var(--bg-surface);font-family:var(--font-mono);font-size:12px;">
+              <option value="kitchen-ops">kitchen-ops (Hearth &amp; Table Kitchen)</option>
+              <option value="coffee-roaster">coffee-roaster (Atlas Micro-Lot Roastery)</option>
+            </select>
+          </label>
+          <button id="btnRecover" class="btn-secondary-pill" style="min-height:38px;padding:7px 14px;font-size:12px;">
+            <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M13.2 2.24a.75.75 0 0 0 .04 1.06l2.1 1.95H6.75a.75.75 0 0 0 0 1.5h8.59l-2.1 1.95a.75.75 0 1 0 1.02 1.1l3.5-3.25a.75.75 0 0 0 0-1.1l-3.5-3.25a.75.75 0 0 0-1.06.04Zm-6.4 8a.75.75 0 0 0-1.06-.04l-3.5 3.25a.75.75 0 0 0 0 1.1l3.5 3.25a.75.75 0 1 0 1.02-1.1l-2.1-1.95h8.59a.75.75 0 0 0 0-1.5H4.66l2.1-1.95a.75.75 0 0 0 .04-1.06Z" clip-rule="evenodd" /></svg>
+            <span>Scan &amp; Recover</span>
+          </button>
+          <button id="toggle-pause-btn" class="btn-secondary-pill" style="min-height:38px;padding:7px 14px;font-size:12px;" onclick="toggleAgentPauseState()">
+            <span>Agent Execution: </span>
+            <strong id="agent-pause-badge" class="mono" style="color:var(--status-confirmed);">ACTIVE</strong>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tactile Metallic Vermilion Vault Card -->
+      <div class="vault-membership-card">
+        <div>
+          <div class="mono" style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;opacity:0.85;">
+            BIND POLICY VAULT • ARC TESTNET (CHAIN ID 5042002)
+          </div>
+          <div style="font-family:var(--font-display);font-size:clamp(1.4rem,2.5vw,2rem);font-weight:600;margin-top:4px;display:flex;align-items:center;gap:8px;">
+            <svg class="heroicon-md" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.661 2.237a.531.531 0 0 1 .678 0 11.947 11.947 0 0 0 7.078 2.749.5.5 0 0 1 .479.425c.069.52.104 1.05.104 1.59 0 5.162-3.26 9.563-7.834 11.256a.48.48 0 0 1-.332 0C5.26 16.564 2 12.163 2 7c0-.538.035-1.069.104-1.589a.5.5 0 0 1 .48-.425 11.947 11.947 0 0 0 7.077-2.75Zm4.196 5.954a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" /></svg>
+            <span>BindSettlement.sol Guarded Spend Vault</span>
+          </div>
+          <div class="mono" style="font-size:12.5px;margin-top:6px;opacity:0.92;">
+            Contract: <a href="https://testnet.arcscan.app/address/0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29" target="_blank" style="color:#FFF;text-decoration:underline;">0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29</a>
+          </div>
+        </div>
+        <div style="display:flex;gap:24px;flex-wrap:wrap;">
+          <div>
+            <div class="mono" style="font-size:10.5px;opacity:0.8;">TREASURY BALANCE</div>
+            <div class="mono" style="font-size:18px;font-weight:600;" id="treasuryBalance">$10,000.00 USDC</div>
           </div>
           <div>
-            <h3 class="text-base font-bold text-amber-300">Pending Owner Approvals</h3>
-            <p class="text-xs text-slate-400">Commercial commitments exceeding the autonomous threshold ($250.00)</p>
+            <div class="mono" style="font-size:10.5px;opacity:0.8;">AUTONOMOUS LIMIT</div>
+            <div class="mono" style="font-size:18px;font-weight:600;" id="pol-auto-limit">0.0050 USDC</div>
+          </div>
+          <div>
+            <div class="mono" style="font-size:10.5px;opacity:0.8;">HARD PER-PURCHASE MAX</div>
+            <div class="mono" style="font-size:18px;font-weight:600;" id="pol-hard-max">0.5000 USDC</div>
+          </div>
+          <div>
+            <div class="mono" style="font-size:10.5px;opacity:0.8;">24H SPENT / DAILY CAP</div>
+            <div class="mono" style="font-size:18px;font-weight:600;" id="pol-daily-used">0.0010 / 1.0000 USDC</div>
+          </div>
+          <div>
+            <div class="mono" style="font-size:10.5px;opacity:0.8;">RESERVED PENDING</div>
+            <div class="mono" style="font-size:18px;font-weight:600;" id="pol-reserved">0.0250 USDC</div>
           </div>
         </div>
-        <div id="approvalsList" class="space-y-3"></div>
+      </div>
+
+      <!-- Main Operator Shell -->
+      <div class="operator-shell">
+        <div class="operator-topbar">
+          <div class="operator-tabs" role="tablist">
+            <button class="op-tab-btn active" data-tab="operations" onclick="switchOperatorTab('operations')">Operations</button>
+            <button class="op-tab-btn" data-tab="approvals" onclick="switchOperatorTab('approvals')">Approvals (<span id="nav-approval-count">1 Held</span>)</button>
+            <button class="op-tab-btn" data-tab="activity" onclick="switchOperatorTab('activity')">Activity (<span id="nav-activity-count">8</span>)</button>
+            <button class="op-tab-btn" data-tab="setup" onclick="switchOperatorTab('setup')">Business Setup</button>
+            <button class="op-tab-btn" data-tab="settings" onclick="switchOperatorTab('settings')">Settings &amp; Health</button>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button id="btn-run-stock-check" class="btn-orange-pill" style="min-height:38px;padding:7px 16px;font-size:12.5px;" onclick="runStockCheckEvaluation()">
+              <span>Check Stock &amp; Run Replenishment Agent</span>
+              <svg class="heroicon-sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clip-rule="evenodd" /></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="operator-grid">
+          <!-- Left Workbench Area -->
+          <div class="operator-main">
+
+            <!-- TAB 1: OPERATIONS -->
+            <div id="tab-operations" class="view-pane active">
+              <!-- Active Agent Roles Grid (Preserves BIND_BUILD_SPEC.md 3-Role Visibility) -->
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <h3 class="mono" style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">
+                  Active Agent Team &amp; Role Authority
+                </h3>
+                <span class="mono" style="font-size:11px;color:var(--ink-muted);">3 Agents Coordinated</span>
+              </div>
+              <div class="agent-roles-grid" id="rolesGrid">
+                <div class="agent-role-card">
+                  <div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                      <strong style="font-size:13.5px;">Kitchen Procurement Agent</strong>
+                      <span class="status-pill status-confirmed">Enforced</span>
+                    </div>
+                    <p style="font-size:12px;color:var(--ink-secondary);">Monitors par levels, evaluates quotes with Jev System-One, and submits guarded Arc settlements.</p>
+                  </div>
+                </div>
+                <div class="agent-role-card">
+                  <div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                      <strong style="font-size:13.5px;">Customer &amp; Fulfilment Agent</strong>
+                      <span class="status-pill status-confirmed">Enforced</span>
+                    </div>
+                    <p style="font-size:12px;color:var(--ink-secondary);">Tracks physical delivery receipts, verifies 3-Way Match packets, and separates payment from goods intake.</p>
+                  </div>
+                </div>
+                <div class="agent-role-card">
+                  <div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                      <strong style="font-size:13.5px;">Menu &amp; Feedback Agent</strong>
+                      <span class="status-pill status-confirmed">Enforced</span>
+                    </div>
+                    <p style="font-size:12px;color:var(--ink-secondary);">Correlates dish margin, waste telemetry, and supplier price shifts into advisory prep adjustments.</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Pending Approvals Banner (Dynamic from DB + Seed) -->
+              <div id="approvalsSection" class="well-box hidden" style="margin-bottom:20px;border-color:var(--status-hold);">
+                <div style="font-weight:600;font-size:13px;margin-bottom:8px;">Pending Owner Approvals</div>
+                <div id="approvalsList"></div>
+              </div>
+
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <h3 style="font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;" class="mono">
+                  Monitored Supplies &amp; Stock Thresholds
+                </h3>
+                <span class="mono" style="font-size:11px;color:var(--ink-muted);" id="nav-low-stock-count">2 Items at/below reorder point</span>
+              </div>
+              <table class="data-table" id="inventory-table">
+                <thead>
+                  <tr>
+                    <th>Supply Item / SKU</th>
+                    <th>On-Hand</th>
+                    <th>Reorder / Target</th>
+                    <th>Approved Quote &amp; Provenance</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="inventoryTable"></tbody>
+              </table>
+
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <h3 style="font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;" class="mono">
+                  Replenishment Requests (Click row to inspect 7-step evidence)
+                </h3>
+              </div>
+              <table class="data-table" id="requests-table">
+                <thead>
+                  <tr>
+                    <th>Request ID</th>
+                    <th>Item &amp; Qty</th>
+                    <th>Approved Supplier</th>
+                    <th>Server Total</th>
+                    <th>Payment State (Chain)</th>
+                    <th>Order / Fulfilment State</th>
+                  </tr>
+                </thead>
+                <tbody id="requests-tbody"></tbody>
+              </table>
+
+              <!-- Interactive Social & POS Surface Simulator Dock -->
+              <div class="well-box" style="margin-top:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+                  <span class="mono" style="font-size:11.5px;font-weight:600;text-transform:uppercase;">
+                    Connected Business Surfaces Simulator (POST /api/webhooks/incoming)
+                  </span>
+                  <span id="surface-sim-status" class="status-pill status-neutral">Ready for Surface Event</span>
+                </div>
+                <p style="font-size:12.5px;color:var(--ink-secondary);margin-bottom:10px;">
+                  Test how Bind brings the agent into WhatsApp, Slack, and POS webhooks while enforcing strict staff vs. owner role boundaries:
+                </p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button class="btn-secondary-pill" style="min-height:36px;padding:6px 12px;font-size:12px;" onclick="simulateSurfaceEvent('staff_stock_low')">
+                    1. [WhatsApp Staff] Report Low Stock (Allowed)
+                  </button>
+                  <button class="btn-secondary-pill" style="min-height:36px;padding:6px 12px;font-size:12px;" onclick="simulateSurfaceEvent('staff_illegal_approve')">
+                    2. [Slack Staff] Attempt Spend Approval (Blocked)
+                  </button>
+                  <button class="btn-secondary-pill" style="min-height:36px;padding:6px 12px;font-size:12px;" onclick="simulateSurfaceEvent('owner_approve_hold')">
+                    3. [Slack Owner] Approve Held Request (Allowed)
+                  </button>
+                </div>
+              </div>
+
+              <!-- Live Workflows & Auditable Event Log Summary Panels -->
+              <div class="sub-panels-2">
+                <div class="well-box">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <strong class="mono" style="font-size:12px;">Active Workflows &amp; 3-Way Match</strong>
+                    <span class="mono" style="font-size:10.5px;color:var(--ink-muted);">Durable State Machine</span>
+                  </div>
+                  <div id="workflowsList" style="font-size:12px;display:flex;flex-direction:column;gap:6px;">
+                    <div style="color:var(--ink-muted);">Synced with PostgreSQL workflow store</div>
+                  </div>
+                </div>
+                <div class="well-box">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <strong class="mono" style="font-size:12px;">Auditable Event Log</strong>
+                    <span class="mono" style="font-size:10.5px;color:var(--ink-muted);">Immutable Policy Trail</span>
+                  </div>
+                  <div id="auditList" style="font-size:12px;display:flex;flex-direction:column;gap:6px;">
+                    <div style="color:var(--ink-muted);">Synced with PostgreSQL audit_logs</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 2: APPROVALS -->
+            <div id="tab-approvals" class="view-pane">
+              <h3 class="mono" style="font-size:14px;font-weight:600;text-transform:uppercase;margin-bottom:8px;">
+                Owner Approval Queue (Out-of-Band Spend Authorization)
+              </h3>
+              <p style="font-size:13px;color:var(--ink-secondary);margin-bottom:16px;">
+                Approval authorizes a request above the autonomous limit (<span class="mono">0.0050 USDC</span>) but <strong>cannot bypass</strong> the hard per-purchase maximum, rolling 24h budget cap, or recipient allowlist.
+              </p>
+              <div id="approval-cards-container"></div>
+            </div>
+
+            <!-- TAB 3: ACTIVITY -->
+            <div id="tab-activity" class="view-pane">
+              <h3 class="mono" style="font-size:14px;font-weight:600;text-transform:uppercase;margin-bottom:12px;">
+                Append-Only Operational Event &amp; Evidence Ledger
+              </h3>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp (UTC)</th>
+                    <th>Event Type</th>
+                    <th>Actor</th>
+                    <th>Evidence Label</th>
+                    <th>Details &amp; Chain Reference</th>
+                  </tr>
+                </thead>
+                <tbody id="activity-tbody"></tbody>
+              </table>
+            </div>
+
+            <!-- TAB 4: BUSINESS SETUP -->
+            <div id="tab-setup" class="view-pane">
+              <h3 class="mono" style="font-size:14px;font-weight:600;text-transform:uppercase;margin-bottom:12px;">
+                Business Profile, Approved Suppliers &amp; Spend Policy (FR-01)
+              </h3>
+              <div id="setup-summary-container"></div>
+            </div>
+
+            <!-- TAB 5: SETTINGS & HEALTH -->
+            <div id="tab-settings" class="view-pane">
+              <h3 class="mono" style="font-size:14px;font-weight:600;text-transform:uppercase;margin-bottom:12px;">
+                Circle Agent Stack, Arc Testnet &amp; Contract Verification Matrix
+              </h3>
+              <div id="health-matrix-container"></div>
+            </div>
+
+            <!-- Compatibility Evidence Drawer (Preserves Playwright E2E Selectors) -->
+            <div id="evidence-drawer" class="well-box" style="margin-top:20px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <strong class="mono" style="font-size:12px;">ACTIVE WORKFLOW CRYPTOGRAPHIC EVIDENCE SUMMARY</strong>
+                <span id="badge-template" class="status-pill status-confirmed">kitchen-ops</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:12px;">
+                <div>Quote Source Mode: <span id="ev-supplier-mode" class="mono">SIMULATED_SUPPLIER_ADAPTER</span></div>
+                <div>Advisory Benchmark: <span id="ev-benchmark-mode" class="mono">LIVE_WEB_BENCHMARK</span></div>
+                <div>Chain Payment State: <span id="ev-payment-status" class="mono">Confirmed on Arc Testnet</span></div>
+                <div>Goods Fulfilment State: <span id="ev-fulfilment-status" class="mono">Order fulfilment not yet confirmed</span></div>
+              </div>
+              <div class="mono" style="font-size:11px;color:var(--ink-secondary);margin-top:6px;word-break:break-all;">
+                Decision Hash: <span id="ev-decision-hash">0x8f4e2c91a61d904b77c205e12e9a45c33d08b1a91f7f03e2c44a1102a89c74d1</span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Right Pane: Exact 7-Tier Request Detail Inspector (PRD Section 9) -->
+          <aside class="operator-inspector" aria-label="7-Tier Request Detail Inspector">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:2px solid var(--ink-primary);margin-bottom:8px;">
+              <div>
+                <div class="eyebrow" style="margin-bottom:2px;">7-TIER REQUEST INSPECTOR</div>
+                <h3 id="insp-title" class="mono" style="font-size:18px;font-weight:600;">req_auto_01</h3>
+              </div>
+              <span id="insp-evidence-class" class="status-pill status-confirmed">VERIFIED_REMOTE</span>
+            </div>
+            <div id="inspector-content"></div>
+          </aside>
+        </div>
       </div>
     </section>
 
-    <!-- Kitchen Inventory & Restock Section -->
-    <section class="bg-slate-900/60 rounded-xl border border-slate-800 overflow-hidden shadow-sm">
-      <div class="p-5 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
+    <!-- BAND 6: OVERSIZED GRADIENT WORDMARK FOOTER -->
+    <footer>
+      <div class="giant-wordmark" aria-hidden="true">bind</div>
+      <div class="footer-cols">
         <div>
-          <h2 class="text-lg font-bold text-white flex items-center gap-2">
-            <i class="fa-solid fa-boxes-stacked text-amber-500"></i>
-            Kitchen Live Inventory
-          </h2>
-          <p class="text-xs text-slate-400">Automated par-level monitoring and supplier RFQ triggers</p>
+          <strong style="color:var(--ink-primary);display:block;margin-bottom:6px;">Bind Supply Operator v0.1</strong>
+          <div>Business-side agent deployment &amp; operational coordination layer.</div>
         </div>
-        <div class="text-xs text-slate-400">
-          Auto-replenish when stock &lt; par level
-        </div>
-      </div>
-
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-sm text-slate-300">
-          <thead class="bg-slate-800/60 text-xs uppercase text-slate-400 font-medium">
-            <tr>
-              <th class="px-5 py-3">Item / SKU</th>
-              <th class="px-5 py-3">Category</th>
-              <th class="px-5 py-3">Current Stock</th>
-              <th class="px-5 py-3">Par Level</th>
-              <th class="px-5 py-3">Unit Price</th>
-              <th class="px-5 py-3">Status</th>
-              <th class="px-5 py-3 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody id="inventoryTable" class="divide-y divide-slate-800">
-            <tr><td colspan="7" class="px-5 py-8 text-center text-slate-500">Loading inventory...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Verifiable Agent Reasoning & Arcscan Evidence Drawer -->
-    <div id="evidence-drawer" class="rounded-xl border border-slate-700 bg-slate-900/90 p-6 shadow-xl">
-      <div class="flex items-center justify-between border-b border-slate-800 pb-4">
         <div>
-          <h3 class="text-lg font-semibold text-white">Verifiable Agent & Arc L1 Evidence</h3>
-          <p class="text-sm text-slate-400">Cryptographic audit trail and on-chain policy enforcement record.</p>
+          <strong style="color:var(--ink-primary);display:block;margin-bottom:6px;">Target Environment</strong>
+          <div class="mono" style="font-size:11.5px;">Arc Testnet (5042002)</div>
+          <div class="mono" style="font-size:11.5px;">Asset: Testnet USDC</div>
+          <div class="mono" style="font-size:11.5px;">Circle Agent Stack</div>
         </div>
-        <span id="badge-template" class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400 border border-emerald-500/20">
-          kitchen-ops
-        </span>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-        <!-- Left Column: Honesty & Benchmark Attribution -->
-        <div class="space-y-3">
-          <div class="text-xs font-semibold uppercase tracking-wider text-slate-500">Source Attribution & Honesty</div>
-          <div class="rounded-lg bg-slate-950 p-3 border border-slate-800 text-sm">
-            <div class="flex justify-between text-slate-300 mb-1">
-              <span class="text-slate-400">Supplier Quote:</span>
-              <span id="ev-supplier-mode" class="font-mono text-amber-400 text-xs px-2 py-0.5 bg-amber-500/10 rounded">SIMULATED_SUPPLIER_ADAPTER</span>
-            </div>
-            <div class="flex justify-between text-slate-300">
-              <span class="text-slate-400">Market Benchmark:</span>
-              <span id="ev-benchmark-mode" class="font-mono text-cyan-400 text-xs px-2 py-0.5 bg-cyan-500/10 rounded">LIVE_WEB_BENCHMARK</span>
-            </div>
-          </div>
-
-          <div class="text-xs font-semibold uppercase tracking-wider text-slate-500 mt-4">Lifecycle Separation</div>
-          <div class="rounded-lg bg-slate-950 p-3 border border-slate-800 text-sm space-y-2">
-            <div class="flex justify-between">
-              <span class="text-slate-400">Payment Status:</span>
-              <span id="ev-payment-status" class="font-mono text-emerald-400 text-xs">SETTLED_ON_ARC_TESTNET</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-slate-400">Goods Fulfilment:</span>
-              <span id="ev-fulfilment-status" class="font-mono text-slate-400 text-xs">NOT_FULFILLED_AWAITING_3WAY_MATCH</span>
-            </div>
-          </div>
+        <div>
+          <strong style="color:var(--ink-primary);display:block;margin-bottom:6px;">On-Chain Artifacts</strong>
+          <div><a href="https://testnet.arcscan.app/address/0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29" target="_blank">BindSettlement.sol ↗</a></div>
+          <div><a href="https://testnet.arcscan.app/tx/0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb" target="_blank">Confirmed Settlement Tx ↗</a></div>
         </div>
-
-        <!-- Right Column: On-Chain Arc L1 Policy & Decision Hash -->
-        <div class="space-y-3">
-          <div class="text-xs font-semibold uppercase tracking-wider text-slate-500">Arc L1 Testnet Policy Contract</div>
-          <div class="rounded-lg bg-slate-950 p-3 border border-slate-800 text-xs font-mono space-y-1.5 text-slate-300">
-            <div class="flex justify-between">
-              <span class="text-slate-500">Contract:</span>
-              <a href="https://testnet.arcscan.app/address/0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29" target="_blank" class="text-indigo-400 hover:underline truncate max-w-[180px]">
-                0x16E1Bd...f2aA29
-              </a>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-slate-500">Sample Settled Tx:</span>
-              <a href="https://testnet.arcscan.app/tx/0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb" target="_blank" class="text-indigo-400 hover:underline truncate max-w-[180px]">
-                0x626129...1bbb
-              </a>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-slate-500">Chain ID:</span>
-              <span class="text-white">5042002 (ARC-TESTNET)</span>
-            </div>
-          </div>
-
-          <div class="text-xs font-semibold uppercase tracking-wider text-slate-500 mt-4">Cryptographic Decision Hash</div>
-          <div class="rounded-lg bg-slate-950 p-3 border border-slate-800 font-mono text-xs text-slate-400 break-all select-all" id="ev-decision-hash">
-            0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb
-          </div>
+        <div>
+          <strong style="color:var(--ink-primary);display:block;margin-bottom:6px;">Core Invariants</strong>
+          <div>Authority Outside Model</div>
+          <div>Server Recalculates Money</div>
+          <div>Payment ≠ Goods Fulfilment</div>
+        </div>
+        <div>
+          <strong style="color:var(--ink-primary);display:block;margin-bottom:6px;">Release Verification</strong>
+          <div class="mono" style="font-size:11.5px;color:var(--status-confirmed);">PASS=10 FAIL_OR_BLOCKED=0</div>
+          <div class="mono" style="font-size:11.5px;">Foundry Coverage: 100%</div>
         </div>
       </div>
-    </div>
-
-    <!-- Workflows & Activity History -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- Active Workflows -->
-      <section class="bg-slate-900/60 rounded-xl border border-slate-800 p-5 flex flex-col shadow-sm">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-base font-bold text-white flex items-center gap-2">
-            <i class="fa-solid fa-diagram-project text-blue-400"></i>
-            Active Workflows & 3-Way Match
-          </h2>
-          <span class="text-xs text-slate-400">Durable state machine</span>
-        </div>
-        <div id="workflowsList" class="flex-1 space-y-3 overflow-y-auto max-h-96 pr-1">
-          <div class="text-slate-500 text-xs text-center py-8">No active workflows</div>
-        </div>
-      </section>
-
-      <!-- Audit Trail -->
-      <section class="bg-slate-900/60 rounded-xl border border-slate-800 p-5 flex flex-col shadow-sm">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-base font-bold text-white flex items-center gap-2">
-            <i class="fa-solid fa-shield-halved text-emerald-400"></i>
-            Auditable Event Log
-          </h2>
-          <span class="text-xs text-slate-400">Immutable policy record</span>
-        </div>
-        <div id="auditList" class="flex-1 space-y-3 overflow-y-auto max-h-96 pr-1">
-          <div class="text-slate-500 text-xs text-center py-8">Loading audit trail...</div>
-        </div>
-      </section>
-    </div>
-  </main>
-
-  <footer class="border-t border-slate-800/80 bg-slate-900 py-4 px-6 text-center text-xs text-slate-500">
-    Bind autonomous business agent platform · Tameion Agents Hackathon · Canteen × Circle on Arc L1
-  </footer>
+    </footer>
+  </div>
 
   <script src="/app.js"></script>
 </body>
