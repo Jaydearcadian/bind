@@ -1664,47 +1664,75 @@
         </div>
 
         <nav class="sidebar-nav" aria-label="Operations sections">
-          <button type="button" class="sidebar-link active" data-app-section="overview">
+          <a href="/app" data-route="/app" class="sidebar-link active" data-subpage="overviewPage">
             <span class="sidebar-link-left">
               <!-- Heroicon: Squares2X2Icon -->
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z"/></svg>
               <span>Overview</span>
             </span>
-          </button>
+          </a>
 
-          <button type="button" class="sidebar-link" data-app-section="workflowsSection">
+          <a href="/app/workflows" data-route="/app/workflows" class="sidebar-link" data-subpage="workflowsPage">
             <span class="sidebar-link-left">
               <!-- Heroicon: ArrowsRightLeftIcon -->
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
               <span>Workflows</span>
             </span>
             <span id="navWorkflowCount" class="badge badge-neutral" style="background:rgba(255,255,255,0.12); color:#fff; border:none;">0</span>
-          </button>
+          </a>
 
-          <button type="button" class="sidebar-link" data-app-section="approvalsSection">
+          <a href="/app/approvals" data-route="/app/approvals" class="sidebar-link" data-subpage="approvalsPage">
             <span class="sidebar-link-left">
               <!-- Heroicon: ShieldCheckIcon -->
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/></svg>
               <span>Approvals</span>
             </span>
             <span id="navApprovalCount" class="badge badge-orange">0</span>
-          </button>
+          </a>
 
-          <button type="button" class="sidebar-link" id="sidebarOpenEvidenceBtn">
+          <a href="/app/evidence" data-route="/app/evidence" class="sidebar-link" data-subpage="evidencePage" id="sidebarOpenEvidenceBtn">
             <span class="sidebar-link-left">
               <!-- Heroicon: DocumentCheckIcon -->
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12"/></svg>
               <span>Evidence</span>
             </span>
-          </button>
+          </a>
 
-          <button type="button" class="sidebar-link" data-app-section="setupSection">
+          <div style="margin-top:12px; margin-bottom:4px; padding:0 12px; font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:rgba(250,248,244,0.45);">
+            Business Setup Studio
+          </div>
+
+          <a href="/app/setup/onboarding" data-route="/app/setup/onboarding" class="sidebar-link" data-subpage="setupOnboardingPage">
             <span class="sidebar-link-left">
               <!-- Heroicon: BuildingStorefrontIcon -->
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z"/></svg>
               <span>Business setup</span>
             </span>
-          </button>
+          </a>
+
+          <a href="/app/setup/agents" data-route="/app/setup/agents" class="sidebar-link" data-subpage="setupAgentsPage">
+            <span class="sidebar-link-left">
+              <!-- Heroicon: CpuChipIcon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg>
+              <span>Agent roles</span>
+            </span>
+          </a>
+
+          <a href="/app/setup/surfaces" data-route="/app/setup/surfaces" class="sidebar-link" data-subpage="setupSurfacesPage">
+            <span class="sidebar-link-left">
+              <!-- Heroicon: ChatBubbleLeftRightIcon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/></svg>
+              <span>Messaging surfaces</span>
+            </span>
+          </a>
+
+          <a href="/app/setup/documents" data-route="/app/setup/documents" class="sidebar-link" data-subpage="setupDocumentsPage">
+            <span class="sidebar-link-left">
+              <!-- Heroicon: DocumentTextIcon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
+              <span>Documents &amp; Ledger</span>
+            </span>
+          </a>
         </nav>
       </div>
 
@@ -1734,7 +1762,7 @@
       </div>
 
       <main class="app-main" id="overview">
-        <!-- Workspace Top Header -->
+        <!-- Workspace Top Header (Persistent across all /app subpages) -->
         <div style="display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:24px;">
           <div>
             <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:6px;">
@@ -1777,193 +1805,206 @@
           </div>
         </div>
 
-        <!-- 1. Current Situation Banner (Derived from real persisted state) -->
-        <section class="situation-banner" aria-label="Current operational situation">
-          <div>
-            <div style="font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--bind-teal); margin-bottom:4px;">
-              Current Situation &amp; Next Valid Action
-            </div>
-            <p id="situationSentence" style="font-size:1rem; font-weight:600; color:var(--bind-ink);">
-              Loading workspace inventory, active replenishment workflows, and settlement records…
-            </p>
-            <p id="situationSubtext" style="font-size:0.85rem; color:var(--bind-text-muted); margin-top:2px;">
-              All authority rules are enforced deterministically outside the model.
-            </p>
-          </div>
-          <div id="situationActionContainer" style="display:flex; gap:10px; flex-shrink:0;"></div>
-        </section>
-
-        <!-- Context & Authority Strip -->
-        <section class="context-strip" id="contextStripSection" aria-label="Workspace authority and treasury summary">
-          <div class="context-tile">
-            <div class="context-tile-label">
-              <span>Treasury Balance (USDC)</span>
-            </div>
-            <div class="context-tile-value" id="treasuryBalance">$12,500.00</div>
-            <div class="context-tile-sub mono" id="treasuryAddressSub">0xA4D1…e9C2</div>
-          </div>
-
-          <div class="context-tile">
-            <div class="context-tile-label">
-              <span>Spending Authority Rules</span>
-            </div>
-            <div class="context-tile-value" id="dailyBudgetValue">$2,000.00 / day</div>
-            <div class="context-tile-sub" id="ownerThresholdSub">Owner approval gate &gt; $500.00</div>
-          </div>
-
-          <div class="context-tile">
-            <div class="context-tile-label">
-              <span>Supplier Source Mode</span>
-            </div>
-            <div class="context-tile-value" style="font-size:1.05rem; padding-top:4px;">
-              <span class="badge badge-neutral mono">SIMULATED_SUPPLIER_ADAPTER</span>
-            </div>
-            <div class="context-tile-sub" id="supplierCountSub">2 approved vendors · 1 unverified blocked</div>
-          </div>
-
-          <div class="context-tile">
-            <div class="context-tile-label">
-              <span>Active Agent Team</span>
-            </div>
-            <div id="agentRolesList" style="display:flex; flex-direction:column; gap:4px; font-size:0.8rem; margin-top:4px;">
-              <div style="display:flex; justify-content:space-between;">
-                <span>Kitchen Procurement Agent</span>
-                <span class="badge badge-teal" style="padding:1px 7px; font-size:0.68rem;">Enforced</span>
+        <!-- ==================================================================
+             SUBPAGE 1: OVERVIEW (/app)
+             Situation Banner + Context Strip + Kitchen Inventory Table
+             ================================================================== -->
+        <div id="overviewPage" class="app-subpage">
+          <!-- 1. Current Situation Banner (Derived from real persisted state) -->
+          <section class="situation-banner" aria-label="Current operational situation">
+            <div>
+              <div style="font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--bind-teal); margin-bottom:4px;">
+                Current Situation &amp; Next Valid Action
               </div>
-              <div style="display:flex; justify-content:space-between;">
-                <span>Customer &amp; Fulfilment Agent</span>
-                <span class="badge badge-teal" style="padding:1px 7px; font-size:0.68rem;">Enforced</span>
-              </div>
-              <div style="display:flex; justify-content:space-between;">
-                <span>Menu &amp; Feedback Agent</span>
-                <span class="badge badge-teal" style="padding:1px 7px; font-size:0.68rem;">Enforced</span>
-              </div>
+              <p id="situationSentence" style="font-size:1rem; font-weight:600; color:var(--bind-ink);">
+                Loading workspace inventory, active replenishment workflows, and settlement records…
+              </p>
+              <p id="situationSubtext" style="font-size:0.85rem; color:var(--bind-text-muted); margin-top:2px;">
+                All authority rules are enforced deterministically outside the model.
+              </p>
             </div>
-          </div>
-        </section>
+            <div id="situationActionContainer" style="display:flex; gap:10px; flex-shrink:0;"></div>
+          </section>
 
-        <!-- Two-Column Operations Grid (7fr / 5fr) -->
-        <div class="ops-grid">
-          <!-- LEFT COLUMN (7fr): Primary Active Workflow & Live Kitchen Inventory -->
-          <div>
-            <!-- Primary Active Workflow Card -->
-            <section class="panel-card" id="workflowsSection" aria-label="Active Workflows & 3-Way Match">
-              <div class="panel-header">
-                <div>
-                  <h2 class="panel-title">
-                    <!-- Heroicon: ArrowsRightLeftIcon -->
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
-                    </svg>
-                    <span>Active Workflows &amp; 3-Way Match</span>
-                  </h2>
-                  <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
-                    Select any workflow to inspect its 7-stage lifecycle, deterministic policy evaluation, and settlement vs. fulfilment state.
-                  </p>
+          <!-- Context & Authority Strip -->
+          <section class="context-strip" id="contextStripSection" aria-label="Workspace authority and treasury summary">
+            <div class="context-tile">
+              <div class="context-tile-label">
+                <span>Treasury Balance (USDC)</span>
+              </div>
+              <div class="context-tile-value" id="treasuryBalance">$12,500.00</div>
+              <div class="context-tile-sub mono" id="treasuryAddressSub">0xA4D1…e9C2</div>
+            </div>
+
+            <div class="context-tile">
+              <div class="context-tile-label">
+                <span>Spending Authority Rules</span>
+              </div>
+              <div class="context-tile-value" id="dailyBudgetValue">$2,000.00 / day</div>
+              <div class="context-tile-sub" id="ownerThresholdSub">Owner approval gate &gt; $500.00</div>
+            </div>
+
+            <div class="context-tile">
+              <div class="context-tile-label">
+                <span>Supplier Source Mode</span>
+              </div>
+              <div class="context-tile-value" style="font-size:1.05rem; padding-top:4px;">
+                <span class="badge badge-neutral mono">SIMULATED_SUPPLIER_ADAPTER</span>
+              </div>
+              <div class="context-tile-sub" id="supplierCountSub">2 approved vendors · 1 unverified blocked</div>
+            </div>
+
+            <div class="context-tile">
+              <div class="context-tile-label">
+                <span>Active Agent Team</span>
+              </div>
+              <div id="agentRolesList" style="display:flex; flex-direction:column; gap:4px; font-size:0.8rem; margin-top:4px;">
+                <div style="display:flex; justify-content:space-between;">
+                  <span>Kitchen Procurement Agent</span>
+                  <span class="badge badge-teal" style="padding:1px 7px; font-size:0.68rem;">Enforced</span>
                 </div>
-                <div id="workflowSelectorTabs" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
-              </div>
-
-              <!-- Selected Workflow Detail Container -->
-              <div id="selectedWorkflowContainer">
-                <p style="color:var(--bind-text-muted); font-size:0.9rem;">Loading workflow lifecycle…</p>
-              </div>
-            </section>
-
-            <!-- Kitchen Live Inventory Table -->
-            <section class="panel-card" aria-label="Kitchen Live Inventory">
-              <div class="panel-header">
-                <div>
-                  <h2 class="panel-title">
-                    <!-- Heroicon: BuildingStorefrontIcon -->
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z" />
-                    </svg>
-                    <span>Kitchen Stock &amp; Par Thresholds</span>
-                  </h2>
-                  <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
-                    Items below par level can trigger the Replenishment Agent. Orders &le; $500 auto-authorize; orders &gt; $500 hold for owner approval.
-                  </p>
+                <div style="display:flex; justify-content:space-between;">
+                  <span>Customer &amp; Fulfilment Agent</span>
+                  <span class="badge badge-teal" style="padding:1px 7px; font-size:0.68rem;">Enforced</span>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                  <span>Menu &amp; Feedback Agent</span>
+                  <span class="badge badge-teal" style="padding:1px 7px; font-size:0.68rem;">Enforced</span>
                 </div>
               </div>
+            </div>
+          </section>
 
-              <div class="table-wrap">
-                <table class="bind-table" id="inventoryTable">
-                  <thead>
-                    <tr>
-                      <th>Ingredient / SKU</th>
-                      <th>On Hand</th>
-                      <th>Par Level</th>
-                      <th>Reorder Qty</th>
-                      <th>Status</th>
-                      <th style="text-align:right;">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody id="inventoryTableBody">
-                    <tr>
-                      <td colspan="6" style="color:var(--bind-text-muted);">Loading kitchen inventory…</td>
-                    </tr>
-                  </tbody>
-                </table>
+          <!-- Kitchen Live Inventory Table -->
+          <section class="panel-card" aria-label="Kitchen Live Inventory">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">
+                  <!-- Heroicon: BuildingStorefrontIcon -->
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z" />
+                  </svg>
+                  <span>Kitchen Stock &amp; Par Thresholds</span>
+                </h2>
+                <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
+                  Items below par level can trigger the Replenishment Agent. Orders &le; $500 auto-authorize; orders &gt; $500 hold for owner approval.
+                </p>
               </div>
-            </section>
-          </div>
+              <div style="display:flex; gap:8px;">
+                <a href="/app/workflows" data-route="/app/workflows" class="btn btn-secondary btn-sm">View Active Workflows →</a>
+                <a href="/app/setup/onboarding" data-route="/app/setup/onboarding" class="btn btn-secondary btn-sm">Business Setup Studio →</a>
+              </div>
+            </div>
 
-          <!-- RIGHT COLUMN (5fr): Authority & Approvals + Auditable Event Log -->
-          <div>
-            <!-- Authority & Pending Owner Approvals Panel -->
-            <section class="panel-card" id="approvalsSection" aria-label="Owner Authority and Pending Approvals">
-              <div class="panel-header">
-                <div>
-                  <h2 class="panel-title">
-                    <!-- Heroicon: ShieldCheckIcon -->
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
-                    </svg>
-                    <span>Decision &amp; Authority Gate</span>
-                  </h2>
-                  <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
-                    Proposals exceeding $500.00 or held by TypeSafe Jev System One wait here for explicit owner sign-off.
-                  </p>
-                </div>
-                <span class="badge badge-orange" id="pendingApprovalBadge">0 pending</span>
-              </div>
-
-              <div id="approvalsListContainer" style="display:flex; flex-direction:column; gap:12px;">
-                <p style="font-size:0.875rem; color:var(--bind-text-muted);">Checking approval queue…</p>
-              </div>
-            </section>
-
-            <!-- Auditable Event Log Panel -->
-            <section class="panel-card" id="evidenceSection" aria-label="Auditable Event Log">
-              <div class="panel-header">
-                <div>
-                  <h2 class="panel-title">
-                    <!-- Heroicon: DocumentCheckIcon -->
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12" />
-                    </svg>
-                    <span>Auditable Event Log</span>
-                  </h2>
-                  <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
-                    Every read, external request, and commercial commitment recorded with effect class.
-                  </p>
-                </div>
-                <button type="button" id="inspectFullEvidenceBtn" class="btn btn-secondary btn-sm">Open drawer</button>
-              </div>
-
-              <div id="auditLogList" style="display:flex; flex-direction:column; gap:10px; max-height:420px; overflow-y:auto;">
-                <p style="font-size:0.875rem; color:var(--bind-text-muted);">Loading audit log…</p>
-              </div>
-            </section>
-          </div>
+            <div class="table-wrap">
+              <table class="bind-table" id="inventoryTable">
+                <thead>
+                  <tr>
+                    <th>Ingredient / SKU</th>
+                    <th>On Hand</th>
+                    <th>Par Level</th>
+                    <th>Reorder Qty</th>
+                    <th>Status</th>
+                    <th style="text-align:right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="inventoryTableBody">
+                  <tr>
+                    <td colspan="6" style="color:var(--bind-text-muted);">Loading kitchen inventory…</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
 
         <!-- ==================================================================
-             BUSINESS ONBOARDING & OPERATIONS STUDIO (#setupSection)
-             4 End-to-End Backend-Validated & Persisted Flows
+             SUBPAGE 2: WORKFLOWS (/app/workflows & /app/workflows/:workflowId)
              ================================================================== -->
-        <section class="panel-card" id="setupSection" aria-label="Business Onboarding and Operations Studio" style="margin-top:24px;">
+        <div id="workflowsPage" class="app-subpage hidden">
+          <section class="panel-card" id="workflowsSection" aria-label="Active Workflows & 3-Way Match">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">
+                  <!-- Heroicon: ArrowsRightLeftIcon -->
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                  </svg>
+                  <span>Active Workflows &amp; 3-Way Match</span>
+                </h2>
+                <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
+                  Select any workflow to inspect its 7-stage lifecycle, deterministic policy evaluation, and settlement vs. fulfilment state.
+                </p>
+              </div>
+              <div id="workflowSelectorTabs" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+            </div>
+
+            <!-- Selected Workflow Detail Container -->
+            <div id="selectedWorkflowContainer">
+              <p style="color:var(--bind-text-muted); font-size:0.9rem;">Loading workflow lifecycle…</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- ==================================================================
+             SUBPAGE 3: APPROVALS (/app/approvals)
+             ================================================================== -->
+        <div id="approvalsPage" class="app-subpage hidden">
+          <section class="panel-card" id="approvalsSection" aria-label="Owner Authority and Pending Approvals">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">
+                  <!-- Heroicon: ShieldCheckIcon -->
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
+                  </svg>
+                  <span>Decision &amp; Authority Gate</span>
+                </h2>
+                <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
+                  Proposals exceeding $500.00 or held by TypeSafe Jev System One wait here for explicit owner sign-off.
+                </p>
+              </div>
+              <span class="badge badge-orange" id="pendingApprovalBadge">0 pending</span>
+            </div>
+
+            <div id="approvalsListContainer" style="display:flex; flex-direction:column; gap:12px;">
+              <p style="font-size:0.875rem; color:var(--bind-text-muted);">Checking approval queue…</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- ==================================================================
+             SUBPAGE 4: EVIDENCE & AUDIT LOG (/app/evidence)
+             ================================================================== -->
+        <div id="evidencePage" class="app-subpage hidden">
+          <section class="panel-card" id="evidenceSection" aria-label="Auditable Event Log">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">
+                  <!-- Heroicon: DocumentCheckIcon -->
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12" />
+                  </svg>
+                  <span>Auditable Event Log &amp; Chain Proofs</span>
+                </h2>
+                <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
+                  Every read, external request, and commercial commitment recorded with effect class and SHA-256 decision hash.
+                </p>
+              </div>
+              <button type="button" id="inspectFullEvidenceBtn" class="btn btn-secondary btn-sm">Open Evidence Drawer</button>
+            </div>
+
+            <div id="auditLogList" style="display:flex; flex-direction:column; gap:10px; max-height:600px; overflow-y:auto;">
+              <p style="font-size:0.875rem; color:var(--bind-text-muted);">Loading audit log…</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- ==================================================================
+             SUBPAGES 5–8: BUSINESS ONBOARDING & OPERATIONS STUDIO
+             (/app/setup/onboarding, /app/setup/agents, /app/setup/surfaces, /app/setup/documents)
+             ================================================================== -->
+        <section class="panel-card app-subpage hidden" id="setupSection" aria-label="Business Onboarding and Operations Studio">
           <div class="panel-header">
             <div>
               <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
@@ -1974,31 +2015,31 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" />
                 </svg>
-                <span>Business Onboarding, Agent Roles, Messaging Surfaces &amp; Accounting</span>
+                <span id="studioSubpageTitle">Business Onboarding &amp; Blank Workspace</span>
               </h2>
               <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
-                Every form below validates with Zod and persists to PostgreSQL. Model confidence never grants financial authority; deterministic policy rules govern all spend.
+                Every subpage below validates with Zod and persists to PostgreSQL. Model confidence never grants financial authority; deterministic policy rules govern all spend.
               </p>
             </div>
           </div>
 
-          <!-- 4 Studio Flow Tabs -->
-          <div class="studio-tabs" role="tablist" aria-label="Business setup flows">
-            <button type="button" class="studio-tab-btn active" data-studio-tab="studioFlowA" role="tab" aria-selected="true">
+          <!-- 4 Subpage Navigation Links -->
+          <div class="studio-tabs" role="tablist" aria-label="Business setup subpages">
+            <a href="/app/setup/onboarding" data-route="/app/setup/onboarding" class="studio-tab-btn active" data-studio-tab="studioFlowA" role="tab" aria-selected="true">
               1. Business Onboarding &amp; Blank Workspace
-            </button>
-            <button type="button" class="studio-tab-btn" data-studio-tab="studioFlowB" role="tab" aria-selected="false">
+            </a>
+            <a href="/app/setup/agents" data-route="/app/setup/agents" class="studio-tab-btn" data-studio-tab="studioFlowB" role="tab" aria-selected="false">
               2. Agent Role Creator &amp; Policy Bounds
-            </button>
-            <button type="button" class="studio-tab-btn" data-studio-tab="studioFlowC" role="tab" aria-selected="false">
+            </a>
+            <a href="/app/setup/surfaces" data-route="/app/setup/surfaces" class="studio-tab-btn" data-studio-tab="studioFlowC" role="tab" aria-selected="false">
               3. Messaging Surfaces &amp; Simulator
-            </button>
-            <button type="button" class="studio-tab-btn" data-studio-tab="studioFlowD" role="tab" aria-selected="false">
+            </a>
+            <a href="/app/setup/documents" data-route="/app/setup/documents" class="studio-tab-btn" data-studio-tab="studioFlowD" role="tab" aria-selected="false">
               4. Document Extract → Confirm &amp; Accounting
-            </button>
+            </a>
           </div>
 
-          <!-- FLOW A: Business Onboarding & Blank Workspace Creation -->
+          <!-- SUBPAGE 5 (/app/setup/onboarding): Business Onboarding & Blank Workspace Creation -->
           <div id="studioFlowA" class="studio-tab-pane">
             <div class="studio-form-grid studio-form-grid-2">
               <!-- Create Blank or Blueprint Workspace -->
@@ -2083,7 +2124,7 @@
             </div>
           </div>
 
-          <!-- FLOW B: Agent Role Creator & Configurator -->
+          <!-- SUBPAGE 6 (/app/setup/agents): Agent Role Creator & Configurator -->
           <div id="studioFlowB" class="studio-tab-pane hidden">
             <div class="studio-form-grid studio-form-grid-2">
               <div class="studio-subcard">
@@ -2157,7 +2198,7 @@
             </div>
           </div>
 
-          <!-- FLOW C: Messaging Surfaces & In-App Owner/Staff Simulator -->
+          <!-- SUBPAGE 7 (/app/setup/surfaces): Messaging Surfaces & In-App Owner/Staff Simulator -->
           <div id="studioFlowC" class="studio-tab-pane hidden">
             <div class="studio-form-grid studio-form-grid-2">
               <div class="studio-subcard">
@@ -2231,7 +2272,7 @@
             </div>
           </div>
 
-          <!-- FLOW D: Two-Stage Document Extract -> Confirm & Accounting Ledger -->
+          <!-- SUBPAGE 8 (/app/setup/documents): Two-Stage Document Extract -> Confirm & Accounting Ledger -->
           <div id="studioFlowD" class="studio-tab-pane hidden">
             <div class="studio-form-grid studio-form-grid-2">
               <div class="studio-subcard">

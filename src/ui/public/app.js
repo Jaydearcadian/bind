@@ -94,16 +94,94 @@ function syncRouteView() {
   }
 
   const isAppRoute = path === "/app" || path.startsWith("/app/");
-  if (isAppRoute) {
-    landingView.classList.add("hidden");
-    appView.classList.remove("hidden");
-    document.title = "Bind Kitchen Operations — Your business runs on your rules.";
-    renderSelectedWorkflow();
-  } else {
+  if (!isAppRoute) {
     landingView.classList.remove("hidden");
     appView.classList.add("hidden");
     document.title = "Bind — Your business runs on your rules.";
+    return;
   }
+
+  landingView.classList.add("hidden");
+  appView.classList.remove("hidden");
+  document.title = "Bind Kitchen Operations — Your business runs on your rules.";
+
+  // Determine which standalone subpage inside /app is active
+  let activeSubpageId = "overviewPage";
+  let activeSidebarSubpage = "overviewPage";
+  let activeStudioPaneId = null;
+  let studioTitle = "Business Onboarding & Blank Workspace";
+
+  if (path === "/app/workflows" || wfMatch) {
+    activeSubpageId = "workflowsPage";
+    activeSidebarSubpage = "workflowsPage";
+  } else if (path === "/app/approvals") {
+    activeSubpageId = "approvalsPage";
+    activeSidebarSubpage = "approvalsPage";
+  } else if (path === "/app/evidence") {
+    activeSubpageId = "evidencePage";
+    activeSidebarSubpage = "evidencePage";
+  } else if (path === "/app/setup" || path === "/app/setup/onboarding") {
+    activeSubpageId = "setupSection";
+    activeSidebarSubpage = "setupOnboardingPage";
+    activeStudioPaneId = "studioFlowA";
+    studioTitle = "1. Business Onboarding & Blank Workspace";
+  } else if (path === "/app/setup/agents") {
+    activeSubpageId = "setupSection";
+    activeSidebarSubpage = "setupAgentsPage";
+    activeStudioPaneId = "studioFlowB";
+    studioTitle = "2. Agent Role Creator & Policy Bounds";
+  } else if (path === "/app/setup/surfaces") {
+    activeSubpageId = "setupSection";
+    activeSidebarSubpage = "setupSurfacesPage";
+    activeStudioPaneId = "studioFlowC";
+    studioTitle = "3. Messaging Surfaces & Simulator";
+  } else if (path === "/app/setup/documents") {
+    activeSubpageId = "setupSection";
+    activeSidebarSubpage = "setupDocumentsPage";
+    activeStudioPaneId = "studioFlowD";
+    studioTitle = "4. Document Extract → Confirm & Accounting";
+  }
+
+  // Show ONLY the active subpage container
+  document.querySelectorAll(".app-subpage").forEach((el) => {
+    if (el.id === activeSubpageId) {
+      el.classList.remove("hidden");
+    } else {
+      el.classList.add("hidden");
+    }
+  });
+
+  // Highlight active sidebar link
+  document.querySelectorAll(".sidebar-link[data-subpage]").forEach((link) => {
+    if (link.getAttribute("data-subpage") === activeSidebarSubpage) {
+      link.classList.add("active");
+    } else {
+      link.classList.remove("active");
+    }
+  });
+
+  // If on one of the 4 Business Setup Studio subpages, show ONLY that subpage's pane
+  if (activeStudioPaneId) {
+    const titleEl = document.getElementById("studioSubpageTitle");
+    if (titleEl) titleEl.textContent = studioTitle;
+
+    document.querySelectorAll("[data-studio-tab]").forEach((tabEl) => {
+      const isMatch = tabEl.getAttribute("data-studio-tab") === activeStudioPaneId;
+      tabEl.classList.toggle("active", isMatch);
+      tabEl.setAttribute("aria-selected", isMatch ? "true" : "false");
+    });
+
+    document.querySelectorAll(".studio-tab-pane").forEach((pane) => {
+      if (pane.id === activeStudioPaneId) {
+        pane.classList.remove("hidden");
+      } else {
+        pane.classList.add("hidden");
+      }
+    });
+  }
+
+  document.getElementById("appSidebar")?.classList.remove("mobile-open");
+  renderSelectedWorkflow();
 }
 
 function navigateTo(routePath) {
@@ -928,15 +1006,20 @@ async function triggerReplenishment(sku) {
     });
     const data = await res.json();
     if (!res.ok) {
+      const fallbackWfId = appState.selectedWorkflowId || appState.workflows[0]?.id || "latest";
+      navigateTo(`/app/workflows/${encodeURIComponent(fallbackWfId)}`);
       alert(`Error triggering replenishment: ${data.error || "Request failed"}`);
       return;
     }
     if (data.workflowId) {
       appState.selectedWorkflowId = data.workflowId;
     }
+    await ensureWorkspaceAndLoad();
+    if (data.workflowId) {
+      navigateTo(`/app/workflows/${encodeURIComponent(data.workflowId)}`);
+    }
     alert(`Replenishment triggered for ${targetSku}! Workflow ID: ${data.workflowId} (State: ${data.state})`);
     showToast(`Replenishment workflow ${data.workflowId} → ${data.state}`);
-    await ensureWorkspaceAndLoad();
   } catch (err) {
     alert(`Error triggering replenishment: ${err.message}`);
   }
@@ -1436,7 +1519,7 @@ window.confirmStagedDoc = confirmStagedDoc;
    Event Listeners & Initialization
    ========================================================================== */
 document.addEventListener("DOMContentLoaded", () => {
-  // Route link interception for SPA navigation between / and /app
+  // Route link interception for SPA navigation across /, /app, and all /app/* subpages
   document.querySelectorAll("a[data-route]").forEach((link) => {
     link.addEventListener("click", (e) => {
       const route = link.getAttribute("data-route");
@@ -1449,40 +1532,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   window.addEventListener("popstate", () => {
     syncRouteView();
-  });
-
-  // Sidebar navigation inside /app
-  document.querySelectorAll("[data-app-section]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("[data-app-section]").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      const targetId = btn.getAttribute("data-app-section");
-      const targetEl = document.getElementById(targetId);
-      if (targetEl) {
-        targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-      document.getElementById("appSidebar")?.classList.remove("mobile-open");
-    });
-  });
-
-  // Studio 4-tab switching
-  document.querySelectorAll("[data-studio-tab]").forEach((tabBtn) => {
-    tabBtn.addEventListener("click", () => {
-      document.querySelectorAll("[data-studio-tab]").forEach((b) => {
-        b.classList.remove("active");
-        b.setAttribute("aria-selected", "false");
-      });
-      tabBtn.classList.add("active");
-      tabBtn.setAttribute("aria-selected", "true");
-      const targetPaneId = tabBtn.getAttribute("data-studio-tab");
-      document.querySelectorAll(".studio-tab-pane").forEach((pane) => {
-        if (pane.id === targetPaneId) {
-          pane.classList.remove("hidden");
-        } else {
-          pane.classList.add("hidden");
-        }
-      });
-    });
   });
 
   // Workspace switcher dropdown
@@ -1551,7 +1600,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Evidence drawer triggers & dismissal
   document.getElementById("openEvidenceDrawerBtn")?.addEventListener("click", () => openEvidenceDrawer());
-  document.getElementById("sidebarOpenEvidenceBtn")?.addEventListener("click", () => openEvidenceDrawer());
   document.getElementById("mobileOpenEvidenceBtn")?.addEventListener("click", () => openEvidenceDrawer());
   document.getElementById("inspectFullEvidenceBtn")?.addEventListener("click", () => openEvidenceDrawer());
   document.getElementById("closeEvidenceDrawerBtn")?.addEventListener("click", () => closeEvidenceDrawer());
