@@ -32,3 +32,6 @@ pnpm-debug.log*
 # System files
 .DS_Store
 Thumbs.db
+
+# Derived runtime/test workspace agent artifacts (canonical templates remain tracked)
+templates/ws-*/

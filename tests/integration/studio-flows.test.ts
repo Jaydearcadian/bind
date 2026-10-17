@@ -42,9 +42,25 @@ describe("Business Onboarding & Operations Studio (Flows A, B, C, D)", () => {
     if (server) {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+    if (blankWsId.startsWith("ws-blank-")) {
+      await fs.rm(path.resolve(process.cwd(), "templates", blankWsId), {
+        recursive: true,
+        force: true,
+      });
+    }
   });
 
-  it("Flow A: creates a genuinely blank workspace with 0 orders, 0 workflows, and 0 transactions, and supports optional blueprint inspection", async () => {
+  it("Flow A: creates a genuinely blank workspace with 0 orders, 0 workflows, and 0 transactions, blocks overwriting canonical templates, and supports optional blueprint inspection", async () => {
+    // 0. Guard against overwriting canonical reference template (kitchen-ops)
+    const protectedRes = await api("POST", "/api/workspaces/onboard", {
+      workspaceId: "kitchen-ops",
+      name: "Attempted Overwrite",
+      businessType: "kitchen",
+      budgetDailyLimitCents: 150000,
+      approvalThresholdCents: 40000,
+    });
+    expect(protectedRes.status).toBe(400);
+
     // 1. Inspect optional blueprint without creating records
     const bpRes = await api("GET", "/api/templates/kitchen-ops/blueprint");
     expect(bpRes.status).toBe(200);

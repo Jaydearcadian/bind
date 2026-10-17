@@ -92,7 +92,24 @@ export class ProcurementWorkflowRunner {
       toState: WorkflowState.REQUEST_SENT,
     });
 
-    const supplierId = item.preferred_supplier_id || `${workspaceId}_supp-sysco-metro`;
+    let supplierId = item.preferred_supplier_id;
+    if (!supplierId) {
+      const existingSupp = await query(
+        `SELECT id FROM suppliers WHERE workspace_id = $1 AND verified = TRUE ORDER BY created_at ASC LIMIT 1;`,
+        [workspaceId]
+      );
+      if (existingSupp.rows.length > 0) {
+        supplierId = existingSupp.rows[0].id;
+      } else {
+        supplierId = `${workspaceId}_supp-sysco-metro`;
+        await query(
+          `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, created_at)
+           VALUES ($1, $2, 'Sysco Metro Restock', 'simulated_sysco', 'orders@sysco-sim.local', TRUE, TRUE, NOW())
+           ON CONFLICT (id) DO NOTHING;`,
+          [supplierId, workspaceId]
+        );
+      }
+    }
     const supplierAdapter = getSupplierAdapter(supplierId);
 
     const quoteRes = await supplierAdapter.requestQuote({

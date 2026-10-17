@@ -54,12 +54,21 @@ export const InitialSupplierSchema = z.object({
   endpointUrl: z.string().optional(),
 });
 
+export const PROTECTED_CANONICAL_TEMPLATES = new Set([
+  "kitchen-ops",
+  "coffee-roaster",
+]);
+
 export const OnboardWorkspaceSchema = z.object({
   workspaceId: z
     .string()
     .min(3)
     .max(64)
-    .regex(/^[a-z0-9-_]+$/i, "workspaceId must be alphanumeric with hyphens/underscores"),
+    .regex(/^[a-z0-9-_]+$/i, "workspaceId must be alphanumeric with hyphens/underscores")
+    .refine(
+      (val) => !PROTECTED_CANONICAL_TEMPLATES.has(val.toLowerCase()),
+      "workspaceId cannot overwrite a protected canonical reference template (kitchen-ops, coffee-roaster)"
+    ),
   name: z.string().min(2).max(120),
   businessType: z
     .enum(["kitchen", "cafe", "roastery", "retail", "service", "custom"])
@@ -381,6 +390,11 @@ export async function upsertAgentRole(workspaceId: string, rawInput: unknown) {
  * as derived artifacts from the canonical PostgreSQL workspace + agent_roles state.
  */
 export async function syncWorkspaceDerivedTemplateFiles(workspaceId: string) {
+  if (PROTECTED_CANONICAL_TEMPLATES.has(workspaceId.toLowerCase())) {
+    throw new Error(
+      `Refusing to overwrite protected canonical reference template '${workspaceId}'.`
+    );
+  }
   const wsRes = await query(`SELECT * FROM workspaces WHERE id = $1;`, [workspaceId]);
   if (wsRes.rows.length === 0) {
     throw new Error(`Workspace '${workspaceId}' not found.`);

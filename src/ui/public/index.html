@@ -958,8 +958,8 @@
       top: 0;
       right: 0;
       bottom: 0;
-      width: 100%;
-      max-width: 460px;
+      width: min(100vw, 460px);
+      max-width: 100vw;
       background-color: var(--bind-white);
       border-left: 1px solid var(--bind-border);
       box-shadow: var(--shadow-drawer);
@@ -1779,9 +1779,9 @@
           </div>
 
           <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
-            <div style="display:inline-flex; align-items:center; gap:6px; background:var(--bind-white); border:1px solid var(--bind-border-strong); border-radius:var(--radius-sm); padding:4px 8px;">
+            <div style="display:inline-flex; align-items:center; gap:6px; background:var(--bind-white); border:1px solid var(--bind-border-strong); border-radius:var(--radius-sm); padding:4px 8px; max-width:100%;">
               <label for="workspaceSwitcherSelect" class="mono" style="font-size:0.72rem; color:var(--bind-text-muted); font-weight:600;">WORKSPACE:</label>
-              <select id="workspaceSwitcherSelect" class="mono" style="border:none; background:transparent; font-size:0.8rem; font-weight:600; color:var(--bind-ink); cursor:pointer;">
+              <select id="workspaceSwitcherSelect" class="mono" style="border:none; background:transparent; font-size:0.8rem; font-weight:600; color:var(--bind-ink); cursor:pointer; max-width:190px; text-overflow:ellipsis;">
                 <option value="ws-kitchen-main">ws-kitchen-main (Demo)</option>
               </select>
             </div>
@@ -2120,6 +2120,7 @@
                     Save Supply SKU to PostgreSQL
                   </button>
                 </div>
+                <div id="studioWorkspaceSummary" class="mono" style="margin-top:12px; padding:10px; background:var(--bind-white); border:1px solid var(--bind-border); border-radius:var(--radius-sm); font-size:0.75rem; color:var(--bind-ink-soft);"></div>
               </div>
             </div>
           </div>
@@ -2176,7 +2177,7 @@
               </div>
 
               <div class="studio-subcard">
-                <h3 style="font-weight:700; font-size:0.95rem; color:var(--bind-ink); margin-bottom:8px;">Canonical Tool Registry &amp; Permanently Locked Capabilities</h3>
+                <h3 style="font-weight:700; font-size:0.95rem; color:var(--bind-ink); margin-bottom:8px;">Canonical Tool Registry &amp; Persisted Roles</h3>
                 <p style="font-size:0.8rem; color:var(--bind-text-muted); margin-bottom:12px;">
                   Agents can only invoke typed read/proposal tools. Direct signing, USDC transfers, and self-approvals are permanently locked in code.
                 </p>
@@ -2193,6 +2194,7 @@
                       transfer_usdc · raw_signer · private_key_export · self_approve_order · bypass_policy · override_daily_limit
                     </div>
                   </div>
+                  <div id="studioConfiguredRolesList" style="display:flex; flex-direction:column; gap:6px; margin-top:4px;"></div>
                 </div>
               </div>
             </div>

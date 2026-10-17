@@ -43,8 +43,8 @@ Bind owns and has deployed [`BindSettlement.sol`](file:///home/ubuntu/bind/contr
 | **Linting & Hygiene** | `npm run lint` (`eslint src/ tests/`) | `0 errors, 0 warnings` | `LOCAL_PASS` |
 | **Strict Typecheck** | `npm run typecheck` (`tsc --noEmit`) | `0 type errors` | `LOCAL_PASS` |
 | **Unit Test Suite** | `npm run test:unit` | `49 passed (49)` | `LOCAL_PASS` |
-| **Integration Suite**| `npm run test:integration` | `11 passed (11)` | `LOCAL_PASS` |
-| **Playwright E2E** | `npm run test:e2e` | `4 passed (4)` | `LOCAL_PASS` |
+| **Integration Suite**| `npm run test:integration` | `15 passed (15)` | `LOCAL_PASS` |
+| **Playwright E2E** | `npm run test:e2e` | `8 passed (8)` (Desktop + Mobile Chrome) | `LOCAL_PASS` |
 | **Production Build** | `npm run build` (`tsc -p tsconfig.build.json`) | Clean compilation to `dist/` | `LOCAL_PASS` |
 | **Forge Format** | `cd contracts && forge fmt --check` | `PASS: Forge format check` | `LOCAL_PASS` |
 | **Forge Unit/Fuzz/Invariants** | `cd contracts && forge test -vvv` | `10 passed (10)` | `LOCAL_PASS` |
@@ -68,7 +68,7 @@ Bind owns and has deployed [`BindSettlement.sol`](file:///home/ubuntu/bind/contr
 4. **Compliance Screening**: Verified against Circle's compliance screening policies on Arc Testnet.
 5. **Secret Redaction**: Server-side credentials, private keys, and session tokens are strictly excluded from client payloads, audit logs, and model transcripts (`[REDACTED]`).
 
-## Live Arc Testnet & Jev/Surface Verification (2026-10-15T22:24:18.999Z)
+## 5. Live Arc Testnet & Jev/Surface Verification (2026-10-15T22:24:18.999Z)
 | Gate / Check | Evidence Classification | Verified Details |
 | :--- | :--- | :--- |
 | Arc Testnet RPC & Chain ID Verification | `LIVE_READ_PASS` | Connected to https://rpc.testnet.arc-node.thecanteenapp.com/v1/<ARC_RPC_TOKEN> (chainId=5042002, expected=5042002) |
@@ -77,3 +77,16 @@ Bind owns and has deployed [`BindSettlement.sol`](file:///home/ubuntu/bind/contr
 | Negative Path: Unapproved Supplier Rejection (VendorNotWhitelisted) | `LIVE_READ_PASS` | Deterministically reverted on Arc Testnet with selector 0x65e822e9; 0 USDC moved |
 | Negative Path: Rolling 24h Budget Cap Enforcement (DailyLimitExceeded) | `LIVE_READ_PASS` | Attempted 2.0 USDC > 1.0 USDC cap; deterministically reverted on Arc Testnet with selector 0xef664d6a |
 | Confirmed On-Chain USDC Settlement Receipt | `VERIFIED_REMOTE` | Tx 0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb confirmed in block 67155117 on Arc Testnet (status=0x1) |
+
+---
+
+## 6. Four-Flow Business Setup Studio & Subpage Acceptance Matrix (2026-10-17T11:09:17Z)
+
+| Feature / Subpage | Implemented Code | Automated Test Coverage | External / Simulated Boundary | Classification |
+| :--- | :--- | :--- | :--- | :--- |
+| **Dedicated Subpage Routing, Deep-Link Reload, History & Unsaved Draft Preservation** (`/app`, `/app/workflows/:id`, `/app/approvals`, `/app/evidence`, `/app/setup/*`) | `src/ui/public/index.html`, `src/ui/public/app.js`, `src/server/app.ts` | `tests/e2e/dashboard.spec.ts` (Desktop & Mobile Chrome): direct `page.goto`, `page.reload`, `page.goBack`, `page.goForward`, active `.sidebar-link` state, and unsaved `#onboardWsName` draft preservation | Local Express SPA + browser History API + `localStorage` workspace persistence | `LOCAL_PASS` |
+| **Flow A: Blank Workspace Onboarding & Reference Blueprints** (`/app/setup/onboarding`) | `src/studio/onboarding.ts`, `POST /api/workspaces/onboard`, `GET /api/templates/:id/blueprint` | `tests/integration/studio-flows.test.ts` & `tests/e2e/dashboard.spec.ts`: verifies 0 SKUs, 0 Orders, 0 Workflows, blocks overwriting `kitchen-ops` / `coffee-roaster` (`PROTECTED_CANONICAL_TEMPLATES`), and persists added SKUs across reload | PostgreSQL (`workspaces`, `inventory_items`, `suppliers`); canonical templates protected in `templates/` | `LOCAL_PASS` |
+| **Flow B: Agent Role Configurator & Forbidden Tool Block** (`/app/setup/agents`) | `src/studio/onboarding.ts`, `POST /api/workspaces/:id/agents`, `syncWorkspaceDerivedTemplateFiles` | `tests/integration/studio-flows.test.ts` & `tests/e2e/dashboard.spec.ts`: verifies `400 FORBIDDEN_CAPABILITY_VIOLATION` on `transfer_usdc`, saves bounded role to PostgreSQL, writes derived `templates/<wsId>/AGENTS.md`, and verifies reload persistence | PostgreSQL canonical source of truth + derived filesystem `AGENTS.md` / `SKILL.md` | `LOCAL_PASS` |
+| **Flow C: Messaging Surfaces & Role-Enforced Simulator** (`/app/setup/surfaces`) | `src/adapters/socialSurface.ts`, `POST /api/workspaces/:id/surfaces`, `POST /api/webhooks/incoming` | `tests/integration/studio-flows.test.ts` & `tests/e2e/dashboard.spec.ts`: binds staff WhatsApp handle, verifies staff low-stock report (`200`) triggers held proposal, verifies staff spend approval spoof rejected (`403 SURFACE_ROLE_VIOLATION`), and verifies owner approval (`200`) | Channels without live provider credentials (`SURFACE_PROVIDER_VERIFIED`) are labeled `simulated` or `configured_unverified` | `LOCAL_PASS` |
+| **Flow D: Two-Stage Document Extract → Confirm, 3-Way Match & Accounting Ledger** (`/app/setup/documents`) | `src/studio/documentsAndAccounting.ts`, `POST /api/workspaces/:id/documents/extract`, `POST .../confirm`, `GET .../accounting/ledger` | `tests/integration/studio-flows.test.ts` & `tests/e2e/dashboard.spec.ts`: verifies Stage 1 `staged_unconfirmed` (`DOCUMENT_EXTRACTED`), Stage 2 owner quote confirmation (`OWNER_CONFIRMED`), failed 3-way match (`PRICE_DISCREPANCY`, unfulfilled), and passing 3-way match (`MATCHED` + double-entry journal + CSV export) | Deterministic entity/arithmetic parser + PostgreSQL `staged_documents` & `accounting_journal_entries`; external QuickBooks/Xero APIs not live-connected | `LOCAL_PASS` |
+

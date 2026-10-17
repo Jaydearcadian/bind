@@ -6,7 +6,23 @@
  *   - /app/workflows/:workflowId  Selected workflow timeline & evidence inspection
  */
 
-let WORKSPACE_ID = "ws-kitchen-main";
+let WORKSPACE_ID =
+  (typeof window !== "undefined" &&
+    window.localStorage &&
+    window.localStorage.getItem("bind_active_workspace_id")) ||
+  "ws-kitchen-main";
+
+function setActiveWorkspaceId(nextId) {
+  WORKSPACE_ID = nextId;
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("bind_active_workspace_id", nextId);
+    }
+  } catch {
+    // Ignore storage quota/privacy mode errors
+  }
+}
+
 const ARC_SETTLEMENT_CONTRACT = "0x6FD6323252a3f63A0c93470B6fd14883252F3f02";
 const VERIFIED_DEMO_TX_HASH = "0x6fc45e277f9be92dc91da08fb72c37c5a18bf0f44a509665470aaef70848a894";
 
@@ -24,6 +40,7 @@ const appState = {
   stagedDocuments: [],
   accountingLedger: [],
   latestDraftDoc: null,
+  latestConfirmedDocResult: null,
   selectedWorkflowId: null,
   loadingAction: false,
 };
@@ -181,7 +198,7 @@ function syncRouteView() {
   }
 
   document.getElementById("appSidebar")?.classList.remove("mobile-open");
-  renderSelectedWorkflow();
+  renderWorkflowSelectorAndDetail();
 }
 
 function navigateTo(routePath) {
@@ -198,6 +215,10 @@ function navigateTo(routePath) {
 async function ensureWorkspaceAndLoad() {
   try {
     let wsResp = await fetch(`/api/workspaces/${WORKSPACE_ID}`);
+    if (wsResp.status === 404 && WORKSPACE_ID !== "ws-kitchen-main") {
+      setActiveWorkspaceId("ws-kitchen-main");
+      wsResp = await fetch(`/api/workspaces/${WORKSPACE_ID}`);
+    }
     if (wsResp.status === 404 && WORKSPACE_ID === "ws-kitchen-main") {
       await fetch("/api/workspaces", {
         method: "POST",
@@ -1097,6 +1118,48 @@ async function recoverWorkflows() {
    Business Onboarding & Operations Studio (Flows A, B, C, D)
    ========================================================================== */
 function renderStudioPanels() {
+  // Flow A: Render persisted workspace & inventory summary
+  const wsSummaryEl = document.getElementById("studioWorkspaceSummary");
+  if (wsSummaryEl && appState.workspace) {
+    const ws = appState.workspace;
+    const skuList =
+      appState.inventory.length > 0
+        ? appState.inventory.map((i) => `${i.sku} (${i.current_quantity}/${i.par_level} ${i.unit})`).join(", ")
+        : "0 SKUs (genuinely blank)";
+    wsSummaryEl.innerHTML = `
+      <div><strong>Persisted Workspace:</strong> ${escapeHtml(ws.id)} — ${escapeHtml(ws.name)}</div>
+      <div><strong>Policy Bounds:</strong> Daily Cap ${escapeHtml(formatCents(ws.budget_daily_limit_cents))} · Approval Gate &gt; ${escapeHtml(formatCents(ws.approval_threshold_cents))}</div>
+      <div><strong>Persisted State:</strong> ${escapeHtml(String(appState.inventory.length))} SKUs · ${escapeHtml(String(appState.orders.length))} Orders · ${escapeHtml(String(appState.workflows.length))} Workflows</div>
+      <div style="margin-top:2px; color:var(--bind-text-muted);">SKUs: ${escapeHtml(skuList)}</div>
+    `;
+  }
+
+  // Flow B: Render persisted agent roles in Studio Flow B
+  const studioRolesEl = document.getElementById("studioConfiguredRolesList");
+  if (studioRolesEl) {
+    if (!appState.roles || appState.roles.length === 0) {
+      studioRolesEl.innerHTML = `<div style="font-size:0.76rem; color:var(--bind-text-muted);">No custom agent roles configured yet in ${escapeHtml(WORKSPACE_ID)}.</div>`;
+    } else {
+      studioRolesEl.innerHTML = appState.roles
+        .map((role) => {
+          const limit = formatCents(role.spending_limit_cents || 0);
+          return `
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; background:var(--bind-white); border:1px solid var(--bind-border); border-radius:var(--radius-sm); font-size:0.78rem;">
+              <div>
+                <strong style="color:var(--bind-ink);">${escapeHtml(role.display_name || role.role_name)}</strong>
+                <span class="mono" style="margin-left:6px; font-size:0.72rem; color:var(--bind-text-muted);">(${escapeHtml(role.role_name)})</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span class="mono" style="font-size:0.72rem; color:var(--bind-ink-soft);">Cap: ${escapeHtml(limit)}</span>
+                <span class="badge badge-teal">Enforced</span>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+  }
+
   // Flow C: Render registered surface identity bindings
   const surfList = document.getElementById("surfaceBindingsList");
   if (surfList) {
@@ -1166,6 +1229,31 @@ function renderStagedDocPreview() {
   const doc =
     appState.latestDraftDoc ||
     (appState.stagedDocuments || []).find((d) => (d.status || d.doc_status) === "staged_unconfirmed");
+
+  if (!doc && appState.latestConfirmedDocResult) {
+    const res = appState.latestConfirmedDocResult;
+    const isDiscrepancy = res.matchStatus && res.matchStatus !== "MATCHED";
+    box.innerHTML = `
+      <div style="padding:12px; background:var(--bind-white); border:1px solid var(--bind-border-strong); border-radius:var(--radius-sm); font-size:0.8rem;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px;">
+          <strong class="mono" style="color:var(--bind-ink);">Stage 2 Outcome: ${escapeHtml(res.docId)} (${escapeHtml(res.docType)})</strong>
+          <span class="badge ${isDiscrepancy ? "badge-danger" : "badge-success"} mono">
+            ${escapeHtml(res.matchStatus || res.provenance || "OWNER_CONFIRMED")}
+          </span>
+        </div>
+        <div style="font-size:0.78rem; color:${isDiscrepancy ? "var(--bind-danger)" : "var(--bind-ink-soft)"};">
+          ${
+            res.docType === "quote"
+              ? `Confirmed Quote ${escapeHtml(res.quoteId || "")} (${escapeHtml(formatCents(res.unitPriceCents || 0))}/unit) saved with OWNER_CONFIRMED provenance.`
+              : isDiscrepancy
+              ? `3-Way Match blocked reconciliation (${escapeHtml(res.matchStatus)}): ${escapeHtml((res.discrepancies || []).join("; ") || "Invoice/Receipt variance against PO")}. Order remains unfulfilled.`
+              : `3-Way Match passed (MATCHED). Order reconciled and double-entry journal posted.`
+          }
+        </div>
+      </div>
+    `;
+    return;
+  }
 
   if (!doc) {
     box.innerHTML = "";
@@ -1247,9 +1335,10 @@ async function createStudioWorkspace(useBlueprint = false) {
       showToast(`Onboarding error: ${data.error || "Failed"}`);
       return;
     }
-    WORKSPACE_ID = data.workspaceId;
+    setActiveWorkspaceId(data.workspaceId);
     appState.selectedWorkflowId = null;
     appState.latestDraftDoc = null;
+    appState.latestConfirmedDocResult = null;
     showToast(`Workspace '${data.workspaceId}' onboarded (${useBlueprint ? "with blueprint supplies" : "blank"}).`);
     await ensureWorkspaceAndLoad();
   } catch (err) {
@@ -1404,13 +1493,15 @@ async function runSurfaceSimulation(scenario) {
   } else if (scenario === "owner_approve") {
     const pending = appState.approvals.find((a) => a.status === "pending");
     if (!pending) {
-      // Trigger butter replenishment first if no pending approval exists
-      const butter = appState.inventory.find((i) => i.sku === "SKU-BUTTER-003");
-      if (butter) {
+      // Find an item exceeding approval threshold or SKU-BUTTER-003
+      const candidate =
+        appState.inventory.find((i) => i.sku === "SKU-BUTTER-003") ||
+        appState.inventory.find((i) => Number(i.current_quantity) < Number(i.par_level));
+      if (candidate) {
         await fetch(`/api/workspaces/${WORKSPACE_ID}/replenish`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sku: "SKU-BUTTER-003" }),
+          body: JSON.stringify({ sku: candidate.sku }),
         });
         const apprRes = await fetch(`/api/workspaces/${WORKSPACE_ID}/approvals`);
         if (apprRes.ok) appState.approvals = await apprRes.json();
@@ -1475,6 +1566,7 @@ async function extractStage1Document() {
       return;
     }
     appState.latestDraftDoc = data;
+    appState.latestConfirmedDocResult = null;
     showToast(`Stage 1 Extracted (${data.docType}) — awaiting Owner Confirmation.`);
     await ensureWorkspaceAndLoad();
   } catch (err) {
@@ -1495,6 +1587,7 @@ async function confirmStagedDoc(docId) {
       return;
     }
     appState.latestDraftDoc = null;
+    appState.latestConfirmedDocResult = data;
     if (data.docType === "quote") {
       showToast(`Owner confirmed quote ${data.quoteId} (${formatCents(data.unitPriceCents)}/unit).`);
     } else {
@@ -1538,9 +1631,10 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("workspaceSwitcherSelect")?.addEventListener("change", (e) => {
     const nextWsId = e.target.value;
     if (nextWsId) {
-      WORKSPACE_ID = nextWsId;
+      setActiveWorkspaceId(nextWsId);
       appState.selectedWorkflowId = null;
       appState.latestDraftDoc = null;
+      appState.latestConfirmedDocResult = null;
       showToast(`Switched active workspace to ${WORKSPACE_ID}`);
       ensureWorkspaceAndLoad();
     }

@@ -497,11 +497,15 @@ export function createApp(): express.Express {
         const item = itemRes.rows[0];
         let replenishmentResult = null;
         if (item && Number(item.current_quantity) < Number(item.par_level)) {
-          replenishmentResult = await procurementRunner.startReplenishment(
-            event.workspaceId,
-            event.sku,
-            `surface_${event.surface}`
-          );
+          try {
+            replenishmentResult = await procurementRunner.startReplenishment(
+              event.workspaceId,
+              event.sku,
+              `surface_${event.surface}`
+            );
+          } catch (err: any) {
+            return res.status(400).json({ error: err.message });
+          }
         }
         return res.json({
           status: "processed",
