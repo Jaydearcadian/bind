@@ -7,7 +7,7 @@ Decision: IN_SCOPE
 Bind deploys and owns [`BindSettlement.sol`](file:///home/ubuntu/bind/contracts/src/BindSettlement.sol):
 - **Purpose**: Trustless on-chain milestone escrow, 3-way match hash recording (`keccak256(PO, DeliveryReceipt, SupplierBill)`), deterministic on-chain policy enforcement (rolling 24h daily spend limit, vendor allowlist), and native USDC settlement.
 - **Network**: Arc Testnet (Chain ID `5042002`).
-- **RPC**: Arc Canteen RPC (`https://rpc.testnet.arc-node.thecanteenapp.com/v1/<ARC_RPC_TOKEN>`).
+- **RPC**: Arc Canteen RPC (`https://rpc.testnet.arc-node.thecanteenapp.com/v1/<ARC_RPC_TOKEN>`). The access token is supplied via `ARC_RPC_URL`/`RPC_URL` and is never committed.
 - **Deployer / Owner Wallet**: `0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2`.
 - **Active Deployed Contract Address**: [`0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29`](https://testnet.arcscan.app/address/0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29).
 - **Deployment Transaction Hash**: [`0xe152f9ced4c696548c42d629ea88917ca1b810de845407ac0b7c17698245300e`](https://testnet.arcscan.app/tx/0xe152f9ced4c696548c42d629ea88917ca1b810de845407ac0b7c17698245300e).

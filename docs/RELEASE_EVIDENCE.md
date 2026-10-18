@@ -20,7 +20,7 @@ Bind owns and has deployed [`BindSettlement.sol`](file:///home/ubuntu/bind/contr
 ## 2. On-Chain Arc Testnet Deployments & Proof-of-Settlement
 
 * **Arc Testnet Chain ID:** `5042002`
-* **Arc Canteen RPC:** `https://rpc.testnet.arc-node.thecanteenapp.com/v1/<ARC_RPC_TOKEN>`
+* **Arc Canteen RPC:** `https://rpc.testnet.arc-node.thecanteenapp.com/v1/<ARC_RPC_TOKEN>` (token supplied via `ARC_RPC_URL`/`RPC_URL`; not committed)
 * **Agent Deployer Wallet:** `0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2`
 * **Active Deployed Contract:** [`0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29`](https://testnet.arcscan.app/address/0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29)
 * **Contract Deployment Tx:** [`0xe152f9ced4c696548c42d629ea88917ca1b810de845407ac0b7c17698245300e`](https://testnet.arcscan.app/tx/0xe152f9ced4c696548c42d629ea88917ca1b810de845407ac0b7c17698245300e)
