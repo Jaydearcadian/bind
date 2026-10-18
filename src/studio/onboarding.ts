@@ -4,6 +4,7 @@ import { z } from "zod";
 import { query, withTransaction } from "../db/client.js";
 import { getTemplate } from "../templates/registry.js";
 import { CANONICAL_ARC_LOCK } from "../agents/antiDriftWriter.js";
+import { templatesArtifactsDir } from "../utils/artifacts.js";
 
 export const SAFE_AGENT_TOOLS = [
   "get_business_context",
@@ -405,7 +406,7 @@ export async function syncWorkspaceDerivedTemplateFiles(workspaceId: string) {
     [workspaceId]
   );
 
-  const templateDir = path.resolve(process.cwd(), "templates", workspaceId);
+  const templateDir = path.join(templatesArtifactsDir(), workspaceId);
   const skillDir = path.join(templateDir, "skills", "supply-replenishment");
   const stateDir = path.join(templateDir, "state", "requests");
   await fs.mkdir(skillDir, { recursive: true });

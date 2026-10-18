@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { createDeepAgent, FilesystemBackend } from "deepagents";
 import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
@@ -149,6 +148,7 @@ export async function generateVerifiableDecisionRecord(params: {
   // If NEBIUS_API_KEY is present, run the full deepagents harness with AGENTS.md + SKILL.md
   if (process.env.NEBIUS_API_KEY) {
     try {
+      const { createDeepAgent, FilesystemBackend } = await import("deepagents");
       const model = new ChatOpenAI({
         model: nebiusModelId,
         configuration: {
@@ -246,9 +246,17 @@ export async function generateVerifiableDecisionRecord(params: {
     decisionHash,
   };
 
-  // Automatically writes /workflows/<workflowId>/STATE_ANCHOR.md & DECISION_EVIDENCE.md
-  // and blocks any runtime invariant drift before settlement can occur.
-  await writeWorkflowAntiDriftFiles(fullRecord);
+  // Persists /workflows/<workflowId>/STATE_ANCHOR.md & DECISION_EVIDENCE.md (derived
+  // artifacts; PostgreSQL holds the canonical record) and blocks any runtime invariant
+  // drift before settlement can occur. Artifact writing is best-effort: a read-only or
+  // full filesystem must never fail the replicated decision record.
+  try {
+    await writeWorkflowAntiDriftFiles(fullRecord);
+  } catch (err: any) {
+    console.warn(
+      `Anti-drift artifact write skipped for ${fullRecord.workflowId}: ${err?.message}`
+    );
+  }
 
   return fullRecord;
 }

@@ -728,16 +728,16 @@ function renderInventoryTable() {
 
       return `
         <tr>
-          <td>
+          <td class="cell-item">
             <div style="font-weight:600; color:var(--bind-ink);">${escapeHtml(item.name)}</div>
             <div class="mono" style="font-size:0.75rem; color:var(--bind-text-muted);">${escapeHtml(item.sku)}</div>
           </td>
-          <td class="mono" style="font-weight:600; color:${isLow ? "var(--bind-danger)" : "var(--bind-ink)"};">
+          <td class="mono" data-label="On hand" style="font-weight:600; color:${isLow ? "var(--bind-danger)" : "var(--bind-ink)"};">
             ${escapeHtml(current)} ${escapeHtml(item.unit)}
           </td>
-          <td class="mono">${escapeHtml(par)} ${escapeHtml(item.unit)}</td>
-          <td class="mono">+${escapeHtml(reorder)} ${escapeHtml(item.unit)}</td>
-          <td>
+          <td class="mono" data-label="Par level">${escapeHtml(par)} ${escapeHtml(item.unit)}</td>
+          <td class="mono" data-label="Reorder qty">+${escapeHtml(reorder)} ${escapeHtml(item.unit)}</td>
+          <td data-label="Status">
             ${
               isLow
                 ? `<span class="badge badge-warning">
@@ -750,7 +750,7 @@ function renderInventoryTable() {
                    </span>`
             }
           </td>
-          <td style="text-align:right;">
+          <td class="cell-action" style="text-align:right;">
             <button
               type="button"
               class="btn ${isLow ? "btn-primary" : "btn-secondary"} btn-sm"
@@ -847,13 +847,13 @@ function renderAuditLogPanel() {
           onclick="openEvidenceDrawer('${escapeHtml(log.workflow_id || "")}')"
           title="Click to inspect workflow evidence"
         >
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px;">
-            <span class="mono" style="font-weight:600; font-size:0.8rem; color:var(--bind-ink);">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+            <span class="mono" style="font-weight:600; font-size:0.8rem; color:var(--bind-ink); overflow-wrap:anywhere;">
               ${escapeHtml(log.action)}
             </span>
-            <span class="badge ${effectBadge}" style="font-size:0.68rem;">${escapeHtml(effectClass)}</span>
+            <span class="badge ${effectBadge}" style="font-size:0.68rem; flex-shrink:0; white-space:nowrap;">${escapeHtml(effectClass)}</span>
           </div>
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.75rem; color:var(--bind-text-muted);">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.75rem; color:var(--bind-text-muted); flex-wrap:wrap;">
             <span>Actor: <strong style="color:var(--bind-ink-soft);">${escapeHtml(log.actor_id)}</strong> · Policy: <strong>${escapeHtml(log.policy_decision)}</strong></span>
             <span class="mono">${escapeHtml(formatTimestamp(log.created_at))}</span>
           </div>

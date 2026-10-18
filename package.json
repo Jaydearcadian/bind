@@ -12,6 +12,7 @@
     "test:integration": "vitest run tests/integration/",
     "test:e2e": "playwright test tests/e2e/",
     "build": "tsc -p tsconfig.build.json",
+    "build:vercel": "tsc -p tsconfig.build.json && mkdir -p dist/db && cp src/db/schema.sql dist/db/schema.sql",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "db:migrate": "node dist/db/migrate.js",

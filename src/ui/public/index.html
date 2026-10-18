@@ -91,6 +91,22 @@
       outline-offset: 2px;
     }
 
+    /* Skip to main content */
+    .skip-link {
+      position: absolute;
+      top: -40px;
+      left: 0;
+      background: var(--bind-ink);
+      color: var(--bind-white);
+      padding: 8px 16px;
+      z-index: 1000;
+      border-radius: 0 0 8px 0;
+      transition: top var(--duration-fast) var(--ease-out);
+    }
+    .skip-link:focus {
+      top: 0;
+    }
+
     a {
       color: inherit;
       text-decoration: none;
@@ -212,7 +228,9 @@
       font-weight: 600;
       letter-spacing: 0.01em;
       line-height: 1.3;
-      white-space: nowrap;
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
     .badge svg {
       width: 14px;
@@ -922,20 +940,64 @@
       border-bottom: none;
     }
     @media (max-width: 639px) {
-      .badge {
-        white-space: normal;
-        word-break: break-word;
+      /* Convert data tables into labelled stacked cards so nothing is clipped
+         and the page never scrolls horizontally (DESIGN.md Section 10). */
+      table.bind-table {
+        font-size: 0.875rem;
       }
-      table.bind-table th:nth-child(3),
-      table.bind-table td:nth-child(3),
-      table.bind-table th:nth-child(4),
-      table.bind-table td:nth-child(4) {
+      table.bind-table thead {
         display: none;
       }
-      table.bind-table th,
+      table.bind-table,
+      table.bind-table tbody,
+      table.bind-table tr,
       table.bind-table td {
-        padding: 10px 6px;
-        font-size: 0.8rem;
+        display: block;
+        width: 100%;
+      }
+      table.bind-table tr {
+        border: 1px solid var(--bind-border);
+        border-radius: var(--radius-md);
+        background-color: var(--bind-white);
+        margin-bottom: 12px;
+        padding: 4px 0;
+        overflow: hidden;
+      }
+      table.bind-table tr:last-child {
+        margin-bottom: 0;
+      }
+      table.bind-table td {
+        border-bottom: 1px solid var(--bind-border);
+        padding: 10px 16px;
+        text-align: left;
+      }
+      table.bind-table tr td:last-child {
+        border-bottom: none;
+      }
+      table.bind-table td[data-label] {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      table.bind-table td[data-label]::before {
+        content: attr(data-label);
+        flex: 0 0 auto;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--bind-text-muted);
+      }
+      table.bind-table td.cell-item {
+        padding-top: 14px;
+      }
+      table.bind-table td.cell-action {
+        padding: 10px 16px 14px;
+      }
+      table.bind-table td.cell-action .btn {
+        width: 100%;
+        justify-content: center;
       }
     }
 
@@ -1153,6 +1215,7 @@
   </style>
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
 
   <!-- ========================================================================
        MODE 1: MARKETING LANDING PAGE (/)
@@ -1192,7 +1255,7 @@
       </div>
     </header>
 
-    <main>
+    <main id="main-content" tabindex="-1">
       <!-- Section 2: Hero -->
       <section class="hero-wrapper">
         <div class="container">
@@ -1890,7 +1953,7 @@
                   Items below par level can trigger the Replenishment Agent. Orders &le; $500 auto-authorize; orders &gt; $500 hold for owner approval.
                 </p>
               </div>
-              <div style="display:flex; gap:8px;">
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
                 <a href="/app/workflows" data-route="/app/workflows" class="btn btn-secondary btn-sm">View Active Workflows →</a>
                 <a href="/app/setup/onboarding" data-route="/app/setup/onboarding" class="btn btn-secondary btn-sm">Business Setup Studio →</a>
               </div>

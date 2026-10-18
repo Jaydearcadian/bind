@@ -11,8 +11,6 @@ import { resolveTemplateDir } from "../agents/bindTemplateAgent.js";
 import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
 import { createReplenishmentTools } from "../agents/replenishmentTools.js";
 import { recordIdempotentJournalEntry } from "../studio/documentsAndAccounting.js";
-import { createDeepAgent, FilesystemBackend } from "deepagents";
-import { ChatOpenAI } from "@langchain/openai";
 
 export class ProcurementWorkflowRunner {
   private workflowEngine = new WorkflowEngine();
@@ -166,6 +164,9 @@ export class ProcurementWorkflowRunner {
         });
         return { workflowId, state: WorkflowState.FAILED };
       }
+
+      const { createDeepAgent, FilesystemBackend } = await import("deepagents");
+      const { ChatOpenAI } = await import("@langchain/openai");
 
       const model = new ChatOpenAI({
         model: process.env.NEBIUS_MODEL ?? "nousresearch/Hermes-4-405B",

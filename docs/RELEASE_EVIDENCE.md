@@ -90,3 +90,70 @@ Bind owns and has deployed [`BindSettlement.sol`](file:///home/ubuntu/bind/contr
 | **Flow C: Messaging Surfaces & Role-Enforced Simulator** (`/app/setup/surfaces`) | `src/adapters/socialSurface.ts`, `POST /api/workspaces/:id/surfaces`, `POST /api/webhooks/incoming` | `tests/integration/studio-flows.test.ts` & `tests/e2e/dashboard.spec.ts`: binds staff WhatsApp handle, verifies staff low-stock report (`200`) triggers held proposal, verifies staff spend approval spoof rejected (`403 SURFACE_ROLE_VIOLATION`), and verifies owner approval (`200`) | Channels without live provider credentials (`SURFACE_PROVIDER_VERIFIED`) are labeled `simulated` or `configured_unverified` | `LOCAL_PASS` |
 | **Flow D: Two-Stage Document Extract → Confirm, 3-Way Match & Accounting Ledger** (`/app/setup/documents`) | `src/studio/documentsAndAccounting.ts`, `POST /api/workspaces/:id/documents/extract`, `POST .../confirm`, `GET .../accounting/ledger` | `tests/integration/studio-flows.test.ts` & `tests/e2e/dashboard.spec.ts`: verifies Stage 1 `staged_unconfirmed` (`DOCUMENT_EXTRACTED`), Stage 2 owner quote confirmation (`OWNER_CONFIRMED`), failed 3-way match (`PRICE_DISCREPANCY`, unfulfilled), and passing 3-way match (`MATCHED` + double-entry journal + CSV export) | Deterministic entity/arithmetic parser + PostgreSQL `staged_documents` & `accounting_journal_entries`; external QuickBooks/Xero APIs not live-connected | `LOCAL_PASS` |
 
+---
+
+## 7. Serverless Deployment (Vercel + Neon) and UI Refinement (2026-10-18)
+
+### 7.1 What was deployed
+- Public production deployment: <https://bind-gilt.vercel.app> (project `bind`,
+  team `jaydearcadians-projects`).
+- Single serverless entry `api/index.js` re-exporting `api/_handler.js`, which wraps the
+  existing Express app, runs migrations, and provisions `ws-kitchen-main` idempotently.
+- Database: Neon (Vercel marketplace integration `neon`, resource `bind-db`), injecting
+  `DATABASE_URL` into production/preview/development. No credentials are committed.
+- `vercel.json` rewrites `/api/*` and `/health` to the function; everything else to
+  `index.html`. Static assets built from `src/ui/public/` into `public/` via
+  `npm run build:vercel`.
+
+### 7.2 Repairs required to make it run
+| Problem | Root cause | Fix | Classification |
+| :--- | :--- | :--- | :--- |
+| Function crashed at init (`FUNCTION_INVOCATION_FAILED`) on every request | `deepagents` → `@langchain/langgraph-sdk` vendors an ESM `p-retry` under a CJS bundle; loaded at module init via `bindTemplateAgent.ts` | Lazy dynamic `import("deepagents")` inside the guarded LLM-agent paths (`bindTemplateAgent.ts`, `workflows/procurement.ts`) | `LOCAL_PASS` + `LIVE_READ_PASS` |
+| Replenishment aborted with `ENOENT mkdir /var/task/workflows/...` | Derived `.md` artifacts written under read-only `cwd` | `src/utils/artifacts.ts` redirects writes to `/tmp/bind-artifacts` when `VERCEL` is set; writes made best-effort | `LOCAL_PASS` + `LIVE_READ_PASS` |
+| `/health` unreachable after rewrite | `/health` was captured by the SPA rewrite | Added explicit rewrite `"/health" → "/api/index"` | `LIVE_READ_PASS` |
+
+### 7.3 Commands and results
+```
+npm run typecheck                       # pass
+npm run lint                            # pass (0 problems)
+npm run test:unit                        # 10 files, 49 tests passed
+npm run test:integration                 # 5 files, 15 tests passed
+npx playwright test tests/e2e/dashboard.spec.ts   # 8 passed (Desktop + Mobile Chrome)
+vercel build --yes                       # Build Completed
+vercel deploy --prod --yes               # Aliased https://bind-gilt.vercel.app
+```
+
+Live endpoint verification against `https://bind-gilt.vercel.app` (all `LIVE_READ_PASS`):
+
+| Check | Result |
+| :--- | :--- |
+| `GET /` | `200` — SPA landing (`<title>Bind — Your business runs on your rules.</title>`) |
+| `GET /app` | `200` — SPA workspace shell |
+| `GET /health` | `200` — `{"status":"ok","postgres":"connected", ...}` |
+| `GET /api/workspaces`, `/{id}`, `/{id}/workflows|orders|approvals|inventory|agents|surfaces|accounting/ledger|audit`, `/api/templates/kitchen-ops/blueprint` | all `200` |
+| `POST /api/workspaces/ws-kitchen-main/replenish {sku:FOOD-FLOUR-50LB}` | `200` → `{state:"confirmed", orderId:"ord_..."}` — workflow + order persisted |
+| `POST /api/workspaces/ws-kitchen-main/documents/extract` (quote) then `/confirm` | `201` / `200` — staged `staged_unconfirmed` → `owner_confirmed` |
+| `POST /api/workspaces/ws-kitchen-main/surfaces` (bind staff + owner WhatsApp) | `201` |
+| `POST /api/webhooks/incoming SURFACE_STOCK_OBSERVED` (staff) | `200` — inventory updated, replenishment triggered → `awaiting_approval` |
+| `POST /api/webhooks/incoming SURFACE_OWNER_APPROVAL_DECISION` as **staff** | `403 SURFACE_ROLE_VIOLATION` (negative/security test) |
+| `POST /api/webhooks/incoming SURFACE_OWNER_APPROVAL_DECISION` as **owner** | `200` → workflow `confirmed`, order created |
+
+### 7.4 UI refinement
+- Added a keyboard skip-link and `main#main-content`.
+- Mobile (`<=639px`) inventory table becomes labelled stacked cards via `td[data-label]::before`.
+- Badges wrap safely (`max-width:100%; white-space:normal; overflow-wrap:anywhere`); panel
+  header and evidence rows wrap on narrow widths.
+- No horizontal overflow at 320/375/768/1024/1440 on `/`, `/app`, `/app/workflows`, `/app/evidence`.
+
+### 7.5 Known risks / not verified
+- Generated `STATE_ANCHOR.md` / `DECISION_EVIDENCE.md` are **ephemeral** on serverless
+  (`/tmp`). Durable evidence is the PostgreSQL record and the API `decisionHash`/audit log.
+- The live LLM agent path (`arc-testnet` + `NEBIUS_API_KEY`) inside the serverless function
+  is **NOT_RUN**; the langgraph bundle was not exercised in the Vercel runtime.
+- Preview deployments were not independently verified; `NODE_ENV` is set for production
+  and development but not preview.
+- `vercel dev` hijacks the package `dev` script and fails on a type-only import in
+  `src/accounting/three-way-match.ts` — pre-existing, does not affect build/deploy.
+- `/health` returns `500` with a raw connection error when `DATABASE_URL` is absent;
+  `/api/*` degrades gracefully with `503`.
+

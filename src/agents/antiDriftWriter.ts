@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { VerifiableDecisionRecord } from "./bindTemplateAgent.js";
+import { workflowsArtifactsDir } from "../utils/artifacts.js";
 
 export const CANONICAL_ARC_LOCK = {
   chainName: "ARC-TESTNET",
@@ -100,7 +101,7 @@ export async function writeWorkflowAntiDriftFiles(
 ): Promise<AntiDriftFilesOutput> {
   assertNoSpecDrift(record);
 
-  const rootDir = options?.baseDir ?? path.resolve(process.cwd(), "workflows");
+  const rootDir = options?.baseDir ?? workflowsArtifactsDir();
   const workflowDir = path.join(rootDir, record.workflowId);
   await fs.mkdir(workflowDir, { recursive: true });
 
