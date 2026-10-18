@@ -1,0 +1,2444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bind — Your business runs on your rules.</title>
+  <meta name="description" content="Bind coordinates AI agents around the way your business actually works, with clear limits and a record of every important action." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      /* Core surfaces & brand palette (DESIGN.md Section 3) */
+      --bind-ink: #17211F;
+      --bind-ink-soft: #263430;
+      --bind-teal: #174A4A;
+      --bind-teal-pale: #E5EFEB;
+      --bind-paper: #FAF8F4;
+      --bind-white: #FFFFFF;
+      --bind-text-muted: #626C67;
+      --bind-border: #E6E4DD;
+
+      /* Accent & semantic tokens */
+      --bind-orange: #F45B36;
+      --bind-orange-hover: #D94A29;
+      --bind-orange-pale: #FCEAE3;
+
+      --bind-success: #24734E;
+      --bind-success-bg: #E7F6EC;
+      --bind-warning: #95540E;
+      --bind-warning-bg: #FEF4E6;
+      --bind-danger: #B42318;
+      --bind-danger-bg: #FDECEC;
+
+      /* Typography */
+      --font-display: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+      /* Geometry & Elevation */
+      --radius-sm: 10px;
+      --radius-md: 16px;
+      --radius-lg: 24px;
+      --radius-pill: 999px;
+      --shadow-card: 0 12px 32px rgba(23, 33, 31, 0.06);
+      --shadow-drawer: -12px 0 40px rgba(23, 33, 31, 0.14);
+
+      /* Motion (DESIGN.md Section 7) */
+      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+      --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+      --duration-fast: 140ms;
+      --duration-base: 220ms;
+      --duration-slow: 320ms;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background-color: var(--bind-paper);
+      color: var(--bind-ink);
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      min-height: 100vh;
+      background-color: var(--bind-paper);
+      color: var(--bind-ink);
+      overflow-x: hidden;
+    }
+
+    /* Accessible Focus Ring (WCAG 2.2 AA) */
+    :focus-visible {
+      outline: 2px solid var(--bind-orange);
+      outline-offset: 2px;
+    }
+
+    /* Skip to main content */
+    .skip-link {
+      position: absolute;
+      top: -40px;
+      left: 0;
+      background: var(--bind-ink);
+      color: var(--bind-white);
+      padding: 8px 16px;
+      z-index: 1000;
+      border-radius: 0 0 8px 0;
+      transition: top var(--duration-fast) var(--ease-out);
+    }
+    .skip-link:focus {
+      top: 0;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      font-family: var(--font-sans);
+      cursor: pointer;
+      border: none;
+      background: none;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tabular {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    /* Layout Container */
+    .container {
+      width: 100%;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    @media (min-width: 640px) {
+      .container { padding: 0 28px; }
+    }
+    @media (min-width: 1024px) {
+      .container { padding: 0 40px; }
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 10px 22px;
+      border-radius: var(--radius-pill);
+      font-family: var(--font-sans);
+      font-size: 0.9375rem;
+      font-weight: 600;
+      line-height: 1.2;
+      transition: background-color var(--duration-fast) var(--ease-out),
+                  border-color var(--duration-fast) var(--ease-out),
+                  color var(--duration-fast) var(--ease-out),
+                  transform var(--duration-fast) var(--ease-out);
+      white-space: nowrap;
+    }
+    .btn:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background-color: var(--bind-orange);
+      color: var(--bind-white);
+    }
+    .btn-primary:hover:not(:disabled) {
+      background-color: var(--bind-orange-hover);
+    }
+    .btn-secondary-dark {
+      background-color: rgba(255, 255, 255, 0.1);
+      color: var(--bind-white);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+    }
+    .btn-secondary-dark:hover:not(:disabled) {
+      background-color: rgba(255, 255, 255, 0.18);
+    }
+    .btn-secondary {
+      background-color: var(--bind-white);
+      color: var(--bind-ink);
+      border: 1px solid var(--bind-border);
+    }
+    .btn-secondary:hover:not(:disabled) {
+      border-color: var(--bind-ink-soft);
+      background-color: var(--bind-paper);
+    }
+    .btn-teal {
+      background-color: var(--bind-teal);
+      color: var(--bind-white);
+    }
+    .btn-teal:hover:not(:disabled) {
+      background-color: var(--bind-ink);
+    }
+    .btn-sm {
+      min-height: 36px;
+      padding: 6px 14px;
+      font-size: 0.8125rem;
+    }
+
+    /* Status Badges (Icon + Text, never color alone) */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      line-height: 1.3;
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .badge svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+    .badge-success {
+      background-color: var(--bind-success-bg);
+      color: var(--bind-success);
+      border: 1px solid rgba(36, 115, 78, 0.22);
+    }
+    .badge-warning {
+      background-color: var(--bind-warning-bg);
+      color: var(--bind-warning);
+      border: 1px solid rgba(149, 84, 14, 0.24);
+    }
+    .badge-danger {
+      background-color: var(--bind-danger-bg);
+      color: var(--bind-danger);
+      border: 1px solid rgba(180, 35, 24, 0.24);
+    }
+    .badge-teal {
+      background-color: var(--bind-teal-pale);
+      color: var(--bind-teal);
+      border: 1px solid rgba(23, 74, 74, 0.2);
+    }
+    .badge-neutral {
+      background-color: var(--bind-paper);
+      color: var(--bind-ink-soft);
+      border: 1px solid var(--bind-border);
+    }
+    .badge-orange {
+      background-color: var(--bind-orange-pale);
+      color: #B93819;
+      border: 1px solid rgba(244, 91, 54, 0.28);
+    }
+
+    /* Brand Wordmark Lockup ("bind" + The Join symbol) */
+    .brand-lockup {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-display);
+      font-size: 1.375rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--bind-ink);
+    }
+    .brand-lockup.brand-inverse {
+      color: var(--bind-white);
+    }
+
+    /* ==========================================================================
+       VIEW 1: MARKETING LANDING PAGE (/)
+       ========================================================================== */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background-color: rgba(250, 248, 244, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--bind-border);
+    }
+    .site-header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 72px;
+      gap: 16px;
+    }
+    .site-nav {
+      display: none;
+      align-items: center;
+      gap: 28px;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      color: var(--bind-ink-soft);
+    }
+    .site-nav a:hover {
+      color: var(--bind-ink);
+    }
+    @media (min-width: 768px) {
+      .site-nav { display: flex; }
+    }
+    .site-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Section 2: Hero */
+    .hero-wrapper {
+      padding: 20px 0 48px;
+    }
+    .hero-frame {
+      position: relative;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      min-height: 620px;
+      background-color: var(--bind-ink);
+      background-image:
+        linear-gradient(102deg, rgba(23, 33, 31, 0.92) 0%, rgba(23, 74, 74, 0.80) 48%, rgba(23, 33, 31, 0.38) 100%),
+        url('https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=1800&q=82');
+      background-size: cover;
+      background-position: center right;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 36px 24px;
+      color: var(--bind-white);
+      box-shadow: var(--shadow-card);
+    }
+    @media (min-width: 768px) {
+      .hero-frame {
+        padding: 56px 56px 48px;
+      }
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 36px;
+      align-items: end;
+      margin-top: auto;
+      padding-top: 40px;
+    }
+    @media (min-width: 1024px) {
+      .hero-grid {
+        grid-template-columns: 7fr 5fr;
+        gap: 48px;
+      }
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--bind-teal-pale);
+      margin-bottom: 16px;
+    }
+    .eyebrow-light {
+      color: var(--bind-teal);
+    }
+    .hero-title {
+      font-family: var(--font-display);
+      font-size: clamp(2.5rem, 5.2vw, 4.4rem);
+      font-weight: 700;
+      line-height: 1.03;
+      letter-spacing: -0.03em;
+      color: var(--bind-white);
+      max-width: 12ch;
+      margin-bottom: 20px;
+    }
+    .hero-subtitle {
+      font-size: clamp(1.05rem, 1.4vw, 1.25rem);
+      line-height: 1.5;
+      color: rgba(250, 248, 244, 0.9);
+      max-width: 54ch;
+      margin-bottom: 28px;
+    }
+    .hero-ctas {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+    }
+
+    /* Hero Live Workflow Status Card (Single restrained card at bottom-right) */
+    .hero-status-card {
+      background-color: rgba(23, 33, 31, 0.92);
+      border: 1px solid rgba(230, 228, 221, 0.22);
+      border-radius: var(--radius-md);
+      padding: 22px;
+      color: var(--bind-white);
+      backdrop-filter: blur(8px);
+    }
+    .hero-status-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 14px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid rgba(230, 228, 221, 0.14);
+    }
+    .hero-status-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 0.85rem;
+    }
+    .hero-status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: rgba(250, 248, 244, 0.82);
+    }
+    .hero-status-row strong {
+      color: var(--bind-white);
+      font-weight: 600;
+      text-align: right;
+    }
+
+    /* Marketing Sections */
+    .section {
+      padding: 64px 0;
+    }
+    @media (min-width: 1024px) {
+      .section { padding: 96px 0; }
+    }
+    .section-white {
+      background-color: var(--bind-white);
+      border-top: 1px solid var(--bind-border);
+      border-bottom: 1px solid var(--bind-border);
+    }
+    .section-title {
+      font-family: var(--font-display);
+      font-size: clamp(1.85rem, 3.2vw, 2.9rem);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.025em;
+      color: var(--bind-ink);
+      margin-bottom: 16px;
+    }
+    .section-lead {
+      font-size: 1.0625rem;
+      color: var(--bind-text-muted);
+      max-width: 62ch;
+      line-height: 1.6;
+    }
+
+    /* Threefold Bind Grid (Context. Authority. Fulfilment.) */
+    .threefold-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+      margin-top: 44px;
+    }
+    @media (min-width: 768px) {
+      .threefold-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+    .pillar-card {
+      background-color: var(--bind-white);
+      border: 1px solid var(--bind-border);
+      border-radius: var(--radius-md);
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .pillar-icon-box {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-sm);
+      background-color: var(--bind-teal-pale);
+      color: var(--bind-teal);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pillar-card h3 {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      margin-bottom: 8px;
+      color: var(--bind-ink);
+    }
+    .pillar-card p {
+      font-size: 0.9375rem;
+      color: var(--bind-text-muted);
+      line-height: 1.55;
+    }
+
+    /* Split Section (5/7 or 6/6) */
+    .split-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 40px;
+      align-items: start;
+    }
+    @media (min-width: 1024px) {
+      .split-grid-5-7 {
+        grid-template-columns: 5fr 7fr;
+        gap: 56px;
+      }
+      .split-grid-6-6 {
+        grid-template-columns: 6fr 6fr;
+        gap: 56px;
+      }
+    }
+
+    /* Closing Dark CTA */
+    .closing-cta-card {
+      background-color: var(--bind-ink);
+      background-image: linear-gradient(135deg, var(--bind-ink) 0%, var(--bind-teal) 100%);
+      border-radius: var(--radius-lg);
+      padding: 48px 28px;
+      color: var(--bind-white);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 28px;
+    }
+    @media (min-width: 768px) {
+      .closing-cta-card {
+        flex-direction: row;
+        align-items: center;
+        padding: 64px 56px;
+      }
+    }
+
+    /* Footer */
+    .site-footer {
+      border-top: 1px solid var(--bind-border);
+      padding: 48px 0;
+      background-color: var(--bind-paper);
+      font-size: 0.875rem;
+      color: var(--bind-text-muted);
+    }
+    .site-footer-inner {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      justify-content: space-between;
+    }
+    @media (min-width: 768px) {
+      .site-footer-inner {
+        flex-direction: row;
+        align-items: center;
+      }
+    }
+
+    /* ==========================================================================
+       VIEW 2: IN-APP OPERATIONS WORKSPACE (/app & /app/workflows/:workflowId)
+       ========================================================================== */
+    .app-shell {
+      display: grid;
+      grid-template-columns: 1fr;
+      min-height: 100vh;
+      background-color: var(--bind-paper);
+    }
+    @media (min-width: 1024px) {
+      .app-shell {
+        grid-template-columns: 240px 1fr;
+      }
+    }
+
+    /* Left Navigation Rail (240px on desktop) */
+    .app-sidebar {
+      background-color: var(--bind-ink);
+      color: var(--bind-white);
+      padding: 24px 16px;
+      display: none;
+      flex-direction: column;
+      justify-content: space-between;
+      border-right: 1px solid var(--bind-border);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+    @media (min-width: 1024px) {
+      .app-sidebar {
+        display: flex;
+      }
+    }
+    .app-sidebar.mobile-open {
+      display: flex;
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: 260px;
+      z-index: 60;
+    }
+    .sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 32px;
+    }
+    .sidebar-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: rgba(250, 248, 244, 0.76);
+      transition: background-color var(--duration-fast) var(--ease-out),
+                  color var(--duration-fast) var(--ease-out);
+      text-align: left;
+      width: 100%;
+    }
+    .sidebar-link:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+      color: var(--bind-white);
+    }
+    .sidebar-link.active {
+      background-color: var(--bind-teal);
+      color: var(--bind-white);
+      font-weight: 600;
+    }
+    .sidebar-link-left {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .sidebar-link svg {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    /* Mobile Topbar inside /app */
+    .app-mobile-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      background-color: var(--bind-ink);
+      color: var(--bind-white);
+      border-bottom: 1px solid var(--bind-border);
+    }
+    @media (min-width: 1024px) {
+      .app-mobile-bar {
+        display: none;
+      }
+    }
+
+    /* App Main Workspace Area */
+    .app-main {
+      padding: 28px 20px 64px;
+      max-width: 1360px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    @media (min-width: 768px) {
+      .app-main {
+        padding: 36px 36px 80px;
+      }
+    }
+
+    /* Situation Banner (Top of /app) */
+    .situation-banner {
+      background-color: var(--bind-white);
+      border: 1px solid var(--bind-border);
+      border-left: 4px solid var(--bind-teal);
+      border-radius: var(--radius-md);
+      padding: 20px 24px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      justify-content: space-between;
+      box-shadow: var(--shadow-card);
+    }
+    @media (min-width: 768px) {
+      .situation-banner {
+        flex-direction: row;
+        align-items: center;
+      }
+    }
+
+    /* Context & Authority Summary Strip */
+    .context-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .context-tile {
+      background-color: var(--bind-white);
+      border: 1px solid var(--bind-border);
+      border-radius: var(--radius-md);
+      padding: 16px 18px;
+    }
+    .context-tile-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--bind-text-muted);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .context-tile-value {
+      font-family: var(--font-display);
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--bind-ink);
+      font-variant-numeric: tabular-nums;
+    }
+    .context-tile-sub {
+      font-size: 0.8125rem;
+      color: var(--bind-text-muted);
+      margin-top: 4px;
+    }
+
+    /* Operations Two-Column Grid (7fr 5fr on Desktop) */
+    .ops-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 24px;
+      align-items: start;
+    }
+    .app-shell > *,
+    .ops-grid > *,
+    .timeline-step > *,
+    .truth-split-box > * {
+      min-width: 0;
+    }
+    @media (min-width: 1024px) {
+      .ops-grid {
+        grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+      }
+    }
+
+    /* Surface Panel Card */
+    .panel-card {
+      background-color: var(--bind-white);
+      border: 1px solid var(--bind-border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-card);
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+    @media (min-width: 640px) {
+      .panel-card {
+        padding: 24px;
+      }
+    }
+    .panel-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 16px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--bind-border);
+    }
+    .panel-title {
+      font-family: var(--font-display);
+      font-size: 1.1875rem;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      color: var(--bind-ink);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Workflow Step Timeline */
+    .timeline-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      position: relative;
+    }
+    .timeline-step {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr);
+      gap: 14px;
+      padding-bottom: 20px;
+      position: relative;
+    }
+    .timeline-step:last-child {
+      padding-bottom: 0;
+    }
+    .timeline-step::before {
+      content: "";
+      position: absolute;
+      left: 15px;
+      top: 28px;
+      bottom: 0;
+      width: 2px;
+      background-color: var(--bind-border);
+    }
+    .timeline-step:last-child::before {
+      display: none;
+    }
+    .timeline-step.step-done::before {
+      background-color: var(--bind-teal);
+    }
+    .timeline-node {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--bind-paper);
+      border: 2px solid var(--bind-border);
+      color: var(--bind-text-muted);
+      z-index: 1;
+    }
+    .timeline-step.step-done .timeline-node {
+      background-color: var(--bind-teal-pale);
+      border-color: var(--bind-teal);
+      color: var(--bind-teal);
+    }
+    .timeline-step.step-active .timeline-node {
+      background-color: var(--bind-orange-pale);
+      border-color: var(--bind-orange);
+      color: var(--bind-orange);
+    }
+    .timeline-step.step-blocked .timeline-node {
+      background-color: var(--bind-danger-bg);
+      border-color: var(--bind-danger);
+      color: var(--bind-danger);
+    }
+    .timeline-body {
+      padding-top: 3px;
+    }
+    .timeline-title-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .timeline-title {
+      font-weight: 600;
+      font-size: 0.9375rem;
+      color: var(--bind-ink);
+    }
+    .timeline-desc {
+      font-size: 0.85rem;
+      color: var(--bind-text-muted);
+      line-height: 1.5;
+    }
+
+    /* Truthful Separation Box: Settlement vs Physical Fulfilment */
+    .truth-split-box {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 12px;
+      margin-top: 18px;
+      padding: 16px;
+      background-color: var(--bind-paper);
+      border: 1px solid var(--bind-border);
+      border-radius: var(--radius-sm);
+    }
+    @media (min-width: 640px) {
+      .truth-split-box {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+    }
+    .truth-cell {
+      background-color: var(--bind-white);
+      border: 1px solid var(--bind-border);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .truth-cell-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--bind-text-muted);
+      margin-bottom: 6px;
+    }
+
+    /* Tables */
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+    table.bind-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    table.bind-table th {
+      text-align: left;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--bind-text-muted);
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--bind-border);
+      background-color: var(--bind-paper);
+    }
+    table.bind-table td {
+      padding: 14px 12px;
+      border-bottom: 1px solid var(--bind-border);
+      vertical-align: middle;
+    }
+    table.bind-table tr:last-child td {
+      border-bottom: none;
+    }
+    @media (max-width: 639px) {
+      /* Convert data tables into labelled stacked cards so nothing is clipped
+         and the page never scrolls horizontally (DESIGN.md Section 10). */
+      table.bind-table {
+        font-size: 0.875rem;
+      }
+      table.bind-table thead {
+        display: none;
+      }
+      table.bind-table,
+      table.bind-table tbody,
+      table.bind-table tr,
+      table.bind-table td {
+        display: block;
+        width: 100%;
+      }
+      table.bind-table tr {
+        border: 1px solid var(--bind-border);
+        border-radius: var(--radius-md);
+        background-color: var(--bind-white);
+        margin-bottom: 12px;
+        padding: 4px 0;
+        overflow: hidden;
+      }
+      table.bind-table tr:last-child {
+        margin-bottom: 0;
+      }
+      table.bind-table td {
+        border-bottom: 1px solid var(--bind-border);
+        padding: 10px 16px;
+        text-align: left;
+      }
+      table.bind-table tr td:last-child {
+        border-bottom: none;
+      }
+      table.bind-table td[data-label] {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      table.bind-table td[data-label]::before {
+        content: attr(data-label);
+        flex: 0 0 auto;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--bind-text-muted);
+      }
+      table.bind-table td.cell-item {
+        padding-top: 14px;
+      }
+      table.bind-table td.cell-action {
+        padding: 10px 16px 14px;
+      }
+      table.bind-table td.cell-action .btn {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+
+    /* Evidence Drawer (Right slide-over 420px) */
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background-color: rgba(23, 33, 31, 0.45);
+      z-index: 80;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--duration-base) var(--ease-out);
+    }
+    .drawer-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .evidence-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(100vw, 460px);
+      max-width: 100vw;
+      background-color: var(--bind-white);
+      border-left: 1px solid var(--bind-border);
+      box-shadow: var(--shadow-drawer);
+      z-index: 90;
+      transform: translateX(100%);
+      transition: transform var(--duration-slow) var(--ease-out);
+      display: flex;
+      flex-direction: column;
+    }
+    .evidence-drawer.open {
+      transform: translateX(0);
+    }
+    .drawer-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--bind-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background-color: var(--bind-paper);
+    }
+    .drawer-body {
+      padding: 24px;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .kv-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .kv-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px 12px;
+      background-color: var(--bind-paper);
+      border: 1px solid var(--bind-border);
+      border-radius: var(--radius-sm);
+    }
+    .kv-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--bind-text-muted);
+    }
+    .kv-val {
+      font-size: 0.85rem;
+      color: var(--bind-ink);
+      word-break: break-all;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      background-color: var(--bind-white);
+      border: 1px solid var(--bind-border);
+      color: var(--bind-ink-soft);
+      flex-shrink: 0;
+    }
+    .copy-btn:hover {
+      border-color: var(--bind-ink);
+      color: var(--bind-ink);
+    }
+
+    /* Toast Notification Banner */
+    .toast-banner {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 100;
+      max-width: 420px;
+      background-color: var(--bind-ink);
+      color: var(--bind-white);
+      border-left: 4px solid var(--bind-orange);
+      padding: 14px 18px;
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-card);
+      font-size: 0.875rem;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .toast-banner.visible {
+      display: flex;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Business Onboarding & Operations Studio Styles */
+    .studio-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      border-bottom: 1px solid var(--bind-border);
+      padding-bottom: 14px;
+      margin-bottom: 20px;
+    }
+    .studio-tab-btn {
+      padding: 9px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--bind-ink-soft);
+      background-color: var(--bind-paper);
+      border: 1px solid var(--bind-border);
+      transition: all var(--duration-fast) var(--ease-out);
+    }
+    .studio-tab-btn:hover {
+      border-color: var(--bind-ink);
+      color: var(--bind-ink);
+    }
+    .studio-tab-btn.active {
+      background-color: var(--bind-teal);
+      border-color: var(--bind-teal);
+      color: var(--bind-white);
+    }
+    .studio-form-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    @media (min-width: 768px) {
+      .studio-form-grid-2 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .studio-form-grid-3 {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      .studio-form-grid-4 {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+    .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .form-label {
+      font-size: 0.76rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--bind-text-muted);
+    }
+    .form-input,
+    .form-select,
+    .form-textarea {
+      width: 100%;
+      padding: 9px 12px;
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      color: var(--bind-ink);
+      background-color: var(--bind-white);
+      border: 1px solid var(--bind-border-strong);
+      border-radius: var(--radius-sm);
+    }
+    .form-textarea {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      min-height: 96px;
+      resize: vertical;
+    }
+    .form-input:focus,
+    .form-select:focus,
+    .form-textarea:focus {
+      outline: 2px solid var(--bind-orange);
+      border-color: var(--bind-orange);
+    }
+    .studio-subcard {
+      background-color: var(--bind-paper);
+      border: 1px solid var(--bind-border);
+      border-radius: var(--radius-sm);
+      padding: 18px;
+    }
+  </style>
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- ========================================================================
+       MODE 1: MARKETING LANDING PAGE (/)
+       ======================================================================== -->
+  <div id="landingView">
+    <!-- Section 1: Header -->
+    <header class="site-header" role="banner">
+      <div class="container site-header-inner">
+        <a href="/" data-route="/" class="brand-lockup" aria-label="Bind home">
+          <!-- "The Join" Symbol: three clean bands converging into one path -->
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <rect width="28" height="28" rx="7" fill="#174A4A" />
+            <path d="M7 8.5H12.5C14.5 8.5 15.5 10 16.5 14" stroke="#FAF8F4" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M7 14H21" stroke="#FAF8F4" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M7 19.5H12.5C14.5 19.5 15.5 18 16.5 14" stroke="#FAF8F4" stroke-width="2.2" stroke-linecap="round"/>
+            <circle cx="17.5" cy="14" r="2.5" fill="#F45B36" />
+          </svg>
+          <span>bind</span>
+        </a>
+
+        <nav class="site-nav" aria-label="Primary marketing navigation">
+          <a href="#threefold-bind">Context &amp; Authority</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#role-cards">Agent roles</a>
+          <a href="#evidence-trail">Evidence</a>
+        </nav>
+
+        <div class="site-header-actions">
+          <a href="/app" data-route="/app" id="headerOpenAppBtn" class="btn btn-primary">
+            <span>Open app</span>
+            <!-- Heroicon: ArrowRightIcon (20px) -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+            </svg>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content" tabindex="-1">
+      <!-- Section 2: Hero -->
+      <section class="hero-wrapper">
+        <div class="container">
+          <div class="hero-frame">
+            <div>
+              <span class="badge badge-teal" style="background: rgba(229,239,235,0.14); color: #E5EFEB; border-color: rgba(229,239,235,0.28);">
+                <!-- Heroicon: ShieldCheckIcon -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
+                </svg>
+                <span>Kitchen Vertical Slice · Arc Testnet Verified</span>
+              </span>
+            </div>
+
+            <div class="hero-grid">
+              <div>
+                <p class="eyebrow">BUSINESS OPERATIONS, WITH YOU IN CONTROL</p>
+                <h1 class="hero-title">Your business runs on your rules.</h1>
+                <p class="hero-subtitle">
+                  Bind coordinates AI agents around the way your business works, with clear limits and a record of every important action.
+                </p>
+                <div class="hero-ctas">
+                  <a href="/app" data-route="/app" id="heroOpenAppBtn" class="btn btn-primary">
+                    <span>Open app</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                    </svg>
+                  </a>
+                  <a href="#how-it-works" class="btn btn-secondary-dark">
+                    <span>See how it works</span>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Single Restrained Workflow Preview Card at Image Edge -->
+              <aside class="hero-status-card" aria-label="Live replenishment workflow preview">
+                <div class="hero-status-header">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="width:8px; height:8px; border-radius:50%; background:var(--bind-orange); display:inline-block;"></span>
+                    <span style="font-size:0.8125rem; font-weight:600; letter-spacing:0.02em;">Kitchen Replenishment</span>
+                  </div>
+                  <span class="badge badge-neutral" style="background:rgba(255,255,255,0.1); color:#FAF8F4; border-color:rgba(255,255,255,0.2);" id="heroPreviewWorkspaceBadge">Demo workspace</span>
+                </div>
+                <div class="hero-status-rows">
+                  <div class="hero-status-row">
+                    <span>Trigger signal</span>
+                    <strong id="heroPreviewSignal">Low stock: Organic Flour (50 lb)</strong>
+                  </div>
+                  <div class="hero-status-row">
+                    <span>Supplier source</span>
+                    <strong class="mono" style="font-size:0.78rem; color:#E5EFEB;">SIMULATED_SUPPLIER_ADAPTER</strong>
+                  </div>
+                  <div class="hero-status-row">
+                    <span>Authority check</span>
+                    <strong id="heroPreviewPolicy">Within $2,000/day · Owner gate &gt; $500</strong>
+                  </div>
+                  <div class="hero-status-row">
+                    <span>Settlement state</span>
+                    <strong id="heroPreviewSettlement" style="color:#7CE3B3;">SETTLED_ON_ARC_TESTNET</strong>
+                  </div>
+                  <div class="hero-status-row">
+                    <span>Physical fulfilment</span>
+                    <strong id="heroPreviewFulfilment" style="color:#FCD392;">Awaiting 3-way match</strong>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 3: Core Proposition (Context. Authority. Fulfilment.) -->
+      <section id="threefold-bind" class="section">
+        <div class="container">
+          <div style="display:flex; flex-direction:column; gap:12px; max-width:720px;">
+            <p class="eyebrow eyebrow-light">THE THREEFOLD BIND</p>
+            <h2 class="section-title">Context. Authority. Fulfilment.</h2>
+            <p class="section-lead">
+              Agents are only useful in a real business when three things stay connected: what the business actually stocks and prefers, what an agent is allowed to commit, and what physically arrived at the back door.
+            </p>
+          </div>
+
+          <div class="threefold-grid">
+            <!-- 1. Context -->
+            <article class="pillar-card">
+              <div>
+                <div class="pillar-icon-box" aria-hidden="true">
+                  <!-- Heroicon: BuildingStorefrontIcon -->
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z" />
+                  </svg>
+                </div>
+                <h3 style="margin-top:18px;">1. Business Context</h3>
+                <p>
+                  Par levels, pack sizes, preferred suppliers, and operating schedules live in structured workspace state—so the agent works from real inventory numbers, not guesses.
+                </p>
+              </div>
+              <div style="padding-top:14px; border-top:1px solid var(--bind-border); font-size:0.8125rem; color:var(--bind-teal); font-weight:600;">
+                SKUs · Par thresholds · Approved vendors
+              </div>
+            </article>
+
+            <!-- 2. Authority -->
+            <article class="pillar-card">
+              <div>
+                <div class="pillar-icon-box" aria-hidden="true">
+                  <!-- Heroicon: ShieldCheckIcon -->
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
+                  </svg>
+                </div>
+                <h3 style="margin-top:18px;">2. Bounded Authority</h3>
+                <p>
+                  Deterministic backend policy checks enforce daily budgets, vendor allowlists, and owner approval gates outside the language model before any order or transfer is sent.
+                </p>
+              </div>
+              <div style="padding-top:14px; border-top:1px solid var(--bind-border); font-size:0.8125rem; color:var(--bind-teal); font-weight:600;">
+                Deterministic policy · Owner approval gates
+              </div>
+            </article>
+
+            <!-- 3. Fulfilment -->
+            <article class="pillar-card">
+              <div>
+                <div class="pillar-icon-box" aria-hidden="true">
+                  <!-- Heroicon: TruckIcon -->
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+                  </svg>
+                </div>
+                <h3 style="margin-top:18px;">3. Real-World Fulfilment</h3>
+                <p>
+                  A settled transaction on Arc Testnet is evidence of payment, not proof of delivery. Bind keeps physical delivery receipts and three-way invoice matching separate.
+                </p>
+              </div>
+              <div style="padding-top:14px; border-top:1px solid var(--bind-border); font-size:0.8125rem; color:var(--bind-teal); font-weight:600;">
+                PO + Delivery Receipt + Bill 3-way match
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 4: Replenishment Workflow Preview ("From low stock to a decision.") -->
+      <section id="how-it-works" class="section section-white">
+        <div class="container">
+          <div class="split-grid split-grid-5-7">
+            <div>
+              <p class="eyebrow eyebrow-light">GOVERNED WORKFLOW</p>
+              <h2 class="section-title">From low stock to a decision.</h2>
+              <p class="section-lead" style="margin-bottom:24px;">
+                When kitchen stock drops below par, Bind’s Replenishment Agent reads workspace rules, requests supplier quotes, and submits a structured proposal. Deterministic code—not prompt trust—decides whether the order can proceed automatically or waits for the owner.
+              </p>
+
+              <!-- Restrained Abstract "The Join" Motif Illustration (Working & Needs Owner states) -->
+              <div style="background:var(--bind-paper); border:1px solid var(--bind-border); border-radius:var(--radius-md); padding:20px; margin-bottom:24px;">
+                <div style="display:flex; align-items:center; gap:14px; margin-bottom:10px;">
+                  <!-- The Join abstract three-band emblem -->
+                  <svg width="48" height="36" viewBox="0 0 48 36" fill="none" aria-hidden="true">
+                    <path d="M4 7H18C22 7 24 11 26 18" stroke="#174A4A" stroke-width="3.2" stroke-linecap="round"/>
+                    <path d="M4 18H44" stroke="#17211F" stroke-width="3.2" stroke-linecap="round"/>
+                    <path d="M4 29H18C22 29 24 25 26 18" stroke="#174A4A" stroke-width="3.2" stroke-linecap="round"/>
+                    <circle cx="27" cy="18" r="4" fill="#F45B36"/>
+                  </svg>
+                  <div>
+                    <div style="font-weight:700; font-size:0.9375rem; color:var(--bind-ink);">The Join: Three checkpoints, one record</div>
+                    <div style="font-size:0.8125rem; color:var(--bind-text-muted);">Stock trigger → Policy &amp; Jev confidence gate → 3-way fulfilment match</div>
+                  </div>
+                </div>
+              </div>
+
+              <a href="/app" data-route="/app" class="btn btn-primary">
+                <span>Open live kitchen workspace</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                </svg>
+              </a>
+            </div>
+
+            <!-- Right 7 cols: Real Product Preview Card -->
+            <div class="panel-card" style="margin-bottom:0; background:var(--bind-paper);">
+              <div class="panel-header">
+                <div>
+                  <span class="badge badge-teal" style="margin-bottom:6px;">Live Workspace Preview</span>
+                  <h3 class="panel-title">Replenishment Lifecycle · Hearth &amp; Grain Kitchen</h3>
+                </div>
+                <a href="/app" data-route="/app" class="btn btn-secondary btn-sm">Inspect in /app</a>
+              </div>
+
+              <div class="timeline-list">
+                <div class="timeline-step step-done">
+                  <div class="timeline-node">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/></svg>
+                  </div>
+                  <div class="timeline-body">
+                    <div class="timeline-title-row">
+                      <span class="timeline-title">Low stock detected (SKU-FLOUR-001)</span>
+                      <span class="badge badge-warning">2 bags &lt; 10 par</span>
+                    </div>
+                    <p class="timeline-desc">Organic All-Purpose Flour (50 lb) dropped below par threshold. Reorder quantity: 15 bags.</p>
+                  </div>
+                </div>
+
+                <div class="timeline-step step-done">
+                  <div class="timeline-node">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/></svg>
+                  </div>
+                  <div class="timeline-body">
+                    <div class="timeline-title-row">
+                      <span class="timeline-title">Supplier quote received</span>
+                      <span class="badge badge-neutral mono">SIMULATED_SUPPLIER_ADAPTER</span>
+                    </div>
+                    <p class="timeline-desc">Sysco Metro Restock quoted 15 units @ $28.50/unit ($427.50 USDC total). Valid 24 hours.</p>
+                  </div>
+                </div>
+
+                <div class="timeline-step step-done">
+                  <div class="timeline-node">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/></svg>
+                  </div>
+                  <div class="timeline-body">
+                    <div class="timeline-title-row">
+                      <span class="timeline-title">Policy &amp; TypeSafe Jev System One evaluation</span>
+                      <span class="badge badge-success">Allowed under $500 gate</span>
+                    </div>
+                    <p class="timeline-desc">Vendor verified on allowlist. $427.50 is within the $500.00 auto-approval limit and $2,000.00 daily cap.</p>
+                  </div>
+                </div>
+
+                <div class="timeline-step step-active">
+                  <div class="timeline-node">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+                  </div>
+                  <div class="timeline-body">
+                    <div class="timeline-title-row">
+                      <span class="timeline-title">Settlement vs. Physical Fulfilment</span>
+                      <span class="badge badge-orange">Distinct states enforced</span>
+                    </div>
+                    <p class="timeline-desc">Arc Testnet payment evidence and physical three-way match are tracked independently.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 5: Business-Role Cards ("Let agents handle the repeatable work.") -->
+      <section id="role-cards" class="section">
+        <div class="container">
+          <div style="max-width:720px;">
+            <p class="eyebrow eyebrow-light">ROLE-SPECIFIC AGENT TEAM</p>
+            <h2 class="section-title">Let agents handle the repeatable work.</h2>
+            <p class="section-lead">
+              A business configures its operating rules once and gets role-specific agents with explicit tool permissions, budget limits, and approval gates.
+            </p>
+          </div>
+
+          <div class="threefold-grid">
+            <article class="pillar-card">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                  <div class="pillar-icon-box">
+                    <!-- Heroicon: ArrowsRightLeftIcon -->
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                    </svg>
+                  </div>
+                  <span class="badge badge-teal">Enforced</span>
+                </div>
+                <h3>Stock &amp; Suppliers</h3>
+                <p style="margin-bottom:12px;"><strong style="color:var(--bind-ink);">Kitchen Procurement Agent</strong></p>
+                <p>Watches par levels across ingredients, requests quotes from verified suppliers, checks pack-size math, and prepares replenishment proposals.</p>
+              </div>
+              <div class="mono" style="font-size:0.78rem; color:var(--bind-text-muted); padding-top:12px; border-top:1px solid var(--bind-border);">
+                Max auto-order: $500.00 · Daily cap: $2,000.00
+              </div>
+            </article>
+
+            <article class="pillar-card">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                  <div class="pillar-icon-box">
+                    <!-- Heroicon: BanknotesIcon -->
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+                    </svg>
+                  </div>
+                  <span class="badge badge-teal">Enforced</span>
+                </div>
+                <h3>Approvals &amp; Budgets</h3>
+                <p style="margin-bottom:12px;"><strong style="color:var(--bind-ink);">Deterministic Policy &amp; Jev Gate</strong></p>
+                <p>Holds any high-value order (such as $1,368.00 of European Butter) or low-confidence proposal for explicit owner approval before funds move.</p>
+              </div>
+              <div class="mono" style="font-size:0.78rem; color:var(--bind-text-muted); padding-top:12px; border-top:1px solid var(--bind-border);">
+                Owner approval required &gt; $500.00
+              </div>
+            </article>
+
+            <article class="pillar-card">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                  <div class="pillar-icon-box">
+                    <!-- Heroicon: ClipboardDocumentCheckIcon -->
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m8.9-4.414c.376.023.75.05 1.124.08 1.131.094 1.976 1.057 1.976 2.192V16.5A2.25 2.25 0 0 1 18 18.75h-2.25m-7.5-10.5H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V18.75m-7.5-10.5h6.375c.621 0 1.125.504 1.125 1.125v9.375m-8.25-3 1.5 1.5 3-3.75" />
+                    </svg>
+                  </div>
+                  <span class="badge badge-teal">Enforced</span>
+                </div>
+                <h3>Delivery &amp; Reconciliation</h3>
+                <p style="margin-bottom:12px;"><strong style="color:var(--bind-ink);">Customer &amp; Fulfilment + Menu Agents</strong></p>
+                <p>Matches Purchase Order, Delivery Receipt, and Supplier Bill with zero-tolerance integer cents before marking physical fulfilment complete.</p>
+              </div>
+              <div class="mono" style="font-size:0.78rem; color:var(--bind-text-muted); padding-top:12px; border-top:1px solid var(--bind-border);">
+                3-Way Match · Zero silent downgrades
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 6: Authority & Evidence ("Every important action leaves a trail.") -->
+      <section id="evidence-trail" class="section section-white">
+        <div class="container">
+          <div class="split-grid split-grid-6-6">
+            <div>
+              <p class="eyebrow eyebrow-light">VERIFIABLE ACCOUNTABILITY</p>
+              <h2 class="section-title">Every important action leaves a trail.</h2>
+              <p class="section-lead" style="margin-bottom:20px;">
+                Other demos treat a submitted transaction as a finished job. Bind records the SHA-256 decision hash, the supplier adapter attribution, the confirmed Arc Testnet settlement transaction, and whether the physical goods have actually passed three-way match.
+              </p>
+              <ul style="list-style:none; display:flex; flex-direction:column; gap:12px; margin-bottom:28px; font-size:0.9375rem; color:var(--bind-ink-soft);">
+                <li style="display:flex; align-items:center; gap:10px;">
+                  <span class="badge badge-teal">1</span>
+                  <span><strong>Source attribution:</strong> <code class="mono">SIMULATED_SUPPLIER_ADAPTER</code> is labeled honestly.</span>
+                </li>
+                <li style="display:flex; align-items:center; gap:10px;">
+                  <span class="badge badge-teal">2</span>
+                  <span><strong>Arc Testnet settlement:</strong> Verified against <code class="mono">BindSettlement</code> on chain <code class="mono">5042002</code>.</span>
+                </li>
+                <li style="display:flex; align-items:center; gap:10px;">
+                  <span class="badge badge-teal">3</span>
+                  <span><strong>Fulfilment separation:</strong> Payment never fabricates delivery receipt confirmation.</span>
+                </li>
+              </ul>
+              <a href="/app" data-route="/app" class="btn btn-secondary">
+                <span>Inspect evidence drawer in /app</span>
+              </a>
+            </div>
+
+            <!-- Evidence Preview Card -->
+            <div class="panel-card" style="margin-bottom:0;">
+              <div class="panel-header">
+                <h3 class="panel-title">
+                  <!-- Heroicon: DocumentCheckIcon -->
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12" />
+                  </svg>
+                  <span>Verified Decision &amp; Settlement Record</span>
+                </h3>
+                <span class="badge badge-success">VERIFIED_REMOTE</span>
+              </div>
+              <div class="kv-list">
+                <div class="kv-row">
+                  <span class="kv-label">BindSettlement Contract (Arc Testnet · 5042002)</span>
+                  <div class="kv-val mono">
+                    <span>0x6FD6323252a3f63A0c93470B6fd14883252F3f02</span>
+                    <button type="button" class="copy-btn" data-copy="0x6FD6323252a3f63A0c93470B6fd14883252F3f02">Copy</button>
+                  </div>
+                </div>
+                <div class="kv-row">
+                  <span class="kv-label">Confirmed Settlement Transaction Hash</span>
+                  <div class="kv-val mono">
+                    <span>0x6fc45e277f9be92dc91da08fb72c37c5a18bf0f44a509665470aaef70848a894</span>
+                    <a href="https://testnet.arcscan.app/tx/0x6fc45e277f9be92dc91da08fb72c37c5a18bf0f44a509665470aaef70848a894" target="_blank" rel="noopener noreferrer" class="copy-btn">Arcscan ↗</a>
+                  </div>
+                </div>
+                <div class="kv-row">
+                  <span class="kv-label">Supplier Source Attribution</span>
+                  <div class="kv-val mono">
+                    <span>SIMULATED_SUPPLIER_ADAPTER (Sysco Metro Restock)</span>
+                    <span class="badge badge-neutral">Explicit</span>
+                  </div>
+                </div>
+                <div class="kv-row">
+                  <span class="kv-label">Payment vs. Physical Fulfilment</span>
+                  <div class="kv-val">
+                    <span>Payment: <strong>SETTLED_ON_ARC_TESTNET</strong></span>
+                    <span class="badge badge-warning">Fulfilment: Awaiting 3-way match</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 7: Final CTA ("Keep the business in control.") -->
+      <section class="section">
+        <div class="container">
+          <div class="closing-cta-card">
+            <div style="max-width:600px;">
+              <p class="eyebrow" style="margin-bottom:10px;">READY TO INSPECT</p>
+              <h2 style="font-family:var(--font-display); font-size:clamp(1.85rem, 3vw, 2.6rem); font-weight:700; line-height:1.1; letter-spacing:-0.02em; margin-bottom:12px;">
+                Keep the business in control.
+              </h2>
+              <p style="color:rgba(250,248,244,0.84); font-size:1.05rem;">
+                Open the live Kitchen Operations workspace to run a low-stock check, inspect deterministic policy and owner approval gates, and verify Arc Testnet settlement alongside physical three-way matching.
+              </p>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:12px;">
+              <a href="/app" data-route="/app" id="footerOpenAppBtn" class="btn btn-primary">
+                <span>Open app</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                </svg>
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Section 8: Footer -->
+    <footer class="site-footer" role="contentinfo">
+      <div class="container site-footer-inner">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <a href="/" data-route="/" class="brand-lockup" style="font-size:1.15rem;">
+            <svg width="22" height="22" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+              <rect width="28" height="28" rx="6" fill="#174A4A" />
+              <path d="M7 8.5H12.5C14.5 8.5 15.5 10 16.5 14" stroke="#FAF8F4" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M7 14H21" stroke="#FAF8F4" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M7 19.5H12.5C14.5 19.5 15.5 18 16.5 14" stroke="#FAF8F4" stroke-width="2.2" stroke-linecap="round"/>
+              <circle cx="17.5" cy="14" r="2.5" fill="#F45B36" />
+            </svg>
+            <span>bind</span>
+          </a>
+          <span>Your business runs on your rules. Context, authority, and fulfilment connected.</span>
+        </div>
+        <div style="display:flex; gap:20px; align-items:center;">
+          <a href="/" data-route="/">Home</a>
+          <a href="/app" data-route="/app">Operations App (/app)</a>
+          <a href="/health" target="_blank" rel="noopener">System Health</a>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ========================================================================
+       MODE 2: IN-APP OPERATIONS WORKSPACE (/app & /app/workflows/:workflowId)
+       ======================================================================== -->
+  <div id="appView" class="app-shell">
+    <!-- Left Navigation Rail (240px on desktop) -->
+    <aside id="appSidebar" class="app-sidebar" aria-label="Workspace navigation">
+      <div>
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:0 8px;">
+          <a href="/" data-route="/" class="brand-lockup brand-inverse" title="Return to Bind homepage">
+            <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+              <rect width="28" height="28" rx="7" fill="#174A4A" />
+              <path d="M7 8.5H12.5C14.5 8.5 15.5 10 16.5 14" stroke="#FAF8F4" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M7 14H21" stroke="#FAF8F4" stroke-width="2.2" stroke-linecap="round"/>
+              <path d="M7 19.5H12.5C14.5 19.5 15.5 18 16.5 14" stroke="#FAF8F4" stroke-width="2.2" stroke-linecap="round"/>
+              <circle cx="17.5" cy="14" r="2.5" fill="#F45B36" />
+            </svg>
+            <span>bind</span>
+          </a>
+          <span class="badge badge-teal" style="font-size:0.68rem;">v1.0</span>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Operations sections">
+          <a href="/app" data-route="/app" class="sidebar-link active" data-subpage="overviewPage">
+            <span class="sidebar-link-left">
+              <!-- Heroicon: Squares2X2Icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z"/></svg>
+              <span>Overview</span>
+            </span>
+          </a>
+
+          <a href="/app/workflows" data-route="/app/workflows" class="sidebar-link" data-subpage="workflowsPage">
+            <span class="sidebar-link-left">
+              <!-- Heroicon: ArrowsRightLeftIcon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+              <span>Workflows</span>
+            </span>
+            <span id="navWorkflowCount" class="badge badge-neutral" style="background:rgba(255,255,255,0.12); color:#fff; border:none;">0</span>
+          </a>
+
+          <a href="/app/approvals" data-route="/app/approvals" class="sidebar-link" data-subpage="approvalsPage">
+            <span class="sidebar-link-left">
+              <!-- Heroicon: ShieldCheckIcon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/></svg>
+              <span>Approvals</span>
+            </span>
+            <span id="navApprovalCount" class="badge badge-orange">0</span>
+          </a>
+
+          <a href="/app/evidence" data-route="/app/evidence" class="sidebar-link" data-subpage="evidencePage" id="sidebarOpenEvidenceBtn">
+            <span class="sidebar-link-left">
+              <!-- Heroicon: DocumentCheckIcon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12"/></svg>
+              <span>Evidence</span>
+            </span>
+          </a>
+
+          <div style="margin-top:12px; margin-bottom:4px; padding:0 12px; font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:rgba(250,248,244,0.45);">
+            Business Setup Studio
+          </div>
+
+          <a href="/app/setup/onboarding" data-route="/app/setup/onboarding" class="sidebar-link" data-subpage="setupOnboardingPage">
+            <span class="sidebar-link-left">
+              <!-- Heroicon: BuildingStorefrontIcon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z"/></svg>
+              <span>Business setup</span>
+            </span>
+          </a>
+
+          <a href="/app/setup/agents" data-route="/app/setup/agents" class="sidebar-link" data-subpage="setupAgentsPage">
+            <span class="sidebar-link-left">
+              <!-- Heroicon: CpuChipIcon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/></svg>
+              <span>Agent roles</span>
+            </span>
+          </a>
+
+          <a href="/app/setup/surfaces" data-route="/app/setup/surfaces" class="sidebar-link" data-subpage="setupSurfacesPage">
+            <span class="sidebar-link-left">
+              <!-- Heroicon: ChatBubbleLeftRightIcon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/></svg>
+              <span>Messaging surfaces</span>
+            </span>
+          </a>
+
+          <a href="/app/setup/documents" data-route="/app/setup/documents" class="sidebar-link" data-subpage="setupDocumentsPage">
+            <span class="sidebar-link-left">
+              <!-- Heroicon: DocumentTextIcon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
+              <span>Documents &amp; Ledger</span>
+            </span>
+          </a>
+        </nav>
+      </div>
+
+      <div style="padding:14px; background:rgba(255,255,255,0.05); border-radius:var(--radius-sm); font-size:0.78rem; color:rgba(250,248,244,0.75);">
+        <div style="font-weight:600; color:#fff; margin-bottom:4px;">Workspace Binding</div>
+        <div class="mono" id="sidebarWorkspaceId">ws-kitchen-main</div>
+        <div style="margin-top:8px;">
+          <a href="/" data-route="/" style="color:var(--bind-teal-pale); text-decoration:underline; font-size:0.76rem;">← Back to landing page</a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Column -->
+    <div>
+      <!-- Mobile Bar -->
+      <div class="app-mobile-bar">
+        <a href="/" data-route="/" class="brand-lockup brand-inverse" style="font-size:1.15rem;">
+          <span>bind</span>
+        </a>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button type="button" id="mobileOpenEvidenceBtn" class="btn btn-secondary-dark btn-sm">Evidence</button>
+          <button type="button" id="mobileMenuToggleBtn" class="btn btn-secondary-dark btn-sm" aria-label="Toggle navigation menu">
+            <!-- Heroicon: Bars3Icon -->
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <main class="app-main" id="overview">
+        <!-- Workspace Top Header (Persistent across all /app subpages) -->
+        <div style="display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:24px;">
+          <div>
+            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:6px;">
+              <span class="badge badge-teal">Bind — Kitchen Vertical Slice</span>
+              <span class="badge badge-neutral" id="demoWorkspaceBadge">Demo workspace</span>
+              <span class="badge badge-success mono" id="settlementModeBadge">arc-testnet</span>
+            </div>
+            <h1 style="font-family:var(--font-display); font-size:clamp(1.65rem, 2.5vw, 2.2rem); font-weight:700; letter-spacing:-0.02em; color:var(--bind-ink);">
+              Bind Kitchen Operations
+            </h1>
+            <p style="font-size:0.9375rem; color:var(--bind-text-muted);" id="workspaceSubheading">
+              Hearth &amp; Grain Artisan Kitchen · Bounded replenishment, deterministic policy authority, and three-way match reconciliation.
+            </p>
+          </div>
+
+          <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+            <div style="display:inline-flex; align-items:center; gap:6px; background:var(--bind-white); border:1px solid var(--bind-border-strong); border-radius:var(--radius-sm); padding:4px 8px; max-width:100%;">
+              <label for="workspaceSwitcherSelect" class="mono" style="font-size:0.72rem; color:var(--bind-text-muted); font-weight:600;">WORKSPACE:</label>
+              <select id="workspaceSwitcherSelect" class="mono" style="border:none; background:transparent; font-size:0.8rem; font-weight:600; color:var(--bind-ink); cursor:pointer; max-width:190px; text-overflow:ellipsis;">
+                <option value="ws-kitchen-main">ws-kitchen-main (Demo)</option>
+              </select>
+            </div>
+            <button type="button" id="runLowStockBtn" class="btn btn-primary">
+              <!-- Heroicon: ArrowPathIcon -->
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+              <span>Run low-stock check</span>
+            </button>
+            <button type="button" id="openEvidenceDrawerBtn" class="btn btn-secondary">
+              <!-- Heroicon: DocumentCheckIcon -->
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12" />
+              </svg>
+              <span>Inspect evidence</span>
+            </button>
+            <button type="button" id="recoverWorkflowsBtn" class="btn btn-secondary btn-sm" title="Run idempotent crash recovery check">
+              Recover interrupted
+            </button>
+          </div>
+        </div>
+
+        <!-- ==================================================================
+             SUBPAGE 1: OVERVIEW (/app)
+             Situation Banner + Context Strip + Kitchen Inventory Table
+             ================================================================== -->
+        <div id="overviewPage" class="app-subpage">
+          <!-- 1. Current Situation Banner (Derived from real persisted state) -->
+          <section class="situation-banner" aria-label="Current operational situation">
+            <div>
+              <div style="font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--bind-teal); margin-bottom:4px;">
+                Current Situation &amp; Next Valid Action
+              </div>
+              <p id="situationSentence" style="font-size:1rem; font-weight:600; color:var(--bind-ink);">
+                Loading workspace inventory, active replenishment workflows, and settlement records…
+              </p>
+              <p id="situationSubtext" style="font-size:0.85rem; color:var(--bind-text-muted); margin-top:2px;">
+                All authority rules are enforced deterministically outside the model.
+              </p>
+            </div>
+            <div id="situationActionContainer" style="display:flex; gap:10px; flex-shrink:0;"></div>
+          </section>
+
+          <!-- Context & Authority Strip -->
+          <section class="context-strip" id="contextStripSection" aria-label="Workspace authority and treasury summary">
+            <div class="context-tile">
+              <div class="context-tile-label">
+                <span>Treasury Balance (USDC)</span>
+              </div>
+              <div class="context-tile-value" id="treasuryBalance">$12,500.00</div>
+              <div class="context-tile-sub mono" id="treasuryAddressSub">0xA4D1…e9C2</div>
+            </div>
+
+            <div class="context-tile">
+              <div class="context-tile-label">
+                <span>Spending Authority Rules</span>
+              </div>
+              <div class="context-tile-value" id="dailyBudgetValue">$2,000.00 / day</div>
+              <div class="context-tile-sub" id="ownerThresholdSub">Owner approval gate &gt; $500.00</div>
+            </div>
+
+            <div class="context-tile">
+              <div class="context-tile-label">
+                <span>Supplier Source Mode</span>
+              </div>
+              <div class="context-tile-value" style="font-size:1.05rem; padding-top:4px;">
+                <span class="badge badge-neutral mono">SIMULATED_SUPPLIER_ADAPTER</span>
+              </div>
+              <div class="context-tile-sub" id="supplierCountSub">2 approved vendors · 1 unverified blocked</div>
+            </div>
+
+            <div class="context-tile">
+              <div class="context-tile-label">
+                <span>Active Agent Team</span>
+              </div>
+              <div id="agentRolesList" style="display:flex; flex-direction:column; gap:4px; font-size:0.8rem; margin-top:4px;">
+                <div style="display:flex; justify-content:space-between;">
+                  <span>Kitchen Procurement Agent</span>
+                  <span class="badge badge-teal" style="padding:1px 7px; font-size:0.68rem;">Enforced</span>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                  <span>Customer &amp; Fulfilment Agent</span>
+                  <span class="badge badge-teal" style="padding:1px 7px; font-size:0.68rem;">Enforced</span>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                  <span>Menu &amp; Feedback Agent</span>
+                  <span class="badge badge-teal" style="padding:1px 7px; font-size:0.68rem;">Enforced</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Kitchen Live Inventory Table -->
+          <section class="panel-card" aria-label="Kitchen Live Inventory">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">
+                  <!-- Heroicon: BuildingStorefrontIcon -->
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z" />
+                  </svg>
+                  <span>Kitchen Stock &amp; Par Thresholds</span>
+                </h2>
+                <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
+                  Items below par level can trigger the Replenishment Agent. Orders &le; $500 auto-authorize; orders &gt; $500 hold for owner approval.
+                </p>
+              </div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <a href="/app/workflows" data-route="/app/workflows" class="btn btn-secondary btn-sm">View Active Workflows →</a>
+                <a href="/app/setup/onboarding" data-route="/app/setup/onboarding" class="btn btn-secondary btn-sm">Business Setup Studio →</a>
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <table class="bind-table" id="inventoryTable">
+                <thead>
+                  <tr>
+                    <th>Ingredient / SKU</th>
+                    <th>On Hand</th>
+                    <th>Par Level</th>
+                    <th>Reorder Qty</th>
+                    <th>Status</th>
+                    <th style="text-align:right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="inventoryTableBody">
+                  <tr>
+                    <td colspan="6" style="color:var(--bind-text-muted);">Loading kitchen inventory…</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <!-- ==================================================================
+             SUBPAGE 2: WORKFLOWS (/app/workflows & /app/workflows/:workflowId)
+             ================================================================== -->
+        <div id="workflowsPage" class="app-subpage hidden">
+          <section class="panel-card" id="workflowsSection" aria-label="Active Workflows & 3-Way Match">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">
+                  <!-- Heroicon: ArrowsRightLeftIcon -->
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                  </svg>
+                  <span>Active Workflows &amp; 3-Way Match</span>
+                </h2>
+                <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
+                  Select any workflow to inspect its 7-stage lifecycle, deterministic policy evaluation, and settlement vs. fulfilment state.
+                </p>
+              </div>
+              <div id="workflowSelectorTabs" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+            </div>
+
+            <!-- Selected Workflow Detail Container -->
+            <div id="selectedWorkflowContainer">
+              <p style="color:var(--bind-text-muted); font-size:0.9rem;">Loading workflow lifecycle…</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- ==================================================================
+             SUBPAGE 3: APPROVALS (/app/approvals)
+             ================================================================== -->
+        <div id="approvalsPage" class="app-subpage hidden">
+          <section class="panel-card" id="approvalsSection" aria-label="Owner Authority and Pending Approvals">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">
+                  <!-- Heroicon: ShieldCheckIcon -->
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
+                  </svg>
+                  <span>Decision &amp; Authority Gate</span>
+                </h2>
+                <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
+                  Proposals exceeding $500.00 or held by TypeSafe Jev System One wait here for explicit owner sign-off.
+                </p>
+              </div>
+              <span class="badge badge-orange" id="pendingApprovalBadge">0 pending</span>
+            </div>
+
+            <div id="approvalsListContainer" style="display:flex; flex-direction:column; gap:12px;">
+              <p style="font-size:0.875rem; color:var(--bind-text-muted);">Checking approval queue…</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- ==================================================================
+             SUBPAGE 4: EVIDENCE & AUDIT LOG (/app/evidence)
+             ================================================================== -->
+        <div id="evidencePage" class="app-subpage hidden">
+          <section class="panel-card" id="evidenceSection" aria-label="Auditable Event Log">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">
+                  <!-- Heroicon: DocumentCheckIcon -->
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h-4.5c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125v-9M10.125 2.25h.375a9 9 0 0 1 9 9v.375M10.125 2.25A3.375 3.375 0 0 1 13.5 5.625v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.375 3.375 0 0 1 3.375 3.375M9 15l2.25 2.25L15 12" />
+                  </svg>
+                  <span>Auditable Event Log &amp; Chain Proofs</span>
+                </h2>
+                <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
+                  Every read, external request, and commercial commitment recorded with effect class and SHA-256 decision hash.
+                </p>
+              </div>
+              <button type="button" id="inspectFullEvidenceBtn" class="btn btn-secondary btn-sm">Open Evidence Drawer</button>
+            </div>
+
+            <div id="auditLogList" style="display:flex; flex-direction:column; gap:10px; max-height:600px; overflow-y:auto;">
+              <p style="font-size:0.875rem; color:var(--bind-text-muted);">Loading audit log…</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- ==================================================================
+             SUBPAGES 5–8: BUSINESS ONBOARDING & OPERATIONS STUDIO
+             (/app/setup/onboarding, /app/setup/agents, /app/setup/surfaces, /app/setup/documents)
+             ================================================================== -->
+        <section class="panel-card app-subpage hidden" id="setupSection" aria-label="Business Onboarding and Operations Studio">
+          <div class="panel-header">
+            <div>
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                <span class="badge badge-teal">Business Setup &amp; Surface Studio</span>
+                <span class="badge badge-neutral mono">PostgreSQL + Derived AGENTS.md</span>
+              </div>
+              <h2 class="panel-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" />
+                </svg>
+                <span id="studioSubpageTitle">Business Onboarding &amp; Blank Workspace</span>
+              </h2>
+              <p style="font-size:0.8125rem; color:var(--bind-text-muted); margin-top:2px;">
+                Every subpage below validates with Zod and persists to PostgreSQL. Model confidence never grants financial authority; deterministic policy rules govern all spend.
+              </p>
+            </div>
+          </div>
+
+          <!-- 4 Subpage Navigation Links -->
+          <div class="studio-tabs" role="tablist" aria-label="Business setup subpages">
+            <a href="/app/setup/onboarding" data-route="/app/setup/onboarding" class="studio-tab-btn active" data-studio-tab="studioFlowA" role="tab" aria-selected="true">
+              1. Business Onboarding &amp; Blank Workspace
+            </a>
+            <a href="/app/setup/agents" data-route="/app/setup/agents" class="studio-tab-btn" data-studio-tab="studioFlowB" role="tab" aria-selected="false">
+              2. Agent Role Creator &amp; Policy Bounds
+            </a>
+            <a href="/app/setup/surfaces" data-route="/app/setup/surfaces" class="studio-tab-btn" data-studio-tab="studioFlowC" role="tab" aria-selected="false">
+              3. Messaging Surfaces &amp; Simulator
+            </a>
+            <a href="/app/setup/documents" data-route="/app/setup/documents" class="studio-tab-btn" data-studio-tab="studioFlowD" role="tab" aria-selected="false">
+              4. Document Extract → Confirm &amp; Accounting
+            </a>
+          </div>
+
+          <!-- SUBPAGE 5 (/app/setup/onboarding): Business Onboarding & Blank Workspace Creation -->
+          <div id="studioFlowA" class="studio-tab-pane">
+            <div class="studio-form-grid studio-form-grid-2">
+              <!-- Create Blank or Blueprint Workspace -->
+              <div class="studio-subcard">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+                  <h3 style="font-weight:700; font-size:0.95rem; color:var(--bind-ink);">Create New Blank Workspace (or Load Reference Blueprint)</h3>
+                  <span class="badge badge-teal">OWNER_CONFIRMED</span>
+                </div>
+                <p style="font-size:0.8rem; color:var(--bind-text-muted); margin-bottom:14px;">
+                  Starts with 0 fabricated orders, 0 workflows, and 0 transactions. Optionally inspect a reference template as a blueprint.
+                </p>
+
+                <div class="studio-form-grid studio-form-grid-2" style="margin-bottom:12px;">
+                  <div class="form-field">
+                    <label class="form-label" for="onboardWsId">Workspace Slug ID</label>
+                    <input id="onboardWsId" type="text" class="form-input mono" placeholder="ws-my-bakery" value="ws-artisan-bakery" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="onboardWsName">Business Name</label>
+                    <input id="onboardWsName" type="text" class="form-input" placeholder="Tartine &amp; Co." value="Solstice Sourdough Bakery" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="onboardDailyCents">Daily Spend Cap (USDC $)</label>
+                    <input id="onboardDailyCents" type="number" class="form-input mono" value="1500" min="10" step="50" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="onboardGateCents">Owner Approval Gate &gt; (USDC $)</label>
+                    <input id="onboardGateCents" type="number" class="form-input mono" value="400" min="0" step="25" />
+                  </div>
+                </div>
+
+                <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                  <button type="button" id="createBlankWsBtn" class="btn btn-primary btn-sm">
+                    Create Blank Workspace
+                  </button>
+                  <button type="button" id="loadBlueprintWsBtn" class="btn btn-secondary btn-sm">
+                    Create with Kitchen Blueprint Supplies
+                  </button>
+                </div>
+              </div>
+
+              <!-- Add SKU or Supplier to Active Workspace -->
+              <div class="studio-subcard">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+                  <h3 style="font-weight:700; font-size:0.95rem; color:var(--bind-ink);">Add Supply SKU &amp; Update Policy in Active Workspace</h3>
+                  <span class="badge badge-neutral mono" id="studioActiveWsLabel">ws-kitchen-main</span>
+                </div>
+
+                <div class="studio-form-grid studio-form-grid-3" style="margin-bottom:12px;">
+                  <div class="form-field">
+                    <label class="form-label" for="addSkuCode">SKU Code</label>
+                    <input id="addSkuCode" type="text" class="form-input mono" value="SKU-YEAST-005" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="addSkuName">Item Name</label>
+                    <input id="addSkuName" type="text" class="form-input" value="SAF Instant Dry Yeast (20lb)" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="addSkuUnit">Unit</label>
+                    <input id="addSkuUnit" type="text" class="form-input" value="case" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="addSkuOnHand">On Hand</label>
+                    <input id="addSkuOnHand" type="number" class="form-input mono" value="2" min="0" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="addSkuPar">Par Threshold</label>
+                    <input id="addSkuPar" type="number" class="form-input mono" value="6" min="1" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="addSkuPriceDollars">Est. Unit Price ($)</label>
+                    <input id="addSkuPriceDollars" type="number" class="form-input mono" value="68" min="1" />
+                  </div>
+                </div>
+
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                  <button type="button" id="addInventorySkuBtn" class="btn btn-primary btn-sm">
+                    Save Supply SKU to PostgreSQL
+                  </button>
+                </div>
+                <div id="studioWorkspaceSummary" class="mono" style="margin-top:12px; padding:10px; background:var(--bind-white); border:1px solid var(--bind-border); border-radius:var(--radius-sm); font-size:0.75rem; color:var(--bind-ink-soft);"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUBPAGE 6 (/app/setup/agents): Agent Role Creator & Configurator -->
+          <div id="studioFlowB" class="studio-tab-pane hidden">
+            <div class="studio-form-grid studio-form-grid-2">
+              <div class="studio-subcard">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+                  <h3 style="font-weight:700; font-size:0.95rem; color:var(--bind-ink);">Create or Update Role-Specific Agent</h3>
+                  <span class="badge badge-teal">Deterministic Policy Enforced</span>
+                </div>
+                <p style="font-size:0.8rem; color:var(--bind-text-muted); margin-bottom:12px;">
+                  Persists role bounds in PostgreSQL and regenerates <code class="mono">templates/&lt;workspaceId&gt;/AGENTS.md</code> as a derived artifact.
+                </p>
+
+                <div class="studio-form-grid studio-form-grid-2" style="margin-bottom:12px;">
+                  <div class="form-field">
+                    <label class="form-label" for="agentRoleSlug">Role Identifier (snake_case)</label>
+                    <input id="agentRoleSlug" type="text" class="form-input mono" value="invoice_audit_agent" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="agentRoleDisplay">Display Name</label>
+                    <input id="agentRoleDisplay" type="text" class="form-input" value="Invoice &amp; 3-Way Match Auditor" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="agentRoleLimitDollars">Role Max Spend Cap ($ USDC)</label>
+                    <input id="agentRoleLimitDollars" type="number" class="form-input mono" value="500" min="0" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="agentRoleEffect">Permitted Effect Class</label>
+                    <select id="agentRoleEffect" class="form-select">
+                      <option value="read,external_request,commercial_commitment">Read + External Request + Commercial Commitment</option>
+                      <option value="read,external_request">Read + External Request Only (No Spend)</option>
+                      <option value="read">Read Only</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-field" style="margin-bottom:12px;">
+                  <label class="form-label" for="agentRoleDesc">Operating Mandate &amp; Escalation Rules</label>
+                  <input id="agentRoleDesc" type="text" class="form-input" value="Audits supplier quotes and packing slips against purchase orders; escalates any variance to owner." />
+                </div>
+
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                  <button type="button" id="saveAgentRoleBtn" class="btn btn-primary btn-sm">
+                    Save Agent Role &amp; Regenerate AGENTS.md
+                  </button>
+                  <button type="button" id="testForbiddenToolBtn" class="btn btn-secondary btn-sm" title="Verify backend blocks transfer_usdc tool assignment">
+                    Test Forbidden Capability Block (transfer_usdc)
+                  </button>
+                </div>
+                <div id="agentRoleFeedback" class="mono" style="font-size:0.76rem; color:var(--bind-teal); margin-top:10px;"></div>
+              </div>
+
+              <div class="studio-subcard">
+                <h3 style="font-weight:700; font-size:0.95rem; color:var(--bind-ink); margin-bottom:8px;">Canonical Tool Registry &amp; Persisted Roles</h3>
+                <p style="font-size:0.8rem; color:var(--bind-text-muted); margin-bottom:12px;">
+                  Agents can only invoke typed read/proposal tools. Direct signing, USDC transfers, and self-approvals are permanently locked in code.
+                </p>
+                <div style="display:flex; flex-direction:column; gap:8px; font-size:0.8rem;">
+                  <div style="padding:10px; background:var(--bind-white); border:1px solid var(--bind-border); border-radius:var(--radius-sm);">
+                    <div style="font-weight:700; color:var(--bind-teal); margin-bottom:4px;">Approved Typed Agent Tools (SAFE_AGENT_TOOLS)</div>
+                    <div class="mono" style="font-size:0.74rem; color:var(--bind-ink-soft);">
+                      get_business_context · get_stock_snapshot · get_approved_supplier_quotes · create_replenishment_proposal · request_policy_evaluation · get_request_status
+                    </div>
+                  </div>
+                  <div style="padding:10px; background:var(--bind-danger-bg); border:1px solid rgba(180,35,24,0.25); border-radius:var(--radius-sm);">
+                    <div style="font-weight:700; color:var(--bind-danger); margin-bottom:4px;">Permanently Blocked Capabilities (Hard 400 Reject)</div>
+                    <div class="mono" style="font-size:0.74rem; color:var(--bind-danger);">
+                      transfer_usdc · raw_signer · private_key_export · self_approve_order · bypass_policy · override_daily_limit
+                    </div>
+                  </div>
+                  <div id="studioConfiguredRolesList" style="display:flex; flex-direction:column; gap:6px; margin-top:4px;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUBPAGE 7 (/app/setup/surfaces): Messaging Surfaces & In-App Owner/Staff Simulator -->
+          <div id="studioFlowC" class="studio-tab-pane hidden">
+            <div class="studio-form-grid studio-form-grid-2">
+              <div class="studio-subcard">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+                  <h3 style="font-weight:700; font-size:0.95rem; color:var(--bind-ink);">Bind Owner &amp; Staff Messaging Identities</h3>
+                  <span class="badge badge-neutral mono">POST /api/webhooks/incoming</span>
+                </div>
+                <p style="font-size:0.8rem; color:var(--bind-text-muted); margin-bottom:12px;">
+                  Map WhatsApp, Telegram, Instagram, Slack, or Email handles to <code class="mono">owner</code> or <code class="mono">staff</code> roles. Staff can report stock counts but are blocked (<code class="mono">403 SURFACE_ROLE_VIOLATION</code>) from approving spend.
+                </p>
+
+                <div class="studio-form-grid studio-form-grid-3" style="margin-bottom:12px;">
+                  <div class="form-field">
+                    <label class="form-label" for="surfaceChannelSelect">Surface</label>
+                    <select id="surfaceChannelSelect" class="form-select">
+                      <option value="whatsapp">WhatsApp Business</option>
+                      <option value="telegram">Telegram Bot</option>
+                      <option value="instagram">Instagram DM</option>
+                      <option value="slack">Slack Ops Channel</option>
+                      <option value="email">Inbound Email</option>
+                    </select>
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="surfaceActorHandle">Handle / Phone / ID</label>
+                    <input id="surfaceActorHandle" type="text" class="form-input mono" value="whatsapp:+14155550199" />
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label" for="surfaceActorRole">Assigned Authority Role</label>
+                    <select id="surfaceActorRole" class="form-select">
+                      <option value="staff">Staff (Stock Reports Only)</option>
+                      <option value="owner">Owner (Full Approval Authority)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button type="button" id="bindSurfaceIdentityBtn" class="btn btn-primary btn-sm">
+                  Save Surface Identity Binding
+                </button>
+
+                <div id="surfaceBindingsList" style="margin-top:14px; display:flex; flex-direction:column; gap:6px;"></div>
+              </div>
+
+              <div class="studio-subcard">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+                  <h3 style="font-weight:700; font-size:0.95rem; color:var(--bind-ink);">Interactive In-App Surface Simulator</h3>
+                  <span class="badge badge-warning">SIMULATED_EVENT</span>
+                </div>
+                <p style="font-size:0.8rem; color:var(--bind-text-muted); margin-bottom:12px;">
+                  Dispatches real <code class="mono">POST /api/webhooks/incoming</code> requests against canonical database role bindings.
+                </p>
+
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  <button type="button" id="simStaffStockBtn" class="btn btn-secondary btn-sm" style="justify-content:space-between;">
+                    <span>1. Simulate Staff WhatsApp Low-Stock Report (SKU-FLOUR-001 = 2 bags)</span>
+                    <span class="badge badge-teal">Staff Allowed</span>
+                  </button>
+                  <button type="button" id="simStaffApproveBlockedBtn" class="btn btn-secondary btn-sm" style="justify-content:space-between;">
+                    <span>2. Simulate Staff Attempting Owner Spend Approval (Negative Test)</span>
+                    <span class="badge badge-danger">Expect 403</span>
+                  </button>
+                  <button type="button" id="simOwnerApproveBtn" class="btn btn-secondary btn-sm" style="justify-content:space-between;">
+                    <span>3. Simulate Owner Telegram Approval of Pending Gate</span>
+                    <span class="badge badge-success">Owner Allowed</span>
+                  </button>
+                </div>
+
+                <div id="surfaceSimulatorOutput" class="mono" style="margin-top:12px; padding:10px; background:var(--bind-white); border:1px solid var(--bind-border); border-radius:var(--radius-sm); font-size:0.75rem; color:var(--bind-ink-soft); min-height:58px;">
+                  Simulator ready. Click any scenario above to inspect the live webhook response.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUBPAGE 8 (/app/setup/documents): Two-Stage Document Extract -> Confirm & Accounting Ledger -->
+          <div id="studioFlowD" class="studio-tab-pane hidden">
+            <div class="studio-form-grid studio-form-grid-2">
+              <div class="studio-subcard">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+                  <h3 style="font-weight:700; font-size:0.95rem; color:var(--bind-ink);">Two-Stage Document Ingestion (Extract → Owner Confirm)</h3>
+                  <span class="badge badge-orange">Untrusted Until Confirmed</span>
+                </div>
+                <p style="font-size:0.8rem; color:var(--bind-text-muted); margin-bottom:10px;">
+                  Stage 1 parses untrusted text into <code class="mono">staged_unconfirmed</code> with warnings. Stage 2 requires explicit owner confirmation before updating quotes or running 3-way match.
+                </p>
+
+                <div class="studio-form-grid studio-form-grid-2" style="margin-bottom:10px;">
+                  <div class="form-field">
+                    <label class="form-label" for="docExtractType">Document Type</label>
+                    <select id="docExtractType" class="form-select">
+                      <option value="quote">Supplier Quote Sheet</option>
+                      <option value="delivery_receipt">Delivery Packing Slip</option>
+                      <option value="supplier_bill">Vendor Invoice / Bill</option>
+                    </select>
+                  </div>
+                  <div class="form-field">
+                    <label class="form-label">Sample Templates</label>
+                    <div style="display:flex; gap:6px;">
+                      <button type="button" id="loadSampleQuoteBtn" class="btn btn-secondary btn-sm" style="flex:1;">Load Quote</button>
+                      <button type="button" id="loadSampleBillBtn" class="btn btn-secondary btn-sm" style="flex:1;">Load Invoice</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-field" style="margin-bottom:10px;">
+                  <label class="form-label" for="docRawText">Raw Document / PDF Text</label>
+                  <textarea id="docRawText" class="form-textarea">Supplier: Sysco Metro Restock
+SKU: SKU-FLOUR-001
+Item: King Arthur Artisan Bread Flour (50lb)
+Qty: 10
+Unit Price: $39.50
+Total: $395.00</textarea>
+                </div>
+
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                  <button type="button" id="extractDocStage1Btn" class="btn btn-primary btn-sm">
+                    Stage 1: Extract Draft &amp; Check Warnings
+                  </button>
+                </div>
+
+                <div id="stagedDocumentPreviewBox" style="margin-top:12px;"></div>
+              </div>
+
+              <div class="studio-subcard">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+                  <h3 style="font-weight:700; font-size:0.95rem; color:var(--bind-ink);">Double-Entry Accounting Journal Ledger</h3>
+                  <a id="exportLedgerCsvLink" href="/api/workspaces/ws-kitchen-main/accounting/ledger?format=csv" class="btn btn-secondary btn-sm" download>
+                    Export CSV
+                  </a>
+                </div>
+                <p style="font-size:0.8rem; color:var(--bind-text-muted); margin-bottom:12px;">
+                  Reconciled 3-way matches automatically post idempotent journal entries (<code class="mono">Debit 1400 Inventory Asset</code> / <code class="mono">Credit 2000 Accounts Payable · USDC Treasury</code>).
+                </p>
+
+                <div id="accountingLedgerContainer" style="display:flex; flex-direction:column; gap:8px; max-height:310px; overflow-y:auto;">
+                  <p style="font-size:0.82rem; color:var(--bind-text-muted);">Loading accounting journal entries…</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       SLIDE-OVER EVIDENCE DRAWER (420px–460px right panel)
+       ======================================================================== -->
+  <div id="drawerBackdrop" class="drawer-backdrop" aria-hidden="true"></div>
+  <aside id="evidenceDrawer" class="evidence-drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" aria-hidden="true">
+    <div class="drawer-header">
+      <div>
+        <span class="badge badge-teal" style="margin-bottom:4px;">Verifiable Audit &amp; Chain Record</span>
+        <h2 id="drawerTitle" style="font-family:var(--font-display); font-size:1.15rem; font-weight:700; color:var(--bind-ink);">
+          Workflow Evidence Drawer
+        </h2>
+      </div>
+      <button type="button" id="closeEvidenceDrawerBtn" class="btn btn-secondary btn-sm" aria-label="Close evidence drawer">
+        <!-- Heroicon: XMarkIcon -->
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+        <span>Close</span>
+      </button>
+    </div>
+    <div class="drawer-body" id="evidenceDrawerBody">
+      <!-- Populated dynamically by app.js from persisted workflow/order/audit records -->
+    </div>
+  </aside>
+
+  <!-- Toast feedback banner -->
+  <div id="toastBanner" class="toast-banner" role="status" aria-live="polite">
+    <span id="toastMessage">Action completed</span>
+    <button type="button" id="toastCloseBtn" style="color:#fff; font-weight:700; font-size:0.8rem;">Dismiss</button>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
