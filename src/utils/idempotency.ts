@@ -9,9 +9,10 @@ export class DuplicateExecutionError extends Error {
 }
 
 /**
- * Deterministically serializes an object with sorted keys.
+ * Deterministically serializes an object with sorted keys. Shared by idempotency keys and the effects
+ * ledger request hash (src/effects/serialize.ts), so there is one canonical form.
  */
-function canonicalStringify(obj: any): string {
+export function canonicalStringify(obj: any): string {
   if (obj === null || typeof obj !== "object") {
     return JSON.stringify(obj);
   }

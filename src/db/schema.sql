@@ -293,3 +293,23 @@ USING three_way_matches b
 WHERE a.order_id = b.order_id
   AND (b.matched_at, b.id) > (a.matched_at, a.id);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_three_way_matches_order ON three_way_matches(order_id);
+
+-- Durable ledger for external effects (src/effects/ledger.ts). One row per idempotency key. The request is
+-- never stored, only its hash. A row left in 'started' or 'failed' is an effect in doubt until reconciled.
+CREATE TABLE IF NOT EXISTS effects (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  workflow_id VARCHAR(64),
+  effect_class TEXT NOT NULL CHECK (effect_class IN ('read', 'external_request', 'commercial_commitment')),
+  operation TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  request_hash TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('started', 'completed', 'failed')),
+  result JSONB,
+  error_message TEXT CHECK (error_message IS NULL OR char_length(error_message) <= 500),
+  external_ref TEXT,
+  attempts INT NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_effects_workspace_status ON effects(workspace_id, status);
