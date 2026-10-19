@@ -51,3 +51,5 @@ templates/ws-*/
 .ua/meta.json
 .ua/fingerprints.json
 .ua/config.json
+.ua/function-map.json
+.ua/.trash-*/

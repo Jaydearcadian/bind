@@ -16,7 +16,8 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "db:migrate": "node dist/db/migrate.js",
-    "db:migrate:dev": "tsx src/db/migrate.ts"
+    "db:migrate:dev": "tsx src/db/migrate.ts",
+    "map:functions": "tsx scripts/map-functions.ts"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
