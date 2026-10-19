@@ -43,3 +43,11 @@ Thumbs.db
 templates/ws-*/
 .vercel
 .env*
+
+# Understand-Anything scratch output (the graph itself is not tracked until the owner decides)
+.ua/intermediate/
+.ua/tmp/
+.ua/knowledge-graph.json
+.ua/meta.json
+.ua/fingerprints.json
+.ua/config.json
