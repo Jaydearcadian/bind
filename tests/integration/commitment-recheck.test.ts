@@ -4,6 +4,7 @@ import { createApp } from "../../src/server/app.js";
 import { query, closePool } from "../../src/db/client.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import { provisionWorkspace } from "../../src/templates/registry.js";
+import { issueToken } from "../../src/auth/tokens.js";
 import { WorkflowEngine } from "../../src/workflows/engine.js";
 import { WorkflowState } from "../../src/workflows/types.js";
 import { createReplenishmentTools } from "../../src/agents/replenishmentTools.js";
@@ -16,6 +17,7 @@ describe("Commitment gate is re-checked when the owner approves", () => {
   const engine = new WorkflowEngine();
   const app = createApp();
   const wsIds: string[] = [];
+  const ownerTokens = new Map<string, string>();
   const spies: Array<{ mockRestore: () => void }> = [];
   let server: Server;
   let baseUrl = "";
@@ -52,6 +54,7 @@ describe("Commitment gate is re-checked when the owner approves", () => {
     const wsId = `ws-recheck-${run}-${counter}`;
     wsIds.push(wsId);
     await provisionWorkspace(wsId, "Recheck Kitchen", "kitchen-v1");
+    ownerTokens.set(wsId, (await issueToken(wsId, "owner", "recheck-owner")).token);
     return wsId;
   }
 
@@ -108,17 +111,20 @@ describe("Commitment gate is re-checked when the owner approves", () => {
     );
   }
 
-  async function api(method: string, routePath: string, body?: unknown) {
+  async function api(method: string, routePath: string, token: string, body?: unknown) {
     const res = await fetch(`${baseUrl}${routePath}`, {
       method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
     return { status: res.status, body: await res.json() as any };
   }
 
-  async function approve(approvalId: string) {
-    return api("POST", `/api/approvals/${approvalId}/approve`, { decidedBy: "owner@kitchen.example" });
+  async function approve(approvalId: string, wsId: string) {
+    return api("POST", `/api/approvals/${approvalId}/approve`, ownerTokens.get(wsId)!, { decidedBy: "owner@kitchen.example" });
   }
 
   async function orderCount(wfId: string): Promise<number> {
@@ -148,7 +154,7 @@ describe("Commitment gate is re-checked when the owner approves", () => {
     await insertSpend(wsId, 80000); // $800 committed after the request; $800 + $245 > $1,000
     const submissions = countSupplierSubmissions(wsId);
 
-    const res = await approve(approvalId);
+    const res = await approve(approvalId, wsId);
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe("POLICY_DENIED");
@@ -173,7 +179,7 @@ describe("Commitment gate is re-checked when the owner approves", () => {
     await query(`UPDATE quotes SET valid_until = NOW() - INTERVAL '1 minute' WHERE id = $1;`, [quoteId]);
     const submissions = countSupplierSubmissions(wsId);
 
-    const res = await approve(approvalId);
+    const res = await approve(approvalId, wsId);
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe("POLICY_DENIED");
@@ -189,7 +195,7 @@ describe("Commitment gate is re-checked when the owner approves", () => {
     await query(`UPDATE suppliers SET verified = FALSE WHERE id = $1;`, [supplierOf(wsId)]);
     const submissions = countSupplierSubmissions(wsId);
 
-    const res = await approve(approvalId);
+    const res = await approve(approvalId, wsId);
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe("POLICY_DENIED");
@@ -204,7 +210,7 @@ describe("Commitment gate is re-checked when the owner approves", () => {
     // $300 is above the $250 threshold and below the $500 role limit, so the only escalation is the threshold.
     const { wfId, approvalId } = await awaitingApproval(wsId, 30000);
 
-    const res = await approve(approvalId);
+    const res = await approve(approvalId, wsId);
 
     expect(res.status).toBe(200);
     expect(res.body.state).toBe(WorkflowState.CONFIRMED);

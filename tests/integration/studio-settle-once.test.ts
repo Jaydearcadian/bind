@@ -219,7 +219,7 @@ describe("Studio confirmation and runner settle an order exactly once", () => {
     const studioPaid = await stageAndConfirm(a.wsId, a.orderId, "supplier_bill");
     expect(studioPaid.reconciled).toBe(true);
 
-    const runnerAfterStudio = await runner.fulfillAndReconcile(a.orderId);
+    const runnerAfterStudio = await runner.fulfillAndReconcile(a.orderId, a.wsId);
     expect(runnerAfterStudio).toMatchObject({
       reconciled: true,
       alreadyReconciled: true,
@@ -229,7 +229,7 @@ describe("Studio confirmation and runner settle an order exactly once", () => {
 
     // The runner settles first from supplier-generated documents; the studio then finds it reconciled.
     const b = await confirmedOrder();
-    const runnerPaid = await runner.fulfillAndReconcile(b.orderId);
+    const runnerPaid = await runner.fulfillAndReconcile(b.orderId, b.wsId);
     expect(runnerPaid.reconciled).toBe(true);
     expect(runnerPaid.alreadyReconciled).toBeUndefined();
 
@@ -249,7 +249,7 @@ describe("Studio confirmation and runner settle an order exactly once", () => {
     settlement.delayMs = 150; // hold the claim open so the two callers really race
 
     const [runnerResult, studioResult] = await Promise.all([
-      runner.fulfillAndReconcile(orderId),
+      runner.fulfillAndReconcile(orderId, wsId),
       stageAndConfirm(wsId, orderId, "supplier_bill"),
     ]);
 

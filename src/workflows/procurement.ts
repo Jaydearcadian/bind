@@ -20,7 +20,7 @@ import { generateIdempotencyKey } from "../utils/idempotency.js";
 import { resolveTemplateDir } from "../agents/bindTemplateAgent.js";
 import { newId } from "../utils/ids.js";
 import { createReplenishmentTools } from "../agents/replenishmentTools.js";
-import { OrderSettlementService } from "./settlement.js";
+import { OrderSettlementService, SettlementOrderError } from "./settlement.js";
 import type { EvidenceLoader, ReconcileResult } from "./settlement.js";
 
 export interface ProcurementRunnerDeps {
@@ -305,9 +305,11 @@ export class ProcurementWorkflowRunner {
    */
   async approveAndSubmit(
     approvalId: string,
-    decidedBy: string
+    decidedBy: string,
+    workspaceId: string
   ): Promise<{ workflowId: string; state: WorkflowState; orderId?: string }> {
-    const apprRes = await query(`SELECT * FROM approvals WHERE id = $1;`, [approvalId]);
+    // An approval of another workspace is reported exactly like a missing one, before any state changes.
+    const apprRes = await query(`SELECT * FROM approvals WHERE id = $1 AND workspace_id = $2;`, [approvalId, workspaceId]);
     if (apprRes.rows.length === 0) {
       throw new ApprovalDecisionError("APPROVAL_NOT_FOUND", `Approval '${approvalId}' not found.`);
     }
@@ -352,6 +354,16 @@ export class ProcurementWorkflowRunner {
     }
 
     const { workflowId } = await this.workflowEngine.resolveApproval(approvalId, "approved", decidedBy);
+    await this.workflowEngine.recordAudit(
+      approval.workspace_id,
+      workflowId,
+      "owner",
+      decidedBy,
+      EffectClass.COMMERCIAL_COMMITMENT,
+      "approval.approved",
+      PolicyDecision.ALLOW,
+      { approvalId }
+    );
 
     return this.resumeOrderSubmission(workflowId);
   }
@@ -371,9 +383,25 @@ export class ProcurementWorkflowRunner {
     approvalId: string,
     decision: "rejected" | "revoked",
     decidedBy: string,
+    workspaceId: string,
     reason?: string
   ): Promise<{ workflowId: string; state: WorkflowState }> {
+    // Checked before the decision is written: another workspace's approval is "not found", as a missing one is.
+    const owned = await query(`SELECT 1 FROM approvals WHERE id = $1 AND workspace_id = $2;`, [approvalId, workspaceId]);
+    if (owned.rows.length === 0) {
+      throw new ApprovalDecisionError("APPROVAL_NOT_FOUND", `Approval '${approvalId}' not found.`);
+    }
     const { workflowId } = await this.workflowEngine.resolveApproval(approvalId, decision, decidedBy, reason);
+    await this.workflowEngine.recordAudit(
+      workspaceId,
+      workflowId,
+      "owner",
+      decidedBy,
+      EffectClass.COMMERCIAL_COMMITMENT,
+      `approval.${decision}`,
+      PolicyDecision.DENY,
+      { approvalId, reason: reason ?? null }
+    );
     return { workflowId, state: WorkflowState.CANCELLED };
   }
 
@@ -652,7 +680,8 @@ export class ProcurementWorkflowRunner {
    * owned by OrderSettlementService; this runner only supplies the documents: stored ones when
    * present, otherwise generated from the supplier adapter.
    */
-  async fulfillAndReconcile(orderId: string): Promise<ReconcileResult> {
+  async fulfillAndReconcile(orderId: string, workspaceId: string): Promise<ReconcileResult> {
+    await this.assertOrderInWorkspace(orderId, workspaceId);
     const { status, reconciled, txHash, alreadyReconciled, hold, pending } = await this.settlement.settle(orderId, (order) =>
       this.storedOrGeneratedEvidence(order)
     );
@@ -663,8 +692,17 @@ export class ProcurementWorkflowRunner {
    * Finishes a payment that was sent but not confirmed (`settlement_submitted`). Pays nothing: it asks the
    * adapter for the outcome and finishes the order only when that outcome is `confirmed`.
    */
-  async confirmSettlement(orderId: string): Promise<ReconcileResult> {
+  async confirmSettlement(orderId: string, workspaceId: string): Promise<ReconcileResult> {
+    await this.assertOrderInWorkspace(orderId, workspaceId);
     return this.settlement.confirmSettlement(orderId);
+  }
+
+  /** An order of another workspace is reported exactly like a missing one, before any claim or transfer. */
+  private async assertOrderInWorkspace(orderId: string, workspaceId: string): Promise<void> {
+    const res = await query(`SELECT 1 FROM orders WHERE id = $1 AND workspace_id = $2;`, [orderId, workspaceId]);
+    if (res.rows.length === 0) {
+      throw new SettlementOrderError("ORDER_NOT_FOUND", orderId);
+    }
   }
 
   private async storedOrGeneratedEvidence(order: any): Promise<ReceiptAndBill> {

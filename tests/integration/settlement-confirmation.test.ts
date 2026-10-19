@@ -7,6 +7,7 @@ import type { Server } from "node:http";
 import { custom, getAddress, type AbiEvent, type Hex, type Transport } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { createApp } from "../../src/server/app.js";
+import { issueToken } from "../../src/auth/tokens.js";
 import { query, closePool } from "../../src/db/client.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import { provisionWorkspace } from "../../src/templates/registry.js";
@@ -308,7 +309,7 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     const order = await orderRow(orderId);
     const expectedWei = BigInt(order.total_price_cents) * 10n ** 16n;
 
-    const result = await runner.fulfillAndReconcile(orderId);
+    const result = await runner.fulfillAndReconcile(orderId, wsId);
     expect(result).toMatchObject({ status: MatchStatus.MATCHED, reconciled: true });
     expect(result.txHash).toMatch(HASH_RE);
     expect(result.alreadyReconciled).toBeUndefined();
@@ -331,7 +332,7 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     // A confirmed on-chain settlement is labelled as Arc testnet settlement.
     expect(anchorOf(workflowId)).toContain("`SETTLED_ON_ARC_TESTNET`");
 
-    const again = await runner.fulfillAndReconcile(orderId);
+    const again = await runner.fulfillAndReconcile(orderId, wsId);
     expect(again).toMatchObject({ reconciled: true, alreadyReconciled: true, txHash: result.txHash });
     expect(await settlementLogs(env)).toHaveLength(1);
     expect(await stockOf(wsId, FLOUR)).toBe(stockBefore + Number(order.quantity));
@@ -346,7 +347,7 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     await settleOnArc(wsId);
     const stockBefore = await stockOf(wsId, FLOUR);
 
-    const result = await runner.fulfillAndReconcile(orderId);
+    const result = await runner.fulfillAndReconcile(orderId, wsId);
     expect(result).toEqual({
       status: MatchStatus.MATCHED,
       reconciled: false,
@@ -377,17 +378,17 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     const wsId = await newWorkspace();
     const { orderId } = await confirmedOrder(unsureRunner, wsId, FLOUR, SUPPLIER);
     await settleOnArc(wsId);
-    const submitted = await unsureRunner.fulfillAndReconcile(orderId);
+    const submitted = await unsureRunner.fulfillAndReconcile(orderId, wsId);
     expect(submitted.pending).toBe(AWAITING);
     const stockBefore = await stockOf(wsId, FLOUR);
     const order = await orderRow(orderId);
 
     const healthy = new ProcurementWorkflowRunner({ settlementFor: () => env.adapter });
-    const first = await healthy.confirmSettlement(orderId);
+    const first = await healthy.confirmSettlement(orderId, wsId);
     expect(first).toMatchObject({ status: MatchStatus.MATCHED, reconciled: true, txHash: submitted.txHash });
     expect(first.alreadyReconciled).toBeUndefined();
 
-    const second = await healthy.confirmSettlement(orderId);
+    const second = await healthy.confirmSettlement(orderId, wsId);
     expect(second).toMatchObject({ reconciled: true, alreadyReconciled: true, txHash: submitted.txHash });
 
     expect(await settlementLogs(env)).toHaveLength(1);
@@ -408,7 +409,7 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     const { orderId } = await confirmedOrder(runner, wsId, FLOUR);
     const stockBefore = await stockOf(wsId, FLOUR);
 
-    const result = await runner.fulfillAndReconcile(orderId);
+    const result = await runner.fulfillAndReconcile(orderId, wsId);
     expect(result).toEqual({
       status: MatchStatus.MATCHED,
       reconciled: false,
@@ -438,7 +439,7 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     await settleOnArc(wsId);
     const stockBefore = await stockOf(wsId, FLOUR);
 
-    const result = await runner.fulfillAndReconcile(orderId);
+    const result = await runner.fulfillAndReconcile(orderId, wsId);
     expect(result).toEqual({ status: MatchStatus.MATCHED, reconciled: false, hold: "SETTLEMENT_REJECTED" });
 
     const row = await orderRow(orderId);
@@ -462,7 +463,7 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     const wsId = await newWorkspace(30000n); // $300.00; the flour order is $245.00
     const { orderId } = await confirmedOrder(runner, wsId, FLOUR);
 
-    expect((await runner.fulfillAndReconcile(orderId)).pending).toBe(AWAITING);
+    expect((await runner.fulfillAndReconcile(orderId, wsId)).pending).toBe(AWAITING);
     expect((await orderRow(orderId)).status).toBe("settlement_submitted");
 
     const tools = createReplenishmentTools({ workspaceId: wsId, workflowId: "wf_unused" });
@@ -478,7 +479,7 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     const { workflowId, orderId } = await confirmedOrder(runner, wsId, FLOUR);
     await attachDecisionRecord(workflowId);
 
-    const result = await runner.fulfillAndReconcile(orderId);
+    const result = await runner.fulfillAndReconcile(orderId, wsId);
     expect(result).toMatchObject({ status: MatchStatus.MATCHED, reconciled: true });
 
     const anchor = anchorOf(workflowId);
@@ -493,12 +494,17 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     });
     const addr = server.address();
     const baseUrl = addr && typeof addr === "object" ? `http://127.0.0.1:${addr.port}` : "";
+    let ownerToken = "";
     const post = async (route: string) => {
-      const res = await fetch(`${baseUrl}${route}`, { method: "POST" });
+      const res = await fetch(`${baseUrl}${route}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${ownerToken}` },
+      });
       return { status: res.status, body: (await res.json()) as any };
     };
     try {
       const wsId = await newWorkspace();
+      ownerToken = (await issueToken(wsId, "owner", "settle-owner")).token;
       const notYetPaid = await confirmedOrder(new ProcurementWorkflowRunner(), wsId, FLOUR);
 
       const unknown = await post(`/api/orders/ord_missing_${Date.now()}/confirm-settlement`);
@@ -533,7 +539,7 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     const order = await orderRow(orderId);
     const stockBefore = await stockOf(wsId, FLOUR);
 
-    const first = await runner.fulfillAndReconcile(orderId);
+    const first = await runner.fulfillAndReconcile(orderId, wsId);
     expect(first).toEqual({
       status: MatchStatus.MATCHED,
       reconciled: false,
@@ -546,7 +552,7 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     expect(await supplierBalance(env)).toBe(BigInt(order.total_price_cents) * 10n ** 16n);
 
     // A retry sees the stored hash and waits. It does not send a second transfer.
-    const second = await runner.fulfillAndReconcile(orderId);
+    const second = await runner.fulfillAndReconcile(orderId, wsId);
     expect(second).toMatchObject({ reconciled: false, pending: AWAITING, txHash: first.txHash });
     expect(wrapped.transferCalls).toBe(1);
     expect(await settlementLogs(env)).toHaveLength(1);
@@ -561,14 +567,14 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     const runner = new ProcurementWorkflowRunner({ settlementFor: () => adapter });
     const wsId = await newWorkspace();
     const { orderId } = await confirmedOrder(runner, wsId, FLOUR);
-    expect((await runner.fulfillAndReconcile(orderId)).pending).toBe(AWAITING);
+    expect((await runner.fulfillAndReconcile(orderId, wsId)).pending).toBe(AWAITING);
     const stockBefore = await stockOf(wsId, FLOUR);
     const order = await orderRow(orderId);
 
     // The confirm holds the claim open, so the second caller really races the first.
     adapter.confirmStatus = "confirmed";
     adapter.confirmDelayMs = 150;
-    const results = await Promise.allSettled([runner.confirmSettlement(orderId), runner.confirmSettlement(orderId)]);
+    const results = await Promise.allSettled([runner.confirmSettlement(orderId, wsId), runner.confirmSettlement(orderId, wsId)]);
     expect(results.every((r) => r.status === "fulfilled")).toBe(true);
     const values = results.map((r) => (r as PromiseFulfilledResult<Awaited<ReturnType<typeof runner.confirmSettlement>>>).value);
 
@@ -591,7 +597,8 @@ describe("Settlement waits for confirmation before an order is paid", () => {
 
   it("confirmSettlement rejects a missing order with ORDER_NOT_FOUND", async () => {
     const runner = new ProcurementWorkflowRunner({ settlementFor: () => new ScriptedSettlementAdapter("local") });
-    const error = await runner.confirmSettlement("ord_does_not_exist").catch((e: unknown) => e);
+    const wsId = await newWorkspace();
+    const error = await runner.confirmSettlement("ord_does_not_exist", wsId).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SettlementOrderError);
     expect((error as SettlementOrderError).code).toBe("ORDER_NOT_FOUND");
   });
@@ -603,7 +610,7 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     const runner = new ProcurementWorkflowRunner({ settlementFor: () => adapter });
     const wsId = await newWorkspace();
     const { orderId } = await confirmedOrder(runner, wsId, FLOUR);
-    const paid = await runner.fulfillAndReconcile(orderId);
+    const paid = await runner.fulfillAndReconcile(orderId, wsId);
     expect(paid.pending).toBe(AWAITING);
     const order = await orderRow(orderId);
     const stockBefore = await stockOf(wsId, FLOUR);
@@ -624,7 +631,7 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     );
 
     adapter.confirmStatus = "confirmed";
-    const result = await runner.confirmSettlement(orderId);
+    const result = await runner.confirmSettlement(orderId, wsId);
     expect(result).toMatchObject({ reconciled: true, txHash: paid.txHash });
 
     const journal = await query(`SELECT amount_cents FROM accounting_journal_entries WHERE order_id = $1;`, [orderId]);
@@ -649,13 +656,13 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     const runner = new ProcurementWorkflowRunner({ settlementFor: () => adapter });
     const wsId = await newWorkspace();
     const { orderId } = await confirmedOrder(runner, wsId, FLOUR);
-    expect((await runner.fulfillAndReconcile(orderId)).pending).toBe(AWAITING);
+    expect((await runner.fulfillAndReconcile(orderId, wsId)).pending).toBe(AWAITING);
     const stockBefore = await stockOf(wsId, FLOUR);
 
     await query(`UPDATE orders SET settled_amount_cents = NULL WHERE id = $1;`, [orderId]);
     adapter.confirmStatus = "confirmed";
 
-    const error = await runner.confirmSettlement(orderId).catch((e: unknown) => e);
+    const error = await runner.confirmSettlement(orderId, wsId).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain(orderId);
     expect((error as Error).message).toContain("settled_amount_cents");

@@ -4,6 +4,10 @@ import helmet from "helmet";
 import path from "path";
 import { fileURLToPath } from "url";
 import { query } from "../db/client.js";
+import { acquireAdvisoryLock } from "../db/advisory-lock.js";
+import { config } from "../config/env.js";
+import { issueToken, listTokens, revokeToken, TokenError, type WorkspaceRole } from "../auth/tokens.js";
+import { authenticated, workspaceMember, workspaceOwner, anyWorkspaceOwner } from "../auth/middleware.js";
 import { provisionWorkspace, listTemplates } from "../templates/registry.js";
 import { ProcurementWorkflowRunner } from "../workflows/procurement.js";
 import { ApprovalDecisionError } from "../workflows/engine.js";
@@ -57,15 +61,85 @@ function sendApprovalError(res: Response, err: any) {
   return res.status(400).json({ error: err.message });
 }
 
-export function createApp(): express.Express {
+/** Parses BIND_CORS_ORIGINS: comma-separated origins. Unset or empty means no origin is allowed. */
+export function parseCorsOrigins(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+}
+
+/**
+ * JSON cannot carry a BigInt. Template amounts are BigInt in memory, so responses send them as decimal strings.
+ * Done before any response is written, so a serialization error cannot follow a successful write.
+ */
+function jsonSafe<T>(value: T): unknown {
+  return JSON.parse(JSON.stringify(value, (_key, v) => (typeof v === "bigint" ? v.toString() : v)));
+}
+
+/** The decision recorded for an approval: the owner token's label. The body's decidedBy is never used. */
+function decidedByOf(label: string): string {
+  return `owner:${label}`;
+}
+
+/** Sends a token-operation failure with its status. */
+function sendTokenError(res: Response, err: unknown) {
+  if (err instanceof TokenError) {
+    const status = err.code === "TOKEN_NOT_FOUND" ? 404 : err.code === "LAST_OWNER_TOKEN" ? 409 : 400;
+    return res.status(status).json({ error: err.message, code: err.code });
+  }
+  return res.status(500).json({ error: "Token operation failed" });
+}
+
+type CreateOutcome<T> =
+  | { kind: "conflict" }
+  | { kind: "created"; result: T; ownerToken: { id: string; token: string } };
+
+/**
+ * Creates a workspace through a public route and issues its first owner token. An id that already exists is refused
+ * before the create runs, so an existing workspace is never overwritten. The check, the create and the token run under
+ * an advisory lock on the id, so two concurrent requests for one new id cannot both succeed. If the token cannot be
+ * issued, the workspace just created is deleted, so no workspace is left without an owner.
+ */
+async function createWithOwnerToken<T>(workspaceId: string, create: () => Promise<T>): Promise<CreateOutcome<T>> {
+  const lock = await acquireAdvisoryLock(`workspace-create:${workspaceId}`);
+  if (!lock) return { kind: "conflict" };
+  try {
+    const existing = await query("SELECT 1 FROM workspaces WHERE id = $1;", [workspaceId]);
+    if (existing.rows.length > 0) return { kind: "conflict" };
+    const result = await create();
+    try {
+      const issued = await issueToken(workspaceId, "owner", "founding-owner", {
+        type: "system",
+        id: "system:workspace-create",
+      });
+      return { kind: "created", result, ownerToken: { id: issued.id, token: issued.token } };
+    } catch (err) {
+      await query("DELETE FROM workspaces WHERE id = $1;", [workspaceId]);
+      throw err;
+    }
+  } finally {
+    await lock.release();
+  }
+}
+
+export interface CreateAppOptions {
+  /** Browser origins allowed to call the API. Defaults to BIND_CORS_ORIGINS. An empty list sends no CORS headers. */
+  corsOrigins?: string[];
+}
+
+export function createApp(options: CreateAppOptions = {}): express.Express {
   const app = express();
   const procurementRunner = new ProcurementWorkflowRunner();
   const recoveryRunner = new WorkflowCrashRecoveryRunner();
+  const corsOrigins = options.corsOrigins ?? parseCorsOrigins(config.BIND_CORS_ORIGINS);
 
   app.use(helmet({
     contentSecurityPolicy: false, // Allow CDN resources for Tailwind in UI
   }));
-  app.use(cors());
+  if (corsOrigins.length > 0) {
+    app.use(cors({ origin: corsOrigins }));
+  }
   app.use(express.json());
 
   // Serve static UI assets with no-store cache headers so updates are always fresh
@@ -94,7 +168,7 @@ export function createApp(): express.Express {
 
   // Templates & Blueprints
   app.get("/api/templates", (_req: Request, res: Response) => {
-    res.json(listTemplates());
+    res.json(jsonSafe(listTemplates()));
   });
 
   app.get("/api/templates/:id/blueprint", (req: Request, res: Response) => {
@@ -105,17 +179,26 @@ export function createApp(): express.Express {
     res.json(bp);
   });
 
-  // Workspaces
-  app.get("/api/workspaces", async (_req: Request, res: Response) => {
-    const wsRes = await query("SELECT * FROM workspaces ORDER BY created_at DESC;");
-    res.json(wsRes.rows);
+  // Workspaces. The list returns only the caller's own workspace.
+  app.get("/api/workspaces", ...authenticated, async (req: Request, res: Response) => {
+    try {
+      const wsRes = await query("SELECT * FROM workspaces WHERE id = $1;", [req.actor!.workspaceId]);
+      res.json(wsRes.rows);
+    } catch {
+      res.status(500).json({ error: "Workspace list unavailable" });
+    }
   });
 
-  // Flow A: Onboard genuinely blank or owner-configured workspace
+  // Flow A: Onboard genuinely blank or owner-configured workspace. Public: creating a workspace issues its owner token.
   app.post("/api/workspaces/onboard", async (req: Request, res: Response) => {
     try {
-      const result = await onboardBlankWorkspace(req.body);
-      res.status(201).json(result);
+      const outcome = await createWithOwnerToken(String(req.body?.workspaceId ?? ""), () =>
+        onboardBlankWorkspace(req.body)
+      );
+      if (outcome.kind === "conflict") {
+        return res.status(409).json({ error: "Workspace id is not available" });
+      }
+      res.status(201).json(jsonSafe({ ...(outcome.result as object), ownerToken: outcome.ownerToken }));
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
@@ -127,14 +210,19 @@ export function createApp(): express.Express {
       return res.status(400).json({ error: "id, name, and templateId are required" });
     }
     try {
-      const template = await provisionWorkspace(id, name, templateId);
-      res.status(201).json({ message: "Workspace provisioned", template });
+      const outcome = await createWithOwnerToken(String(id), () => provisionWorkspace(id, name, templateId));
+      if (outcome.kind === "conflict") {
+        return res.status(409).json({ error: "Workspace id is not available" });
+      }
+      res.status(201).json(
+        jsonSafe({ message: "Workspace provisioned", template: outcome.result, ownerToken: outcome.ownerToken })
+      );
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.get("/api/workspaces/:id", async (req: Request, res: Response) => {
+  app.get("/api/workspaces/:id", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const wsRes = await query("SELECT * FROM workspaces WHERE id = $1;", [id]);
     if (wsRes.rows.length === 0) {
@@ -154,7 +242,7 @@ export function createApp(): express.Express {
   });
 
   // Update workspace spending policy & settlement address
-  app.put("/api/workspaces/:id/policy", async (req: Request, res: Response) => {
+  app.put("/api/workspaces/:id/policy", ...workspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
     const budgetDailyLimitCents = Number(req.body.budgetDailyLimitCents);
     const approvalThresholdCents = Number(req.body.approvalThresholdCents);
@@ -192,7 +280,7 @@ export function createApp(): express.Express {
   });
 
   // Inventory
-  app.get("/api/workspaces/:id/inventory", async (req: Request, res: Response) => {
+  app.get("/api/workspaces/:id/inventory", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const invRes = await query(
       "SELECT * FROM inventory_items WHERE workspace_id = $1 ORDER BY sku ASC;",
@@ -201,7 +289,7 @@ export function createApp(): express.Express {
     res.json(invRes.rows);
   });
 
-  app.post("/api/workspaces/:id/inventory", async (req: Request, res: Response) => {
+  app.post("/api/workspaces/:id/inventory", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
       const item = InitialSupplyItemSchema.parse(req.body);
@@ -241,7 +329,7 @@ export function createApp(): express.Express {
   });
 
   // Low stock trigger / replenishment
-  app.post("/api/workspaces/:id/replenish", async (req: Request, res: Response) => {
+  app.post("/api/workspaces/:id/replenish", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const { sku } = req.body;
     if (!sku) {
@@ -256,7 +344,7 @@ export function createApp(): express.Express {
   });
 
   // Approvals
-  app.get("/api/workspaces/:id/approvals", async (req: Request, res: Response) => {
+  app.get("/api/workspaces/:id/approvals", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     await procurementRunner.expireApprovals({ workspaceId: id });
     const apprRes = await query(
@@ -266,25 +354,27 @@ export function createApp(): express.Express {
     res.json(apprRes.rows);
   });
 
-  app.post("/api/approvals/:id/approve", async (req: Request, res: Response) => {
+  app.post("/api/approvals/:id/approve", ...anyWorkspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
-    const decidedBy = req.body.decidedBy || "owner@bind.local";
+    const actor = req.actor!;
     try {
-      const result = await procurementRunner.approveAndSubmit(id, decidedBy);
+      const result = await procurementRunner.approveAndSubmit(id, decidedByOf(actor.label), actor.workspaceId);
       res.json(result);
     } catch (err: any) {
       sendApprovalError(res, err);
     }
   });
 
-  app.post("/api/approvals/:id/reject", async (req: Request, res: Response) => {
+  app.post("/api/approvals/:id/reject", ...anyWorkspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { reason, decidedBy } = req.body;
+    const actor = req.actor!;
+    const { reason } = req.body;
     try {
       const result = await procurementRunner.declineApproval(
         id,
         "rejected",
-        decidedBy || "owner@bind.local",
+        decidedByOf(actor.label),
+        actor.workspaceId,
         reason
       );
       res.json({ status: "rejected", approvalId: id, ...result });
@@ -293,14 +383,16 @@ export function createApp(): express.Express {
     }
   });
 
-  app.post("/api/approvals/:id/revoke", async (req: Request, res: Response) => {
+  app.post("/api/approvals/:id/revoke", ...anyWorkspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { reason, decidedBy } = req.body;
+    const actor = req.actor!;
+    const { reason } = req.body;
     try {
       const result = await procurementRunner.declineApproval(
         id,
         "revoked",
-        decidedBy || "owner@bind.local",
+        decidedByOf(actor.label),
+        actor.workspaceId,
         reason
       );
       res.json({ status: "revoked", approvalId: id, ...result });
@@ -310,21 +402,26 @@ export function createApp(): express.Express {
   });
 
   // Fulfill and Reconcile Order
-  app.post("/api/orders/:id/reconcile", async (req: Request, res: Response) => {
+  app.post("/api/orders/:id/reconcile", ...anyWorkspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
-      const result = await procurementRunner.fulfillAndReconcile(id);
+      const result = await procurementRunner.fulfillAndReconcile(id, req.actor!.workspaceId);
       res.json(result);
     } catch (err: any) {
+      if (err instanceof SettlementOrderError) {
+        const status = err.code === "ORDER_NOT_FOUND" ? 404 : 409;
+        res.status(status).json({ error: err.message, code: err.code });
+        return;
+      }
       res.status(400).json({ error: err.message });
     }
   });
 
   // Confirm a payment that was sent but not yet confirmed (settlement_submitted)
-  app.post("/api/orders/:id/confirm-settlement", async (req: Request, res: Response) => {
+  app.post("/api/orders/:id/confirm-settlement", ...anyWorkspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
-      const result = await procurementRunner.confirmSettlement(id);
+      const result = await procurementRunner.confirmSettlement(id, req.actor!.workspaceId);
       res.json(result);
     } catch (err: any) {
       if (err instanceof SettlementOrderError) {
@@ -337,7 +434,7 @@ export function createApp(): express.Express {
   });
 
   // Workflows
-  app.get("/api/workspaces/:id/workflows", async (req: Request, res: Response) => {
+  app.get("/api/workspaces/:id/workflows", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const wfRes = await query(
       "SELECT * FROM workflows WHERE workspace_id = $1 ORDER BY created_at DESC LIMIT 50;",
@@ -347,7 +444,7 @@ export function createApp(): express.Express {
   });
 
   // Orders & 3-Way Match Status
-  app.get("/api/workspaces/:id/orders", async (req: Request, res: Response) => {
+  app.get("/api/workspaces/:id/orders", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const ordRes = await query(
       `SELECT o.*,
@@ -372,7 +469,7 @@ export function createApp(): express.Express {
   });
 
   // Suppliers
-  app.get("/api/workspaces/:id/suppliers", async (req: Request, res: Response) => {
+  app.get("/api/workspaces/:id/suppliers", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const suppRes = await query(
       "SELECT * FROM suppliers WHERE workspace_id = $1 ORDER BY name ASC;",
@@ -381,7 +478,7 @@ export function createApp(): express.Express {
     res.json(suppRes.rows);
   });
 
-  app.post("/api/workspaces/:id/suppliers", async (req: Request, res: Response) => {
+  app.post("/api/workspaces/:id/suppliers", ...workspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
       const supp = InitialSupplierSchema.parse(req.body);
@@ -427,7 +524,7 @@ export function createApp(): express.Express {
   });
 
   // Flow B: Role-Specific Agent Creator & Configurator
-  app.get("/api/workspaces/:id/agents", async (req: Request, res: Response) => {
+  app.get("/api/workspaces/:id/agents", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const rolesRes = await query(
       "SELECT * FROM agent_roles WHERE workspace_id = $1 ORDER BY created_at ASC;",
@@ -440,7 +537,7 @@ export function createApp(): express.Express {
     });
   });
 
-  app.post("/api/workspaces/:id/agents", async (req: Request, res: Response) => {
+  app.post("/api/workspaces/:id/agents", ...workspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
       const result = await upsertAgentRole(id, req.body);
@@ -454,13 +551,13 @@ export function createApp(): express.Express {
   });
 
   // Flow C: Messaging Surfaces & Identity Bindings
-  app.get("/api/workspaces/:id/surfaces", async (req: Request, res: Response) => {
+  app.get("/api/workspaces/:id/surfaces", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const bindings = await listSurfaceBindings(id);
     res.json(bindings);
   });
 
-  app.post("/api/workspaces/:id/surfaces", async (req: Request, res: Response) => {
+  app.post("/api/workspaces/:id/surfaces", ...workspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
       const binding = await upsertSurfaceBinding(id, req.body);
@@ -471,13 +568,13 @@ export function createApp(): express.Express {
   });
 
   // Flow D: Two-Stage Document Extract -> Confirm & Accounting Ledger
-  app.get("/api/workspaces/:id/documents", async (req: Request, res: Response) => {
+  app.get("/api/workspaces/:id/documents", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const docs = await listStagedDocuments(id);
     res.json(docs);
   });
 
-  app.post("/api/workspaces/:id/documents/extract", async (req: Request, res: Response) => {
+  app.post("/api/workspaces/:id/documents/extract", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
       const draft = await extractDocumentDraft(id, req.body);
@@ -487,7 +584,7 @@ export function createApp(): express.Express {
     }
   });
 
-  app.post("/api/workspaces/:id/documents/:docId/confirm", async (req: Request, res: Response) => {
+  app.post("/api/workspaces/:id/documents/:docId/confirm", ...workspaceOwner, async (req: Request, res: Response) => {
     const { id, docId } = req.params;
     try {
       const confirmed = await confirmStagedDocument(id, docId, req.body);
@@ -497,7 +594,7 @@ export function createApp(): express.Express {
     }
   });
 
-  app.get("/api/workspaces/:id/accounting/ledger", async (req: Request, res: Response) => {
+  app.get("/api/workspaces/:id/accounting/ledger", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
       const entries = await getWorkspaceAccountingLedger(id);
@@ -517,7 +614,7 @@ export function createApp(): express.Express {
   });
 
   // Audit Logs
-  app.get("/api/workspaces/:id/audit", async (req: Request, res: Response) => {
+  app.get("/api/workspaces/:id/audit", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const auditRes = await query(
       "SELECT * FROM audit_logs WHERE workspace_id = $1 ORDER BY created_at DESC LIMIT 100;",
@@ -527,12 +624,46 @@ export function createApp(): express.Express {
   });
 
   // Crash Recovery
-  app.post("/api/workspaces/:id/recover", async (_req: Request, res: Response) => {
+  app.post("/api/workspaces/:id/recover", ...workspaceOwner, async (req: Request, res: Response) => {
     try {
-      const report = await recoveryRunner.recoverInterruptedWorkflows();
+      const report = await recoveryRunner.recoverInterruptedWorkflows({ workspaceId: req.params.id });
       res.json(report);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Access tokens (owner only). The plaintext token is in the create response only.
+  app.post("/api/workspaces/:id/tokens", ...workspaceOwner, async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const actor = req.actor!;
+    try {
+      const issued = await issueToken(id, req.body?.role as WorkspaceRole, req.body?.label, {
+        type: "owner",
+        id: actor.label,
+      });
+      res.status(201).json({ id: issued.id, role: issued.role, label: issued.label, token: issued.token });
+    } catch (err) {
+      sendTokenError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/tokens", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      res.json(await listTokens(req.params.id));
+    } catch (err) {
+      sendTokenError(res, err);
+    }
+  });
+
+  app.delete("/api/workspaces/:id/tokens/:tokenId", ...workspaceOwner, async (req: Request, res: Response) => {
+    const { id, tokenId } = req.params;
+    const actor = req.actor!;
+    try {
+      const revoked = await revokeToken(id, tokenId, { type: "owner", id: actor.label });
+      res.json(revoked);
+    } catch (err) {
+      sendTokenError(res, err);
     }
   });
 
@@ -590,7 +721,8 @@ export function createApp(): express.Express {
           try {
             const result = await procurementRunner.approveAndSubmit(
               event.approvalId,
-              event.actorId
+              event.actorId,
+              event.workspaceId
             );
             return res.json({
               status: "processed",
@@ -609,6 +741,7 @@ export function createApp(): express.Express {
               event.approvalId,
               "rejected",
               event.actorId,
+              event.workspaceId,
               event.reason || "Rejected by owner via surface card"
             );
           } catch (err: any) {

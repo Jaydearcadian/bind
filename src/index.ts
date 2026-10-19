@@ -1,7 +1,7 @@
 import { createApp } from "./server/app.js";
 import { config } from "./config/env.js";
 import { runMigrations } from "./db/migrate.js";
-import { provisionWorkspace } from "./templates/registry.js";
+import { provisionDemoWorkspace } from "./server/demo.js";
 
 async function main() {
   console.log("Starting Bind Business Agent Engine...");
@@ -9,12 +9,12 @@ async function main() {
   // Run database migrations on start
   await runMigrations();
 
-  // Ensure default demo kitchen workspace exists
+  // Ensure default demo kitchen workspace exists. An existing one is not reset on boot.
   try {
-    await provisionWorkspace("ws-kitchen-main", "Chez Bind Kitchen & Bakery", "kitchen-v1");
+    await provisionDemoWorkspace();
     console.log("Demo Kitchen workspace 'ws-kitchen-main' ready.");
-  } catch {
-    console.warn("Notice: demo workspace already provisioned or skipped.");
+  } catch (err: any) {
+    console.warn("Notice: demo workspace could not be provisioned:", err?.message);
   }
 
   const app = createApp();

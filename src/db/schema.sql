@@ -313,3 +313,16 @@ CREATE TABLE IF NOT EXISTS effects (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_effects_workspace_status ON effects(workspace_id, status);
+
+-- Per-workspace access tokens (src/auth/tokens.ts, ADR 0021). Only the SHA-256 hash of a token is stored.
+-- The plaintext is returned once when it is issued and is never written anywhere.
+CREATE TABLE IF NOT EXISTS workspace_tokens (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('owner','staff')),
+  token_hash TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL CHECK (char_length(label) BETWEEN 1 AND 80),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_workspace_tokens_ws ON workspace_tokens(workspace_id) WHERE revoked_at IS NULL;

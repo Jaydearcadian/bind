@@ -39,7 +39,7 @@ describe("Workflow Orchestrator & End-to-End Kitchen Slice", () => {
     expect(BigInt(orderRes.rows[0].total_price_cents)).toBe(24500n); // $245.00
 
     // Now execute 3-way match, settlement payment, and inventory restock
-    const reconResult = await runner.fulfillAndReconcile(result.orderId!);
+    const reconResult = await runner.fulfillAndReconcile(result.orderId!, wsId);
     expect(reconResult.status).toBe(MatchStatus.MATCHED);
     expect(reconResult.reconciled).toBe(true);
     expect(reconResult.txHash).toBeDefined();
@@ -73,12 +73,12 @@ describe("Workflow Orchestrator & End-to-End Kitchen Slice", () => {
     expect(BigInt(apprRes.rows[0].amount_cents)).toBe(39200n);
 
     // Simulate Human Owner Approval
-    const resumeResult = await runner.approveAndSubmit(result.approvalId!, "owner@lebistro.example.com");
+    const resumeResult = await runner.approveAndSubmit(result.approvalId!, "owner@lebistro.example.com", wsId);
     expect(resumeResult.state).toBe(WorkflowState.CONFIRMED);
     expect(resumeResult.orderId).toBeDefined();
 
     // Complete fulfillment and reconciliation
-    const reconResult = await runner.fulfillAndReconcile(resumeResult.orderId!);
+    const reconResult = await runner.fulfillAndReconcile(resumeResult.orderId!, wsId);
     expect(reconResult.status).toBe(MatchStatus.MATCHED);
     expect(reconResult.reconciled).toBe(true);
   });

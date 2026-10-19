@@ -6,6 +6,7 @@ import { createApp } from "../../src/server/app.js";
 import { query, closePool } from "../../src/db/client.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import { provisionWorkspace } from "../../src/templates/registry.js";
+import { issueToken } from "../../src/auth/tokens.js";
 import { ProcurementWorkflowRunner } from "../../src/workflows/procurement.js";
 import { OrderSettlementService } from "../../src/workflows/settlement.js";
 import { createReplenishmentTools } from "../../src/agents/replenishmentTools.js";
@@ -122,8 +123,8 @@ describe("The payee comes from the verified supplier record", () => {
     const milk = await orderFor(wsId, MILK);
     expect(flour.supplierId).not.toBe(milk.supplierId);
 
-    const flourResult = await runner.fulfillAndReconcile(flour.orderId);
-    const milkResult = await runner.fulfillAndReconcile(milk.orderId);
+    const flourResult = await runner.fulfillAndReconcile(flour.orderId, wsId);
+    const milkResult = await runner.fulfillAndReconcile(milk.orderId, wsId);
     expect(flourResult.reconciled).toBe(true);
     expect(milkResult.reconciled).toBe(true);
 
@@ -142,7 +143,7 @@ describe("The payee comes from the verified supplier record", () => {
     const stockBefore = await stockOf(wsId, FLOUR);
     await query(`UPDATE suppliers SET payment_address = NULL WHERE id = $1;`, [supplierId]);
 
-    const result = await runner.fulfillAndReconcile(orderId);
+    const result = await runner.fulfillAndReconcile(orderId, wsId);
     expect(result).toEqual({
       status: MatchStatus.MATCHED,
       reconciled: false,
@@ -179,7 +180,7 @@ describe("The payee comes from the verified supplier record", () => {
     const { orderId, supplierId } = await orderFor(wsId, FLOUR);
     await query(`UPDATE suppliers SET verified = FALSE WHERE id = $1;`, [supplierId]);
 
-    const result = await runner.fulfillAndReconcile(orderId);
+    const result = await runner.fulfillAndReconcile(orderId, wsId);
     expect(result).toEqual({ status: MatchStatus.MATCHED, reconciled: false, hold: "SUPPLIER_NOT_VERIFIED" });
     expect(settlement.transferCalls).toBe(0);
     expect((await orderRow(orderId)).status).toBe("payment_hold");
@@ -197,7 +198,7 @@ describe("The payee comes from the verified supplier record", () => {
     const arc = await query(`SELECT settlement_address FROM workspaces WHERE id = $1;`, [arcWsId]);
     expect(arc.rows[0].settlement_address).toBeNull();
 
-    const result = await runner.fulfillAndReconcile(orderId);
+    const result = await runner.fulfillAndReconcile(orderId, wsId);
     expect(result).toEqual({
       status: MatchStatus.MATCHED,
       reconciled: false,
@@ -215,19 +216,19 @@ describe("The payee comes from the verified supplier record", () => {
     const address = simulatedPaymentAddress(supplierId);
 
     await query(`UPDATE suppliers SET payment_address = NULL WHERE id = $1;`, [supplierId]);
-    const held = await runner.fulfillAndReconcile(orderId);
+    const held = await runner.fulfillAndReconcile(orderId, wsId);
     expect(held.hold).toBe("SUPPLIER_PAYMENT_ADDRESS_MISSING");
     expect(settlement.transferCalls).toBe(0);
 
     await query(`UPDATE suppliers SET payment_address = $2 WHERE id = $1;`, [supplierId, address]);
-    const paid = await runner.fulfillAndReconcile(orderId);
+    const paid = await runner.fulfillAndReconcile(orderId, wsId);
     expect(paid.reconciled).toBe(true);
     expect(paid.txHash).toBeDefined();
     expect(paid.alreadyReconciled).toBeUndefined();
     expect(settlement.transferCalls).toBe(1);
     expect(settlement.requests[0].toAddress).toBe(address);
 
-    const again = await runner.fulfillAndReconcile(orderId);
+    const again = await runner.fulfillAndReconcile(orderId, wsId);
     expect(again).toMatchObject({ reconciled: true, alreadyReconciled: true, txHash: paid.txHash });
     expect(settlement.transferCalls).toBe(1);
 
@@ -244,7 +245,7 @@ describe("The payee comes from the verified supplier record", () => {
     const wsId = await workspace(30000n); // $300.00 daily limit; the flour order is $245.00
     const { orderId, supplierId } = await orderFor(wsId, FLOUR);
     await query(`UPDATE suppliers SET payment_address = NULL WHERE id = $1;`, [supplierId]);
-    await runner.fulfillAndReconcile(orderId);
+    await runner.fulfillAndReconcile(orderId, wsId);
     expect((await orderRow(orderId)).status).toBe("payment_hold");
 
     const tools = createReplenishmentTools({ workspaceId: wsId, workflowId: "wf_unused" });
@@ -262,11 +263,12 @@ describe("The payee comes from the verified supplier record", () => {
     const baseUrl = addr && typeof addr === "object" ? `http://127.0.0.1:${addr.port}` : "";
     try {
       const wsId = await workspace();
+      const ownerToken = (await issueToken(wsId, "owner", "payee-owner")).token;
       const suppId = "supp-payee-route";
       const post = async (paymentAddress: unknown) => {
         const res = await fetch(`${baseUrl}/api/workspaces/${wsId}/suppliers`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${ownerToken}` },
           body: JSON.stringify({
             id: suppId,
             name: "Route Payee Supplier",
@@ -332,7 +334,7 @@ describe("The payee comes from the verified supplier record", () => {
     await query(`UPDATE suppliers SET payment_address = NULL WHERE id = $1;`, [supplierId]);
 
     const results = await Promise.allSettled(
-      Array.from({ length: 10 }, () => runner.fulfillAndReconcile(orderId))
+      Array.from({ length: 10 }, () => runner.fulfillAndReconcile(orderId, wsId))
     );
 
     expect(results.every((r) => r.status === "fulfilled")).toBe(true);
@@ -349,7 +351,7 @@ describe("The payee comes from the verified supplier record", () => {
     const wsId = await workspace();
     const { orderId, supplierId } = await orderFor(wsId, FLOUR);
     await query(`UPDATE suppliers SET payment_address = NULL WHERE id = $1;`, [supplierId]);
-    expect((await runner.fulfillAndReconcile(orderId)).hold).toBe("SUPPLIER_PAYMENT_ADDRESS_MISSING");
+    expect((await runner.fulfillAndReconcile(orderId, wsId)).hold).toBe("SUPPLIER_PAYMENT_ADDRESS_MISSING");
     expect((await orderRow(orderId)).status).toBe("payment_hold");
 
     const service = new OrderSettlementService({ settlementFor: () => settlement });
@@ -367,7 +369,7 @@ describe("The payee comes from the verified supplier record", () => {
     const wsId = await workspace();
     const { orderId, supplierId } = await orderFor(wsId, FLOUR);
     await query(`UPDATE suppliers SET payment_address = NULL WHERE id = $1;`, [supplierId]);
-    expect((await runner.fulfillAndReconcile(orderId)).hold).toBe("SUPPLIER_PAYMENT_ADDRESS_MISSING");
+    expect((await runner.fulfillAndReconcile(orderId, wsId)).hold).toBe("SUPPLIER_PAYMENT_ADDRESS_MISSING");
 
     // Stored bill now overcharges by $1.00 per unit, so the retry's match is a price discrepancy.
     await query(
@@ -377,7 +379,7 @@ describe("The payee comes from the verified supplier record", () => {
        WHERE order_id = $1;`,
       [orderId]
     );
-    const retry = await runner.fulfillAndReconcile(orderId);
+    const retry = await runner.fulfillAndReconcile(orderId, wsId);
     expect(retry).toEqual({ status: MatchStatus.PRICE_DISCREPANCY, reconciled: false });
 
     expect((await orderRow(orderId)).status).toBe("payment_hold");
@@ -396,7 +398,7 @@ describe("The payee comes from the verified supplier record", () => {
     // Point workspace A's order at workspace B's verified, payable supplier record.
     await query(`UPDATE orders SET supplier_id = $2 WHERE id = $1;`, [orderId, foreignSupplier]);
 
-    const result = await runner.fulfillAndReconcile(orderId);
+    const result = await runner.fulfillAndReconcile(orderId, wsA);
     expect(result).toEqual({ status: MatchStatus.MATCHED, reconciled: false, hold: "SUPPLIER_NOT_VERIFIED" });
     expect(settlement.transferCalls).toBe(0);
     expect((await orderRow(orderId)).status).toBe("payment_hold");

@@ -122,13 +122,13 @@ describe("Reconcile exactly once", () => {
   it("reconciling twice pays once, restocks once and keeps one journal entry", async () => {
     const { wsId, orderId, startingStock, received } = await confirmedOrder();
 
-    const first = await runner.fulfillAndReconcile(orderId);
+    const first = await runner.fulfillAndReconcile(orderId, wsId);
     expect(first.status).toBe(MatchStatus.MATCHED);
     expect(first.reconciled).toBe(true);
     expect(first.txHash).toBeDefined();
     expect(first.alreadyReconciled).toBeUndefined();
 
-    const second = await runner.fulfillAndReconcile(orderId);
+    const second = await runner.fulfillAndReconcile(orderId, wsId);
     expect(second.alreadyReconciled).toBe(true);
     expect(second.reconciled).toBe(true);
     expect(second.status).toBe(MatchStatus.MATCHED);
@@ -152,7 +152,7 @@ describe("Reconcile exactly once", () => {
     settlement.delayMs = 150; // hold the claim open so the other callers really race
 
     const results = await Promise.allSettled(
-      Array.from({ length: 5 }, () => runner.fulfillAndReconcile(orderId))
+      Array.from({ length: 5 }, () => runner.fulfillAndReconcile(orderId, wsId))
     );
 
     expect(results.every((r) => r.status === "fulfilled")).toBe(true);
@@ -183,7 +183,7 @@ describe("Reconcile exactly once", () => {
     const { wsId, orderId, startingStock, received } = await confirmedOrder();
     settlement.failNextTransfers = 1;
 
-    await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow(/simulated settlement outage/);
+    await expect(runner.fulfillAndReconcile(orderId, wsId)).rejects.toThrow(/simulated settlement outage/);
 
     const afterFailure = await query(`SELECT status, tx_hash FROM orders WHERE id = $1;`, [orderId]);
     expect(afterFailure.rows[0].status).toBe("confirmed");
@@ -192,7 +192,7 @@ describe("Reconcile exactly once", () => {
     const noJournal = await query(`SELECT 1 FROM accounting_journal_entries WHERE order_id = $1;`, [orderId]);
     expect(noJournal.rows.length).toBe(0);
 
-    const retry = await runner.fulfillAndReconcile(orderId);
+    const retry = await runner.fulfillAndReconcile(orderId, wsId);
     expect(retry.reconciled).toBe(true);
     expect(retry.alreadyReconciled).toBeUndefined();
     expect(retry.txHash).toBeDefined();
@@ -209,13 +209,13 @@ describe("Reconcile exactly once", () => {
   });
 
   it("three_way_matches has one row per order after repeated calls", async () => {
-    const { orderId } = await confirmedOrder();
+    const { wsId, orderId } = await confirmedOrder();
     settlement.failNextTransfers = 1;
 
-    await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow();
-    await runner.fulfillAndReconcile(orderId);
-    await runner.fulfillAndReconcile(orderId);
-    await runner.fulfillAndReconcile(orderId);
+    await expect(runner.fulfillAndReconcile(orderId, wsId)).rejects.toThrow();
+    await runner.fulfillAndReconcile(orderId, wsId);
+    await runner.fulfillAndReconcile(orderId, wsId);
+    await runner.fulfillAndReconcile(orderId, wsId);
 
     const matches = await query(`SELECT id, match_status FROM three_way_matches WHERE order_id = $1;`, [orderId]);
     expect(matches.rows.length).toBe(1);
@@ -224,24 +224,24 @@ describe("Reconcile exactly once", () => {
   });
 
   it("a caller arriving while settlement is in flight gets the exact hold shape", async () => {
-    const { orderId } = await confirmedOrder();
+    const { wsId, orderId } = await confirmedOrder();
     settlement.delayMs = 300;
 
-    const winner = runner.fulfillAndReconcile(orderId);
+    const winner = runner.fulfillAndReconcile(orderId, wsId);
     while (settlement.transferCalls === 0) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     // The match row was stored before the adapter was called, so it is reported.
-    const during = await runner.fulfillAndReconcile(orderId);
+    const during = await runner.fulfillAndReconcile(orderId, wsId);
     expect(during).toEqual({ status: MatchStatus.MATCHED, reconciled: false, hold: "RECONCILE_IN_PROGRESS" });
     await winner;
     expect(settlement.transferCalls).toBe(1);
   });
 
   it("a hold with no stored match row does not claim MATCHED", async () => {
-    const { orderId } = await confirmedOrder();
+    const { wsId, orderId } = await confirmedOrder();
     await query(`UPDATE orders SET status = 'settling' WHERE id = $1;`, [orderId]);
-    const result = await runner.fulfillAndReconcile(orderId);
+    const result = await runner.fulfillAndReconcile(orderId, wsId);
     expect(result).toEqual({ status: MatchStatus.UNMATCHED, reconciled: false, hold: "RECONCILE_IN_PROGRESS" });
     expect(settlement.transferCalls).toBe(0);
   });
@@ -264,7 +264,7 @@ describe("Reconcile exactly once", () => {
       supplierFor: () => overbilling,
     });
 
-    const result = await mismatchRunner.fulfillAndReconcile(orderId);
+    const result = await mismatchRunner.fulfillAndReconcile(orderId, wsId);
     expect(result).toEqual({ status: MatchStatus.PRICE_DISCREPANCY, reconciled: false });
     expect(settlement.transferCalls).toBe(0);
     const order = await query(`SELECT status, tx_hash FROM orders WHERE id = $1;`, [orderId]);
@@ -274,26 +274,26 @@ describe("Reconcile exactly once", () => {
   });
 
   it("refuses an order that is not confirmed, settling or reconciled, and an unknown order", async () => {
-    const { orderId } = await confirmedOrder();
+    const { wsId, orderId } = await confirmedOrder();
     await query(`UPDATE orders SET status = 'cancelled' WHERE id = $1;`, [orderId]);
-    await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow(/status 'cancelled' and cannot be reconciled/);
-    await expect(runner.fulfillAndReconcile("ord_does_not_exist")).rejects.toThrow(/not found/);
+    await expect(runner.fulfillAndReconcile(orderId, wsId)).rejects.toThrow(/status 'cancelled' and cannot be reconciled/);
+    await expect(runner.fulfillAndReconcile("ord_does_not_exist", wsId)).rejects.toThrow(/not found/);
     expect(settlement.transferCalls).toBe(0);
     const order = await query(`SELECT status FROM orders WHERE id = $1;`, [orderId]);
     expect(order.rows[0].status).toBe("cancelled");
   });
 
   it("uses the latest receipt on retry and records the latest match", async () => {
-    const { orderId, received } = await confirmedOrder();
+    const { wsId, orderId, received } = await confirmedOrder();
     settlement.failNextTransfers = 1;
-    await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow(/simulated settlement outage/);
+    await expect(runner.fulfillAndReconcile(orderId, wsId)).rejects.toThrow(/simulated settlement outage/);
 
     await query(
       `INSERT INTO delivery_receipts (id, order_id, received_quantity, received_at, condition_notes, discrepancy_reported)
        VALUES ($1, $2, $3, NOW() + INTERVAL '1 minute', 'short delivery', TRUE);`,
       [`dr_late_${orderId}`, orderId, received - 1]
     );
-    const retry = await runner.fulfillAndReconcile(orderId);
+    const retry = await runner.fulfillAndReconcile(orderId, wsId);
     expect(retry).toEqual({ status: MatchStatus.QUANTITY_DISCREPANCY, reconciled: false });
     expect(settlement.transferCalls).toBe(1); // only the failed first attempt
     const match = await query(`SELECT match_status FROM three_way_matches WHERE order_id = $1;`, [orderId]);
@@ -312,7 +312,7 @@ describe("Reconcile exactly once", () => {
        FOR EACH ROW WHEN (NEW.workspace_id = '${wsId}') EXECUTE FUNCTION test_block_restock();`
     );
     try {
-      await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow(/simulated database failure after payment/);
+      await expect(runner.fulfillAndReconcile(orderId, wsId)).rejects.toThrow(/simulated database failure after payment/);
     } finally {
       await query(`DROP TRIGGER IF EXISTS test_block_restock ON inventory_items;`);
       await query(`DROP FUNCTION IF EXISTS test_block_restock();`);
@@ -324,13 +324,13 @@ describe("Reconcile exactly once", () => {
     expect(order.rows[0].tx_hash).toBe(expectedHash);
     expect(await stockOf(wsId)).toBe(startingStock);
 
-    const again = await runner.fulfillAndReconcile(orderId);
+    const again = await runner.fulfillAndReconcile(orderId, wsId);
     expect(again).toEqual({ status: MatchStatus.MATCHED, reconciled: false, hold: "RECONCILE_IN_PROGRESS" });
     expect(settlement.transferCalls).toBe(1);
   });
 
   it("rethrows the settlement error even when releasing the claim also fails", async () => {
-    const { orderId } = await confirmedOrder();
+    const { wsId, orderId } = await confirmedOrder();
     settlement.failNextTransfers = 1;
     await query(`
       CREATE OR REPLACE FUNCTION test_block_release() RETURNS trigger AS $f$
@@ -342,7 +342,7 @@ describe("Reconcile exactly once", () => {
        EXECUTE FUNCTION test_block_release();`
     );
     try {
-      await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow(/simulated settlement outage/);
+      await expect(runner.fulfillAndReconcile(orderId, wsId)).rejects.toThrow(/simulated settlement outage/);
     } finally {
       await query(`DROP TRIGGER IF EXISTS test_block_release ON orders;`);
       await query(`DROP FUNCTION IF EXISTS test_block_release();`);

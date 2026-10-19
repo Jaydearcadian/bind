@@ -24,6 +24,11 @@ export interface ProvisionOptions {
   settlementMode?: "local" | "arc-testnet";
   customDailyLimitCents?: bigint;
   customApprovalThresholdCents?: bigint;
+  /**
+   * When the workspace already exists, leave it completely untouched: no field reset, no role, supplier or
+   * inventory re-seeding. Used for the demo workspace on every boot, so an owner's policy survives a restart.
+   */
+  ifAbsent?: boolean;
 }
 
 /**
@@ -53,28 +58,42 @@ export async function provisionWorkspace(
 
   await withTransaction(async (client) => {
     // 1. Insert Workspace
-    await client.query(
-      `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (id) DO UPDATE SET
-         name = EXCLUDED.name,
-         template_id = EXCLUDED.template_id,
-         settlement_address = COALESCE($8::text, workspaces.settlement_address, EXCLUDED.settlement_address),
-         settlement_mode = EXCLUDED.settlement_mode,
-         budget_daily_limit_cents = EXCLUDED.budget_daily_limit_cents,
-         approval_threshold_cents = EXCLUDED.approval_threshold_cents,
-         updated_at = NOW();`,
-      [
-        workspaceId,
-        name,
-        templateId,
-        settlementAddress,
-        settlementMode,
-        dailyLimit,
-        approvalThreshold,
-        explicitSettlementAddress,
-      ]
-    );
+    if (options?.ifAbsent) {
+      const created = await client.query(
+        `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO NOTHING
+         RETURNING id;`,
+        [workspaceId, name, templateId, settlementAddress, settlementMode, dailyLimit, approvalThreshold]
+      );
+      if ((created.rowCount ?? 0) === 0) {
+        // Already provisioned: the owner's configuration is not touched, and nothing else is seeded.
+        return;
+      }
+    } else {
+      await client.query(
+        `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name,
+           template_id = EXCLUDED.template_id,
+           settlement_address = COALESCE($8::text, workspaces.settlement_address, EXCLUDED.settlement_address),
+           settlement_mode = EXCLUDED.settlement_mode,
+           budget_daily_limit_cents = EXCLUDED.budget_daily_limit_cents,
+           approval_threshold_cents = EXCLUDED.approval_threshold_cents,
+           updated_at = NOW();`,
+        [
+          workspaceId,
+          name,
+          templateId,
+          settlementAddress,
+          settlementMode,
+          dailyLimit,
+          approvalThreshold,
+          explicitSettlementAddress,
+        ]
+      );
+    }
 
     // 2. Insert Agent Roles
     for (const role of template.roles) {

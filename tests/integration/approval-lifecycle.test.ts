@@ -4,6 +4,7 @@ import { createApp } from "../../src/server/app.js";
 import { query, closePool } from "../../src/db/client.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import { provisionWorkspace } from "../../src/templates/registry.js";
+import { issueToken } from "../../src/auth/tokens.js";
 import { WorkflowEngine, ApprovalDecisionError } from "../../src/workflows/engine.js";
 import { ProcurementWorkflowRunner } from "../../src/workflows/procurement.js";
 import { WorkflowState } from "../../src/workflows/types.js";
@@ -19,6 +20,7 @@ describe("Approval lifecycle: decide once, expire, reject, revoke", () => {
   let server: Server;
   let baseUrl = "";
   let counter = 0;
+  let ownerToken = "";
 
   function quoteFor(label: string) {
     return {
@@ -89,7 +91,10 @@ describe("Approval lifecycle: decide once, expire, reject, revoke", () => {
   async function api(method: string, routePath: string, body?: unknown) {
     const res = await fetch(`${baseUrl}${routePath}`, {
       method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
     return { status: res.status, body: await res.json() };
@@ -99,6 +104,7 @@ describe("Approval lifecycle: decide once, expire, reject, revoke", () => {
     await runMigrations();
     await provisionWorkspace(wsId, "Approval Lifecycle Kitchen", "kitchen-v1");
     await provisionWorkspace(otherWsId, "Other Tenant Kitchen", "kitchen-v1");
+    ownerToken = (await issueToken(wsId, "owner", "approval-owner")).token;
     await new Promise<void>((resolve) => {
       server = app.listen(0, "127.0.0.1", () => {
         const addr = server.address();
@@ -119,12 +125,12 @@ describe("Approval lifecycle: decide once, expire, reject, revoke", () => {
   it("approves once, submits one order, and rejects a second approval", async () => {
     const { wfId, approvalId } = await awaitingApproval();
 
-    const first = await runner.approveAndSubmit(approvalId, "owner@kitchen.example");
+    const first = await runner.approveAndSubmit(approvalId, "owner@kitchen.example", wsId);
     expect(first.state).toBe(WorkflowState.CONFIRMED);
     expect(await orderCount(wfId)).toBe(1);
     expect((await approvalRow(approvalId)).status).toBe("approved");
 
-    const err = await runner.approveAndSubmit(approvalId, "owner@kitchen.example").catch((e) => e);
+    const err = await runner.approveAndSubmit(approvalId, "owner@kitchen.example", wsId).catch((e) => e);
     expect(err).toBeInstanceOf(ApprovalDecisionError);
     expect(err.code).toBe("APPROVAL_NOT_PENDING");
     expect(await orderCount(wfId)).toBe(1);
@@ -134,8 +140,8 @@ describe("Approval lifecycle: decide once, expire, reject, revoke", () => {
     const { wfId, approvalId } = await awaitingApproval();
 
     const results = await Promise.allSettled([
-      runner.approveAndSubmit(approvalId, "owner@kitchen.example"),
-      runner.approveAndSubmit(approvalId, "owner@kitchen.example"),
+      runner.approveAndSubmit(approvalId, "owner@kitchen.example", wsId),
+      runner.approveAndSubmit(approvalId, "owner@kitchen.example", wsId),
     ]);
 
     const fulfilled = results.filter((r) => r.status === "fulfilled");
@@ -232,7 +238,7 @@ describe("Approval lifecycle: decide once, expire, reject, revoke", () => {
 
   it("does not let a repeated reject change an already-approved approval", async () => {
     const { wfId, approvalId } = await awaitingApproval();
-    await runner.approveAndSubmit(approvalId, "owner@kitchen.example");
+    await runner.approveAndSubmit(approvalId, "owner@kitchen.example", wsId);
 
     const res = await api("POST", `/api/approvals/${approvalId}/reject`, {
       reason: "Changed my mind",

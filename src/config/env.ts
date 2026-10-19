@@ -19,7 +19,16 @@ const envSchema = z.object({
   ARC_SIGNER_PRIVATE_KEY: z.string().optional(),
   BIND_SETTLEMENT_DEPLOY_BLOCK: z.string().regex(/^\d+$/, "must be a non-negative integer").optional(),
   SUPPLIER_ADAPTER_MODE: z.enum(["simulated", "live"]).default("simulated"),
-  SESSION_SECRET: z.string().default("f3b890f6723e42d765870bca578b8a071c7b8c8d839352e051c5beea2d78bfb0"),
+  // No hard-coded secret. Empty when unset; an empty value is ignored by log redaction (effects/ledger.ts).
+  SESSION_SECRET: z.string().default(""),
+  // Comma-separated browser origins allowed to call the API. Unset: no CORS headers are sent.
+  BIND_CORS_ORIGINS: z.string().optional(),
+  // Optional owner token for the demo workspace. Same format as issued tokens (bnd_ + 43 base64url characters, the
+  // length of 32 random bytes). It is stored as a hash only. Generate one with `npm run token:issue`.
+  BIND_DEMO_OWNER_TOKEN: z
+    .string()
+    .regex(/^bnd_[A-Za-z0-9_-]{43}$/, "must be a Bind token: 'bnd_' followed by 43 base64url characters")
+    .optional(),
   ALLOW_NO_CONTRACTS: z.string().optional().default("1"),
   PARALLEL_API_KEY: z.string().optional(),
   NEBIUS_API_KEY: z.string().optional(),

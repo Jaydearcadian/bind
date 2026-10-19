@@ -165,7 +165,7 @@ describe("Settlement transfer through the effects ledger", () => {
     const wsId = await newWorkspace();
     const { orderId } = await confirmedOrder(runner, wsId);
 
-    const result = await runner.fulfillAndReconcile(orderId);
+    const result = await runner.fulfillAndReconcile(orderId, wsId);
     expect(result).toMatchObject({ status: MatchStatus.MATCHED, reconciled: true });
 
     const rows = (
@@ -193,11 +193,11 @@ describe("Settlement transfer through the effects ledger", () => {
     const wsId = await newWorkspace();
     const { orderId } = await confirmedOrder(runner, wsId);
 
-    await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow(/socket hang up/);
+    await expect(runner.fulfillAndReconcile(orderId, wsId)).rejects.toThrow(/socket hang up/);
     expect((await orderRow(orderId)).status).toBe("confirmed");
     expect(spy.moves).toHaveLength(1);
 
-    const retry = await runner.fulfillAndReconcile(orderId);
+    const retry = await runner.fulfillAndReconcile(orderId, wsId);
     expect(retry).toMatchObject({ status: MatchStatus.MATCHED, reconciled: true, txHash: spy.moves[0].txHash });
     expect(spy.lookupCalls).toBe(1);
     expect(spy.transferCalls).toBe(1);
@@ -214,9 +214,9 @@ describe("Settlement transfer through the effects ledger", () => {
     const wsId = await newWorkspace();
     const { orderId } = await confirmedOrder(runner, wsId);
 
-    await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow(/socket hang up/);
+    await expect(runner.fulfillAndReconcile(orderId, wsId)).rejects.toThrow(/socket hang up/);
 
-    const retry = await runner.fulfillAndReconcile(orderId);
+    const retry = await runner.fulfillAndReconcile(orderId, wsId);
     expect(retry).toEqual({ status: MatchStatus.MATCHED, reconciled: false, hold: "SETTLEMENT_OUTCOME_UNKNOWN" });
     expect(spy.transferCalls).toBe(1);
 
@@ -235,7 +235,7 @@ describe("Settlement transfer through the effects ledger", () => {
     expect(JSON.stringify(inDoubt[0].evidence)).not.toContain(spy.moves[0].txHash);
 
     // Another attempt still does not reach the adapter.
-    const again = await runner.fulfillAndReconcile(orderId);
+    const again = await runner.fulfillAndReconcile(orderId, wsId);
     expect(again).toMatchObject({ reconciled: false, hold: "SETTLEMENT_OUTCOME_UNKNOWN" });
     expect(spy.transferCalls).toBe(1);
     expect(spy.moves).toHaveLength(1);
@@ -251,10 +251,10 @@ describe("Settlement transfer through the effects ledger", () => {
 
       // The process dies after the transfer was made and before the ledger row is completed.
       setEffectFault({ point: "after_call_before_complete", match: (spec) => spec.idempotencyKey === key });
-      await expect(runner.fulfillAndReconcile(orderId), `lookup=${lookup}`).rejects.toThrow(/injected fault/);
+      await expect(runner.fulfillAndReconcile(orderId, wsId), `lookup=${lookup}`).rejects.toThrow(/injected fault/);
       expect(spy.moves, `lookup=${lookup}`).toHaveLength(1);
 
-      const second = await runner.fulfillAndReconcile(orderId);
+      const second = await runner.fulfillAndReconcile(orderId, wsId);
       if (lookup) {
         expect(second, `lookup=${lookup}`).toMatchObject({ reconciled: true, txHash: spy.moves[0].txHash });
       } else {
@@ -271,7 +271,7 @@ describe("Settlement transfer through the effects ledger", () => {
     const wsId = await newWorkspace();
     const { orderId } = await confirmedOrder(runner, wsId);
 
-    const first = await runner.fulfillAndReconcile(orderId);
+    const first = await runner.fulfillAndReconcile(orderId, wsId);
     expect(first).toEqual({ status: MatchStatus.MATCHED, reconciled: false, hold: "SETTLEMENT_REJECTED" });
     expect((await orderRow(orderId)).status).toBe("payment_hold");
     expect(spy.moves).toHaveLength(0);
@@ -281,7 +281,7 @@ describe("Settlement transfer through the effects ledger", () => {
     expect(rejected[0].evidence).toEqual({ orderId, code: "DailyLimitExceeded" });
 
     // Nothing was sent, so the ledger asks the adapter (null) and sends again.
-    const retry = await runner.fulfillAndReconcile(orderId);
+    const retry = await runner.fulfillAndReconcile(orderId, wsId);
     expect(retry).toMatchObject({ status: MatchStatus.MATCHED, reconciled: true, txHash: spy.moves[0].txHash });
     expect(spy.lookupCalls).toBe(1);
     expect(spy.transferCalls).toBe(2);
@@ -298,7 +298,7 @@ describe("Settlement transfer through the effects ledger", () => {
     const wsId = await newWorkspace();
     const { orderId } = await confirmedOrder(runner, wsId);
 
-    const first = await runner.fulfillAndReconcile(orderId);
+    const first = await runner.fulfillAndReconcile(orderId, wsId);
     expect(first.pending).toBe(AWAITING);
     expect((await orderRow(orderId)).status).toBe("settlement_submitted");
 
@@ -312,7 +312,7 @@ describe("Settlement transfer through the effects ledger", () => {
     );
     spy.confirmStatus = "confirmed";
 
-    const replay = await runner.fulfillAndReconcile(orderId);
+    const replay = await runner.fulfillAndReconcile(orderId, wsId);
     expect(replay).toMatchObject({ status: MatchStatus.MATCHED, reconciled: true, txHash: first.txHash });
     expect(spy.transferCalls).toBe(1);
     expect(spy.moves).toHaveLength(1);
@@ -340,7 +340,7 @@ describe("Settlement transfer through the effects ledger", () => {
       [`eff_foreign_${Date.now()}`, wsB, `${wsA}:settle:${orderId}`, JSON.stringify({ txHash: foreignHash, status: "confirmed" })]
     );
 
-    const error = await runner.fulfillAndReconcile(orderId).catch((e: unknown) => e);
+    const error = await runner.fulfillAndReconcile(orderId, wsA).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(EffectConflictError);
     expect((error as Error).message).not.toContain(wsB);
     expect((error as Error).message).not.toContain(foreignHash);

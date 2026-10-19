@@ -1,6 +1,6 @@
 import { createApp } from "../dist/server/app.js";
 import { runMigrations } from "../dist/db/migrate.js";
-import { provisionWorkspace } from "../dist/templates/registry.js";
+import { provisionDemoWorkspace } from "../dist/server/demo.js";
 
 const app = createApp();
 
@@ -11,13 +11,9 @@ function ensureInit() {
     initPromise = (async () => {
       await runMigrations();
       try {
-        await provisionWorkspace(
-          "ws-kitchen-main",
-          "Chez Bind Kitchen & Bakery",
-          "kitchen-v1"
-        );
+        await provisionDemoWorkspace();
       } catch (err) {
-        console.warn("Demo workspace already provisioned or skipped:", err?.message);
+        console.warn("Demo workspace could not be provisioned:", err?.message);
       }
     })().catch((err) => {
       initPromise = null;

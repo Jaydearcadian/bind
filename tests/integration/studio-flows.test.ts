@@ -11,11 +11,16 @@ describe("Business Onboarding & Operations Studio (Flows A, B, C, D)", () => {
   const blankWsId = `ws-blank-${Date.now()}`;
   let server: Server;
   let baseUrl = "";
+  // The owner token comes back from onboarding (the workspace is created inside the flow).
+  let ownerToken = "";
 
   async function api(method: string, routePath: string, body?: unknown) {
     const res = await fetch(`${baseUrl}${routePath}`, {
       method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: {
+        ...(ownerToken ? { Authorization: `Bearer ${ownerToken}` } : {}),
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
     const contentType = res.headers.get("content-type") || "";
@@ -80,6 +85,7 @@ describe("Business Onboarding & Operations Studio (Flows A, B, C, D)", () => {
 
     expect(onboardRes.status).toBe(201);
     expect(onboardRes.body.workspaceId).toBe(blankWsId);
+    ownerToken = onboardRes.body.ownerToken.token;
     expect(onboardRes.body.provenance).toBe("OWNER_CONFIRMED");
 
     // 3. Verify 0 fabricated orders, workflows, inventory, or journal entries

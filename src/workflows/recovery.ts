@@ -38,9 +38,9 @@ export class WorkflowCrashRecoveryRunner {
   /**
    * Scans for dangling or interrupted workflows and resumes each one through its own records. A workflow is only ever
    * resumed through the order id derived from its own id, never through another order. An error in one workflow is
-   * counted as failed and does not stop the scan.
+   * counted as failed and does not stop the scan. With a workspaceId, only that workspace's workflows are scanned.
    */
-  async recoverInterruptedWorkflows(): Promise<RecoveryReport> {
+  async recoverInterruptedWorkflows(filter: { workspaceId?: string } = {}): Promise<RecoveryReport> {
     const report: RecoveryReport = {
       recoveredCount: 0,
       failedCount: 0,
@@ -51,7 +51,9 @@ export class WorkflowCrashRecoveryRunner {
     const res = await query(
       `SELECT * FROM workflows
        WHERE state IN ('draft', 'request_sent', 'submitted', 'authorized')
-       ORDER BY created_at ASC;`
+         AND ($1::text IS NULL OR workspace_id = $1)
+       ORDER BY created_at ASC;`,
+      [filter.workspaceId ?? null]
     );
 
     for (const row of res.rows) {
