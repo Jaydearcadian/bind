@@ -1,14 +1,11 @@
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import { query } from "../db/client.js";
-import {
-  evaluateThreeWayMatch,
-  MatchStatus,
-} from "../accounting/three-way-match.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
-import { WorkflowEngine } from "../workflows/engine.js";
-import { WorkflowState } from "../workflows/types.js";
-import { EffectClass } from "../policy/effect-classifier.js";
-import { PolicyDecision } from "../policy/engine.js";
+import { OrderSettlementService } from "../workflows/settlement.js";
+import type { EvidenceLoader } from "../workflows/settlement.js";
+import { recordIdempotentJournalEntry } from "../accounting/journal.js";
+export { recordIdempotentJournalEntry } from "../accounting/journal.js";
 
 export const ExtractDocumentInputSchema = z.object({
   docType: z.enum(["quote", "delivery_receipt", "supplier_bill"]),
@@ -187,7 +184,7 @@ export async function extractDocumentDraft(
     `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
      VALUES ($1, $2, 'owner', 'owner@bind.local', 'read', 'document.extract_staged', 'ALLOW', $3::jsonb, NOW());`,
     [
-      `audit_doc_ext_${Date.now()}`,
+      `audit_doc_ext_${randomUUID()}`,
       workspaceId,
       JSON.stringify({
         docId,
@@ -218,7 +215,8 @@ export async function extractDocumentDraft(
 export async function confirmStagedDocument(
   workspaceId: string,
   docId: string,
-  rawOverrides: unknown = {}
+  rawOverrides: unknown = {},
+  settlement?: OrderSettlementService
 ) {
   const overrides = ConfirmDocumentInputSchema.parse(rawOverrides || {});
   const docRes = await query(
@@ -320,7 +318,7 @@ export async function confirmStagedDocument(
       `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
        VALUES ($1, $2, 'owner', $3, 'commercial_commitment', 'document.confirm_quote', 'ALLOW', $4::jsonb, NOW());`,
       [
-        `audit_doc_q_${Date.now()}`,
+        `audit_doc_q_${randomUUID()}`,
         workspaceId,
         overrides.decidedBy,
         JSON.stringify({ docId: doc.id, quoteId, sku, supplierId, unitPriceCents, totalPriceCents, provenance: "OWNER_CONFIRMED" }),
@@ -340,7 +338,10 @@ export async function confirmStagedDocument(
     };
   }
 
-  // Case B: Confirmed Delivery Receipt or Supplier Bill (Linked to a Purchase Order for 3-Way Match)
+  // Case B: Confirmed Delivery Receipt or Supplier Bill (linked to a Purchase Order for 3-Way Match).
+  // This route only records the owner-confirmed row. Matching and payment belong to
+  // OrderSettlementService, which runs against stored rows only: a missing receipt or bill is
+  // reported as pending, never invented.
   let orderRes;
   if (linkedOrderId) {
     orderRes = await query(
@@ -360,6 +361,17 @@ export async function confirmStagedDocument(
     );
   }
   const order = orderRes.rows[0];
+
+  // A document for a different item or vendor must not be recorded against this order. The settlement
+  // loader takes the receipt and bill identity from the order, so a mismatch would never reach the match.
+  if (sku !== order.item_sku) {
+    throw new Error(`Confirmed ${doc.doc_type} SKU '${sku}' does not match order SKU '${order.item_sku}'.`);
+  }
+  if (doc.doc_type === "supplier_bill" && supplierId && supplierId !== order.supplier_id) {
+    throw new Error(
+      `Supplier bill vendor '${supplierId}' does not match the purchase order vendor '${order.supplier_id}'.`
+    );
+  }
 
   if (doc.doc_type === "delivery_receipt") {
     const receiptId = `rcpt_${doc.id}`;
@@ -389,235 +401,64 @@ export async function confirmStagedDocument(
     [order.id, overrides.decidedBy, doc.id]
   );
 
-  // Check if both a delivery_receipt and supplier_bill exist for this order (or synthesize the counterpart from PO if only testing a single invoice against a delivered PO)
-  const [rcptRes, billRes] = await Promise.all([
-    query(`SELECT * FROM delivery_receipts WHERE order_id = $1 ORDER BY received_at DESC LIMIT 1;`, [order.id]),
-    query(`SELECT * FROM supplier_bills WHERE order_id = $1 ORDER BY received_at DESC LIMIT 1;`, [order.id]),
-  ]);
-
-  const activeReceipt = rcptRes.rows[0] || {
-    id: `rcpt_auto_${order.id}`,
-    order_id: order.id,
-    received_quantity: doc.doc_type === "delivery_receipt" ? quantity : Number(order.quantity),
-  };
-  if (rcptRes.rows.length === 0 && doc.doc_type === "supplier_bill") {
-    await query(
-      `INSERT INTO delivery_receipts (id, order_id, received_quantity, received_at, condition_notes, discrepancy_reported)
-       VALUES ($1, $2, $3, NOW(), 'Standard receipt paired for 3-way match check', FALSE)
-       ON CONFLICT (id) DO NOTHING;`,
-      [activeReceipt.id, order.id, activeReceipt.received_quantity]
-    );
-  }
-
-  const activeBill = billRes.rows[0] || {
-    id: `bill_auto_${order.id}`,
-    order_id: order.id,
-    bill_number: billNumber,
-    billed_quantity: doc.doc_type === "supplier_bill" ? quantity : Number(order.quantity),
-    billed_unit_price_cents:
-      doc.doc_type === "supplier_bill" ? unitPriceCents : Number(order.unit_price_cents),
-    billed_total_cents:
-      doc.doc_type === "supplier_bill" ? totalPriceCents : Number(order.total_price_cents),
-  };
-  if (billRes.rows.length === 0 && doc.doc_type === "delivery_receipt") {
-    await query(
-      `INSERT INTO supplier_bills (id, order_id, bill_number, billed_quantity, billed_unit_price_cents, billed_total_cents, currency, received_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'USDC', NOW())
-       ON CONFLICT (id) DO NOTHING;`,
-      [
-        activeBill.id,
-        order.id,
-        activeBill.bill_number,
-        activeBill.billed_quantity,
-        activeBill.billed_unit_price_cents,
-        activeBill.billed_total_cents,
-      ]
-    );
-  }
-
-  // Evaluate strict Three-Way Match
-  const matchResult = evaluateThreeWayMatch(
-    {
-      orderId: order.id,
-      orderNumber: order.order_number,
-      vendorId: order.supplier_id,
-      sku: order.item_sku,
-      quantity: Number(order.quantity),
-      unitPriceCents: BigInt(order.unit_price_cents),
-      totalPriceCents: BigInt(order.total_price_cents),
-    },
-    {
-      receiptId: activeReceipt.id,
-      orderId: order.id,
-      sku: sku,
-      receivedQuantity: Number(activeReceipt.received_quantity),
-    },
-    {
-      billId: activeBill.id,
-      orderId: order.id,
-      billNumber: activeBill.bill_number,
-      vendorId: supplierId || order.supplier_id,
-      sku: sku,
-      billedQuantity: Number(activeBill.billed_quantity),
-      billedUnitPriceCents: BigInt(activeBill.billed_unit_price_cents),
-      billedTotalCents: BigInt(activeBill.billed_total_cents),
-    }
-  );
-
-  await query(
-    `INSERT INTO three_way_matches (id, order_id, delivery_receipt_id, supplier_bill_id, match_status, variance_cents, notes, matched_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-     ON CONFLICT (order_id) DO UPDATE SET
-       delivery_receipt_id = EXCLUDED.delivery_receipt_id,
-       supplier_bill_id = EXCLUDED.supplier_bill_id,
-       match_status = EXCLUDED.match_status,
-       variance_cents = EXCLUDED.variance_cents,
-       notes = EXCLUDED.notes,
-       matched_at = NOW();`,
-    [
-      `match_doc_${Date.now()}`,
-      order.id,
-      activeReceipt.id,
-      activeBill.id,
-      matchResult.status,
-      matchResult.varianceCents.toString(),
-      matchResult.discrepancyReason || "Verified 3-way match from owner-confirmed document",
-    ]
-  );
-
-  if (matchResult.status !== MatchStatus.MATCHED) {
-    await query(
-      `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-       VALUES ($1, $2, 'system', 'three_way_match_engine', 'commercial_commitment', 'accounting.three_way_match_failed', 'DENY', $3::jsonb, NOW());`,
-      [
-        `audit_3wm_fail_${Date.now()}`,
-        workspaceId,
-        JSON.stringify({
-          orderId: order.id,
-          docId: doc.id,
-          matchStatus: matchResult.status,
-          varianceCents: matchResult.varianceCents.toString(),
-          discrepancyReason: matchResult.discrepancyReason,
-        }),
-      ]
-    );
-
-    return {
-      docId: doc.id,
-      docType: doc.doc_type,
-      status: "owner_confirmed",
-      orderId: order.id,
-      matchStatus: matchResult.status,
-      reconciled: false,
-      varianceCents: matchResult.varianceCents.toString(),
-      discrepancyReason: matchResult.discrepancyReason,
-    };
-  }
-
-  // 3-Way Match Passed: Execute settlement & post idempotent journal entry
-  const wsRes = await query(`SELECT * FROM workspaces WHERE id = $1;`, [workspaceId]);
-  const ws = wsRes.rows[0];
-  const settlementAdapter = getSettlementAdapter(ws.settlement_mode);
-  const transferRes = await settlementAdapter.transferUSDC({
-    fromAddress: ws.settlement_address || "0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2",
-    toAddress: "0xa8358AED200D6CB6C856F972D853C1be833006ea",
-    amountCents: matchResult.payableAmountCents,
-    currency: "USDC",
-    orderId: order.id,
-    idempotencyKey: `idem_pay_${order.id}`,
-  });
-
-  await query(
-    `UPDATE orders SET status = 'reconciled', tx_hash = $1, updated_at = NOW() WHERE id = $2;`,
-    [transferRes.txHash, order.id]
-  );
-
-  await query(
-    `UPDATE inventory_items
-     SET current_quantity = current_quantity + $1, updated_at = NOW()
-     WHERE workspace_id = $2 AND sku = $3;`,
-    [Number(activeReceipt.received_quantity), workspaceId, order.item_sku]
-  );
-
-  const wfRes = await query(
-    `SELECT id, state FROM workflows WHERE context_data->>'orderId' = $1 LIMIT 1;`,
-    [order.id]
-  );
-  if (wfRes.rows.length > 0 && wfRes.rows[0].state === WorkflowState.CONFIRMED) {
-    const wfEngine = new WorkflowEngine();
-    await wfEngine.transition(wfRes.rows[0].id, {
-      fromState: WorkflowState.CONFIRMED,
-      toState: WorkflowState.RECONCILED,
-      patchContext: { txHash: transferRes.txHash, settledAt: transferRes.timestamp },
+  const settlementService =
+    settlement ??
+    new OrderSettlementService({
+      settlementFor: (mode: string) => getSettlementAdapter(mode as "local" | "arc-testnet"),
     });
-    await wfEngine.recordAudit(
-      workspaceId,
-      wfRes.rows[0].id,
-      "system",
-      "settlement_engine",
-      EffectClass.COMMERCIAL_COMMITMENT,
-      "settlement.reconcile_and_pay",
-      PolicyDecision.ALLOW,
-      { txHash: transferRes.txHash, payableAmountCents: matchResult.payableAmountCents.toString() },
-      transferRes.txHash
-    );
-  }
 
-  const journalEntry = await recordIdempotentJournalEntry({
-    workspaceId,
-    orderId: order.id,
-    orderNumber: order.order_number,
-    itemName: order.item_name,
-    supplierName: order.supplier_name,
-    amountCents: matchResult.payableAmountCents,
-    txHash: transferRes.txHash,
-  });
+  // Stored, owner-confirmed rows only. The latest row of each kind is used, as on the runner path.
+  const loadStoredEvidence: EvidenceLoader = async (claimed) => {
+    const rcptRes = await query(
+      `SELECT * FROM delivery_receipts WHERE order_id = $1 ORDER BY received_at DESC, id DESC LIMIT 1;`,
+      [claimed.id]
+    );
+    if (rcptRes.rows.length === 0) return { pending: "AWAITING_DELIVERY_RECEIPT" };
+    const billRes = await query(
+      `SELECT * FROM supplier_bills WHERE order_id = $1 ORDER BY received_at DESC, id DESC LIMIT 1;`,
+      [claimed.id]
+    );
+    if (billRes.rows.length === 0) return { pending: "AWAITING_SUPPLIER_BILL" };
+    const rcpt = rcptRes.rows[0];
+    const bill = billRes.rows[0];
+    return {
+      receipt: { receiptId: rcpt.id, receivedQuantity: Number(rcpt.received_quantity) },
+      bill: {
+        billId: bill.id,
+        billNumber: bill.bill_number,
+        vendorId: claimed.supplier_id,
+        billedQuantity: Number(bill.billed_quantity),
+        billedUnitPriceCents: BigInt(bill.billed_unit_price_cents),
+        billedTotalCents: BigInt(bill.billed_total_cents),
+      },
+    };
+  };
+
+  const result = await settlementService.settle(order.id, loadStoredEvidence);
+
+  let journalEntry;
+  if (result.reconciled && result.txHash) {
+    const journalRes = await query(`SELECT * FROM accounting_journal_entries WHERE idempotency_key = $1;`, [
+      `idem_je_${order.id}`,
+    ]);
+    journalEntry = journalRes.rows[0];
+  }
 
   return {
     docId: doc.id,
     docType: doc.doc_type,
     status: "owner_confirmed",
     orderId: order.id,
-    matchStatus: MatchStatus.MATCHED,
-    reconciled: true,
-    txHash: transferRes.txHash,
+    matchStatus: result.status,
+    reconciled: result.reconciled,
+    varianceCents: result.varianceCents,
+    discrepancyReason: result.discrepancyReason,
+    txHash: result.txHash,
     journalEntry,
+    pending: result.pending,
+    hold: result.hold,
+    alreadyReconciled: result.alreadyReconciled,
   };
-}
-
-export async function recordIdempotentJournalEntry(params: {
-  workspaceId: string;
-  orderId: string;
-  orderNumber: string;
-  itemName: string;
-  supplierName: string;
-  amountCents: bigint;
-  txHash?: string;
-}) {
-  const idemKey = `idem_je_${params.orderId}`;
-  const entryId = `je_${params.orderId}`;
-  const entryNumber = `JE-${params.orderNumber.replace(/^PO-/, "")}`;
-  const memo = `3-Way Match Verified: ${params.itemName} from ${params.supplierName} (${params.orderNumber})`;
-
-  const res = await query(
-    `INSERT INTO accounting_journal_entries (id, workspace_id, order_id, entry_number, debit_account, credit_account, amount_cents, currency, memo, provenance, tx_hash, idempotency_key, created_at)
-     VALUES ($1, $2, $3, $4, '1400 · Inventory Asset', '2000 · Accounts Payable / USDC Treasury', $5, 'USDC', $6, 'THREE_WAY_MATCH_VERIFIED', $7, $8, NOW())
-     ON CONFLICT (idempotency_key) DO UPDATE SET
-       tx_hash = COALESCE(EXCLUDED.tx_hash, accounting_journal_entries.tx_hash)
-     RETURNING *;`,
-    [
-      entryId,
-      params.workspaceId,
-      params.orderId,
-      entryNumber,
-      params.amountCents.toString(),
-      memo,
-      params.txHash || null,
-      idemKey,
-    ]
-  );
-
-  return res.rows[0];
 }
 
 export async function listStagedDocuments(workspaceId: string) {

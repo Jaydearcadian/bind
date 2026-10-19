@@ -245,6 +245,26 @@ describe("Business Onboarding & Operations Studio (Flows A, B, C, D)", () => {
     expect(Number(ordCheck.rows[0].unit_price_cents)).toBe(3800);
     expect(Number(ordCheck.rows[0].total_price_cents)).toBe(30400);
 
+    // 3b. Stage 2 for the delivery: a receipt for the 8 units on the order. Settlement needs a stored
+    // receipt and a stored bill; until the bill arrives the order is held as pending, never paired with
+    // an invented bill.
+    const receiptExtract = await api("POST", `/api/workspaces/${blankWsId}/documents/extract`, {
+      docType: "delivery_receipt",
+      sourceLabel: "delivery_packing_slip",
+      rawText: `Delivery note\nSKU: SKU-FLOUR-001\nQty: 8`,
+      linkedOrderId: orderId,
+    });
+    expect(receiptExtract.status).toBe(201);
+
+    const receiptConfirm = await api(
+      "POST",
+      `/api/workspaces/${blankWsId}/documents/${receiptExtract.body.docId}/confirm`,
+      { decidedBy: "owner@bind.local", linkedOrderId: orderId }
+    );
+    expect(receiptConfirm.status).toBe(200);
+    expect(receiptConfirm.body.pending).toBe("AWAITING_SUPPLIER_BILL");
+    expect(receiptConfirm.body.reconciled).toBe(false);
+
     // 4. Negative 3-Way Match: Extract & Confirm a Vendor Bill with a price overcharge ($45.00 instead of $38.00)
     const badBillExtract = await api("POST", `/api/workspaces/${blankWsId}/documents/extract`, {
       docType: "supplier_bill",

@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import {
   SupplierAdapter,
   QuoteRequest,
@@ -15,7 +16,9 @@ export class SimulatedSupplierAdapter implements SupplierAdapter {
   ) {}
 
   async requestQuote(req: QuoteRequest): Promise<QuoteResponse> {
-    const quoteId = `quote_${this.supplierId}_${Date.now()}`;
+    // Unique per call: the supplier id is shared by every workspace, so a millisecond timestamp alone collides on quotes.id.
+    // quotes.id is VARCHAR(64); 12 hex characters keep the id shorter than the old timestamp form.
+    const quoteId = `quote_${this.supplierId}_${randomBytes(6).toString("hex")}`;
     const basePrices: Record<string, bigint> = {
       "FOOD-FLOUR-50LB": 2450n,
       "FOOD-MILK-CASE": 1680n,
