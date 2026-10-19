@@ -2,6 +2,7 @@ import { query } from "../db/client.js";
 import { WorkflowRecord, WorkflowState, WorkflowType, TransitionOptions } from "./types.js";
 import { EffectClass } from "../policy/effect-classifier.js";
 import { PolicyDecision } from "../policy/engine.js";
+import { newId } from "../utils/ids.js";
 
 function safeJsonStringify(obj: any): string {
   return JSON.stringify(obj, (_key, value) =>
@@ -133,7 +134,7 @@ export class WorkflowEngine {
     evidence: Record<string, any> = {},
     txHash?: string
   ): Promise<void> {
-    const auditId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const auditId = newId("audit");
     // Redact any potential private keys or sensitive tokens before logging
     const sanitizedEvidence = this.sanitizeEvidence(evidence);
 

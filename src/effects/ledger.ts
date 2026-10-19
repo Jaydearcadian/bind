@@ -141,7 +141,8 @@ function knownSecrets(): string[] {
   ].filter((secret): secret is string => typeof secret === "string" && secret.length > 0);
 }
 
-function boundedErrorMessage(err: unknown): string {
+/** The error text as it may be stored or audited: secrets redacted, at most 500 characters. */
+export function boundedErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   return redactSecrets(raw || "unknown error", knownSecrets()).slice(0, ERROR_MESSAGE_LIMIT);
 }

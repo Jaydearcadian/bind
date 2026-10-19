@@ -1,5 +1,6 @@
-import { randomUUID } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 import { z } from "zod";
+import { newId } from "../utils/ids.js";
 import { query } from "../db/client.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import { OrderSettlementService } from "../workflows/settlement.js";
@@ -148,7 +149,7 @@ export async function extractDocumentDraft(
 
   // 5. Extract Bill / Invoice Number
   const billMatch = text.match(/(?:Bill|Invoice|Receipt|Ref)\s*(?:#|No\.?|ID)?[:\s]*([A-Z0-9-_]{3,32})/i);
-  const billNumber = billMatch ? billMatch[1] : `DOC-${Date.now().toString().slice(-6)}`;
+  const billNumber = billMatch ? billMatch[1] : `DOC-${randomBytes(4).toString("hex").toUpperCase()}`;
 
   const extractedData = {
     docType: input.docType,
@@ -163,7 +164,7 @@ export async function extractDocumentDraft(
     provenance: "DOCUMENT_EXTRACTED" as const,
   };
 
-  const docId = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const docId = newId("doc");
   const res = await query(
     `INSERT INTO staged_documents (id, workspace_id, doc_type, source_label, raw_text, extracted_data, warnings, status, linked_order_id, created_at)
      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, 'staged_unconfirmed', $8, NOW())
@@ -247,7 +248,7 @@ export async function confirmStagedDocument(
   const totalPriceCents = Number(
     overrides.totalPriceCents ?? ext.totalPriceCents ?? Math.round(quantity * unitPriceCents)
   );
-  const billNumber = overrides.billNumber || ext.billNumber || `INV-${Date.now().toString().slice(-6)}`;
+  const billNumber = overrides.billNumber || ext.billNumber || `INV-${randomBytes(4).toString("hex").toUpperCase()}`;
   const linkedOrderId = overrides.linkedOrderId || doc.linked_order_id;
 
   if (!sku || quantity <= 0) {

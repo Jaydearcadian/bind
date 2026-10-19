@@ -46,6 +46,7 @@ export interface IdempotencyStore {
   execute<T>(key: string, workspaceId: string, scope: string, fn: () => Promise<T>): Promise<T>;
 }
 
+// No production caller. Kept only until the effects ledger (src/effects/ledger.ts) is the single mechanism (ADR 0020).
 export class MemoryIdempotencyStore implements IdempotencyStore {
   private locks = new Map<string, { lockedAt: Date; result?: any; status: "locked" | "completed" }>();
 
@@ -93,6 +94,7 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
   }
 }
 
+// No production caller. Kept only until the effects ledger (src/effects/ledger.ts) is the single mechanism (ADR 0020).
 export class PostgresIdempotencyStore implements IdempotencyStore {
   async acquireLock(key: string, workspaceId: string, scope: string): Promise<boolean> {
     try {

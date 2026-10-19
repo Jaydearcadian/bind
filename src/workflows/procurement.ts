@@ -18,6 +18,7 @@ import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import type { SettlementAdapter } from "../adapters/settlement/types.js";
 import { generateIdempotencyKey } from "../utils/idempotency.js";
 import { resolveTemplateDir } from "../agents/bindTemplateAgent.js";
+import { newId } from "../utils/ids.js";
 import { createReplenishmentTools } from "../agents/replenishmentTools.js";
 import { OrderSettlementService } from "./settlement.js";
 import type { EvidenceLoader, ReconcileResult } from "./settlement.js";
@@ -117,7 +118,7 @@ export class ProcurementWorkflowRunner {
       throw new Error(`Item '${item.name}' has sufficient stock (${currentQty} >= par ${parLevel}). No order needed.`);
     }
 
-    const workflowId = `wf_proc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const workflowId = newId("wf_proc");
     const idempotencyKey = generateIdempotencyKey(workspaceId, "procurement.replenish", { sku, currentQty });
 
     // 3. Create Workflow in DRAFT state

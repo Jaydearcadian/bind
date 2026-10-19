@@ -6,7 +6,9 @@ import { PolicyDecision } from "../policy/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
 import { authorizeCommitment, describeCommitmentDecision } from "../policy/commitment-gate.js";
 import { WorkflowEngine } from "../workflows/engine.js";
-import { notificationEmitter } from "../adapters/web2/notifications.js";
+import { sendApprovalNotification } from "../notifications/dispatch.js";
+import { boundedErrorMessage } from "../effects/ledger.js";
+import { newId } from "../utils/ids.js";
 import { CANONICAL_ARC_LOCK } from "./antiDriftWriter.js";
 import { generateVerifiableDecisionRecord } from "./bindTemplateAgent.js";
 import { evaluateWithJevSystemOne } from "../domain/jevScorer.js";
@@ -355,7 +357,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
          VALUES ($1, $2, $3, 'agent', 'procurement_agent', 'commercial_commitment', 'replenishment.propose', 'ALLOW', $4::jsonb, NOW());`,
         [
-          `audit_prop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          newId("audit_prop"),
           workspaceId,
           workflowId,
           JSON.stringify(proposalRecord),
@@ -475,15 +477,35 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         );
 
         const displayItemName = proposal.itemName || proposal.sku;
-        await notificationEmitter.send({
-          workspaceId,
-          channel: "whatsapp",
-          recipient: "+12125550199",
-          title: "⚠️ Bind Alert: Ingredient Restock Approval Required",
-          message: `Low stock detected on ${displayItemName}. Best quote from ${proposal.supplierName} is $${(Number(amountCents) / 100).toFixed(2)} USDC.`,
-          actionUrl: `http://127.0.0.1:3000/api/approvals/${approvalId}/approve`,
-          approvalToken: approvalId,
-        });
+        // The owner can still decide in the app if the message fails, so a notification problem never fails the
+        // approval. The send goes through the effects ledger, at most once (see docs/decisions/0020).
+        try {
+          await sendApprovalNotification({
+            workspaceId,
+            workflowId: targetWorkflowId,
+            approvalId,
+            payload: {
+              workspaceId,
+              channel: "whatsapp",
+              recipient: "+12125550199",
+              title: "⚠️ Bind Alert: Ingredient Restock Approval Required",
+              message: `Low stock detected on ${displayItemName}. Best quote from ${proposal.supplierName} is $${(Number(amountCents) / 100).toFixed(2)} USDC.`,
+              actionUrl: `http://127.0.0.1:3000/api/approvals/${approvalId}/approve`,
+              approvalToken: approvalId,
+            },
+          });
+        } catch (err) {
+          await workflowEngine.recordAudit(
+            workspaceId,
+            targetWorkflowId,
+            "system",
+            "system:notifications",
+            EffectClass.EXTERNAL_REQUEST,
+            "notification.failed",
+            PolicyDecision.ALLOW,
+            { approvalId, error: boundedErrorMessage(err) }
+          );
+        }
       } else {
         nextState = WorkflowState.AUTHORIZED;
       }

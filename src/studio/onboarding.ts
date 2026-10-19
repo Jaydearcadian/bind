@@ -6,6 +6,7 @@ import { getTemplate } from "../templates/registry.js";
 import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.js";
 import { CANONICAL_ARC_LOCK } from "../agents/antiDriftWriter.js";
 import { templatesArtifactsDir } from "../utils/artifacts.js";
+import { newId } from "../utils/ids.js";
 
 export const SAFE_AGENT_TOOLS = [
   "get_business_context",
@@ -296,7 +297,7 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
       `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
        VALUES ($1, $2, 'owner', 'owner@bind.local', 'commercial_commitment', 'workspace.onboard_configured', 'ALLOW', $3::jsonb, NOW());`,
       [
-        `audit_onboard_${Date.now()}`,
+        newId("audit_onboard"),
         input.workspaceId,
         JSON.stringify({
           provenance: "OWNER_CONFIRMED",
@@ -368,7 +369,7 @@ export async function upsertAgentRole(workspaceId: string, rawInput: unknown) {
     `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
      VALUES ($1, $2, 'owner', 'owner@bind.local', 'commercial_commitment', 'agent_role.configure', 'ALLOW', $3::jsonb, NOW());`,
     [
-      `audit_role_${Date.now()}`,
+      newId("audit_role"),
       workspaceId,
       JSON.stringify({
         provenance: "OWNER_CONFIRMED",

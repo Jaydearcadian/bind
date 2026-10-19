@@ -88,7 +88,8 @@ export class SimulatedSupplierAdapter implements SupplierAdapter {
 
   async generateDeliveryReceipt(orderId: string, sku: string, quantity: number) {
     return {
-      receiptId: `dr_${orderId}_${Date.now()}`,
+      // A new document is a new row, so the id is random. Eight hex characters keep it within VARCHAR(64).
+      receiptId: `dr_${orderId}_${randomBytes(4).toString("hex")}`,
       orderId,
       sku,
       receivedQuantity: quantity,
@@ -100,9 +101,9 @@ export class SimulatedSupplierAdapter implements SupplierAdapter {
   async generateBill(orderId: string, sku: string, quantity: number, unitPriceCents: bigint, vendorId?: string) {
     const billedTotalCents = unitPriceCents * BigInt(Math.round(quantity));
     return {
-      billId: `bill_${orderId}_${Date.now()}`,
+      billId: `bill_${orderId}_${randomBytes(4).toString("hex")}`,
       orderId,
-      billNumber: `INV-${Date.now().toString().slice(-6)}`,
+      billNumber: `INV-${randomBytes(4).toString("hex").toUpperCase()}`,
       vendorId: vendorId || this.supplierId,
       sku,
       billedQuantity: quantity,

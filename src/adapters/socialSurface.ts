@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { query } from "../db/client.js";
+import { newId } from "../utils/ids.js";
 
 export const SupportedSurfaceEnum = z.enum([
   "whatsapp",
@@ -156,7 +157,7 @@ export async function upsertSurfaceBinding(workspaceId: string, rawInput: unknow
     `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
      VALUES ($1, $2, 'owner', 'owner@bind.local', 'commercial_commitment', 'surface.bind_identity', 'ALLOW', $3::jsonb, NOW());`,
     [
-      `audit_surf_${Date.now()}`,
+      newId("audit_surf"),
       workspaceId,
       JSON.stringify({
         surface: input.surface,
