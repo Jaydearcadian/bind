@@ -74,6 +74,24 @@ Each is pinned by a named test in the task that owns the code (Tasks 1, 3, 4, 6,
 - [ ] **Step 4: Run** the new file and the full integration suite. Expected: PASS.
 - [ ] **Step 5: Commit** `fix(reconcile): settle and restock exactly once per order`.
 
+### Task 1b: One settlement path for reconcile and studio confirmation
+
+Task 1 made `fulfillAndReconcile` exactly-once. The studio document-confirm route (`confirmStagedDocument` in `src/studio/documentsAndAccounting.ts`) reaches a second, separate settlement path with the same double-pay and double-restock bug (recorded in `docs/decisions/0008-reconcile-exactly-once.md`).
+
+**Files:**
+- Modify: `src/studio/documentsAndAccounting.ts`, `src/workflows/procurement.ts`
+- Test: `tests/integration/studio-settle-once.test.ts`
+
+**Interfaces:**
+- Consumes: the claim, payee lookup and result shape from Task 1.
+- Produces: one shared function `settleMatchedOrder(orderId: string, matchedBy: "runner" | "studio"): Promise<ReconcileResult>` (name and home are the implementer's call; there must be exactly one place that claims an order, calls the settlement adapter, restocks, and posts the journal entry). Both entry points call it.
+
+- [ ] **Step 1: Failing tests:** `confirming a matching bill twice pays and restocks once`; `confirming through the studio and then reconciling through the runner pays once, in either order`; `concurrent studio confirm and runner reconcile on one order settle once`; `a bad bill then a good bill leaves the earlier discrepancy visible in the audit log or archive and settles once`; `a studio confirmation of an order in settling returns RECONCILE_IN_PROGRESS`.
+- [ ] **Step 2: Run.** Expected: FAIL.
+- [ ] **Step 3: Implement** by extracting the Task 1 claim-settle-finalise block into the shared function and deleting the studio path's own settlement code. Run `npm run map:functions` and confirm `getSettlementAdapter` has a single production call site chain.
+- [ ] **Step 4: Run** the full suite.
+- [ ] **Step 5: Commit** `fix(studio): one exactly-once settlement path for reconcile and document confirmation`.
+
 ### Task 2: Pay the verified supplier, not a hard-coded address
 
 **Files:**
