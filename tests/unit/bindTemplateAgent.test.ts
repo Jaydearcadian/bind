@@ -119,7 +119,8 @@ describe("Bind Template DeepAgent & Verifiable Decision Record", () => {
     const queryRes = await circleAdapter.queryVendorWhitelistStatus(WHITELISTED_VENDOR);
     expect(queryRes.command).toContain("whitelistedVendors");
     expect(queryRes.command).toContain(BIND_SETTLEMENT_CONTRACT);
-    expect(queryRes.rawOutput).toContain("true");
+    expect(queryRes.whitelisted).toBeNull();
+    expect(queryRes.executionMode).toBe("SIMULATED_NO_LIVE_CLI");
 
     // Check settlement fallback
     const settleRes = await circleAdapter.executeBindSettlement({
@@ -129,7 +130,8 @@ describe("Bind Template DeepAgent & Verifiable Decision Record", () => {
     });
     expect(settleRes.chain).toBe(ARC_TESTNET_CHAIN);
     expect(settleRes.contractAddress).toBe(BIND_SETTLEMENT_CONTRACT);
-    expect(settleRes.paymentStatus).toBe("SETTLED_ON_ARC_TESTNET");
+    expect(settleRes.paymentStatus).toBe("SIMULATED_LOCAL");
+    expect(settleRes.txHash).toBeUndefined();
     expect(settleRes.fulfilmentStatus).toBe("AWAITING_PHYSICAL_DELIVERY_3WAY_MATCH");
   });
 

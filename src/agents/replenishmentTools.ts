@@ -8,6 +8,7 @@ import { CANONICAL_ARC_LOCK } from "./antiDriftWriter.js";
 import { generateVerifiableDecisionRecord } from "./bindTemplateAgent.js";
 import { evaluateWithJevSystemOne } from "../domain/jevScorer.js";
 import { spendStatusesSql } from "../orders/statuses.js";
+import { classifyRequestEvidence } from "./evidence-classification.js";
 
 export interface ReplenishmentToolsContext {
   workspaceId: string;
@@ -605,8 +606,19 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         `SELECT settlement_mode FROM workspaces WHERE id = $1;`,
         [wf.workspace_id]
       );
-      const isArc = wsRes.rows[0]?.settlement_mode === "arc-testnet";
-      const evidenceClassification = isArc ? "VERIFIED_REMOTE" : "LOCAL_PASS";
+      const orderId = wf.context_data?.orderId;
+      let orderStatus: string | null = null;
+      if (typeof orderId === "string" && orderId.length > 0) {
+        const orderRes = await query(
+          `SELECT status FROM orders WHERE id = $1 AND workspace_id = $2;`,
+          [orderId, wf.workspace_id]
+        );
+        orderStatus = orderRes.rows[0]?.status ?? null;
+      }
+      const evidenceClassification = classifyRequestEvidence({
+        settlementMode: wsRes.rows[0]?.settlement_mode ?? "",
+        orderStatus,
+      });
 
       return JSON.stringify({
         requestId: wf.id,
