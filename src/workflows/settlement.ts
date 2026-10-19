@@ -4,6 +4,7 @@ import { WorkflowEngine } from "./engine.js";
 import { WorkflowState } from "./types.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
+import { EffectInDoubtError, runEffect } from "../effects/ledger.js";
 import type { SettlementAdapter, TransferResult } from "../adapters/settlement/types.js";
 import { SettlementRejectedError } from "../adapters/settlement/errors.js";
 import { evaluateThreeWayMatch, MatchStatus } from "../accounting/three-way-match.js";
@@ -15,6 +16,8 @@ import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
  * The three payment codes mean the order is held in `payment_hold`: the match passed, but no payee or payer
  * is verified, so nothing is paid or restocked until the record is fixed. SETTLEMENT_REJECTED and
  * SETTLEMENT_FAILED also end in `payment_hold`: the adapter refused the payment, or the transfer reverted.
+ * SETTLEMENT_OUTCOME_UNKNOWN ends in `payment_hold` too: an earlier transfer attempt may have moved money and
+ * the adapter cannot show whether it did, so the transfer is not sent again.
  */
 export type ReconcileHold =
   | "RECONCILE_IN_PROGRESS"
@@ -22,7 +25,8 @@ export type ReconcileHold =
   | "SUPPLIER_PAYMENT_ADDRESS_MISSING"
   | "WORKSPACE_SETTLEMENT_ADDRESS_MISSING"
   | "SETTLEMENT_REJECTED"
-  | "SETTLEMENT_FAILED";
+  | "SETTLEMENT_FAILED"
+  | "SETTLEMENT_OUTCOME_UNKNOWN";
 
 /** The statuses a settlement claim can take the order from; the claim restores the one it replaced. */
 type ClaimableStatus = "confirmed" | "payment_hold";
@@ -589,22 +593,57 @@ export class OrderSettlementService {
     const settlementAdapter = this.settlementFor(workspace.settlement_mode);
     const matchHash = keccak256(encodePacked(["string", "string", "string"], [order.id, receipt.receiptId, bill.billId]));
 
+    // The transfer runs through the effects ledger, so a retry never sends it a second time for this order.
+    // When the adapter can look transfers up, a retry after an unknown outcome adopts the transfer it finds.
+    const lookup = settlementAdapter.findTransfer?.bind(settlementAdapter);
+    const paymentRequest = {
+      fromAddress: workspace.settlement_address,
+      toAddress: supplier.payment_address,
+      amountCents: matchResult.payableAmountCents,
+      currency: "USDC",
+      orderId: order.id,
+      idempotencyKey: `idem_pay_${order.id}`,
+      matchHash,
+    };
     let transfer: TransferResult;
     try {
-      transfer = await settlementAdapter.transferUSDC({
-        fromAddress: workspace.settlement_address,
-        toAddress: supplier.payment_address,
-        amountCents: matchResult.payableAmountCents,
-        currency: "USDC",
-        orderId: order.id,
-        idempotencyKey: `idem_pay_${order.id}`,
-        matchHash,
-      });
+      ({ result: transfer } = await runEffect<TransferResult>(
+        {
+          workspaceId: order.workspace_id,
+          effectClass: EffectClass.COMMERCIAL_COMMITMENT,
+          operation: "settlement.transfer_usdc",
+          idempotencyKey: `${order.workspace_id}:settle:${order.id}`,
+          request: paymentRequest,
+        },
+        () => settlementAdapter.transferUSDC(paymentRequest),
+        {
+          reconcile: lookup
+            ? async () => {
+                const found = await lookup({ orderId: order.id });
+                return found ? { found: true, result: found, externalRef: found.txHash } : { found: false };
+              }
+            : undefined,
+          externalRef: (t) => t.txHash,
+        }
+      ));
     } catch (err) {
-      if (!(err instanceof SettlementRejectedError)) throw err;
-      // The contract or the request refused the payment, so no transfer was made.
-      await this.holdClaim(order, "settlement.rejected", { orderId: order.id, code: err.code });
-      return { status: MatchStatus.MATCHED, reconciled: false, hold: "SETTLEMENT_REJECTED" };
+      if (err instanceof SettlementRejectedError) {
+        // The contract or the request refused the payment, so no transfer was made.
+        await this.holdClaim(order, "settlement.rejected", { orderId: order.id, code: err.code });
+        return { status: MatchStatus.MATCHED, reconciled: false, hold: "SETTLEMENT_REJECTED" };
+      }
+      if (err instanceof EffectInDoubtError) {
+        // An earlier attempt may have moved the money. Hold the order and do not call the adapter again.
+        // The evidence carries the effect id and attempts, never a transaction hash.
+        await this.holdClaim(order, "settlement.in_doubt", {
+          orderId: order.id,
+          hold: "SETTLEMENT_OUTCOME_UNKNOWN",
+          effectId: err.effectId,
+          attempts: err.attempts,
+        });
+        return { status: MatchStatus.MATCHED, reconciled: false, hold: "SETTLEMENT_OUTCOME_UNKNOWN" };
+      }
+      throw err;
     }
     progress.paid = true;
 

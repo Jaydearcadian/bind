@@ -23,9 +23,16 @@ class CountingSettlementAdapter implements SettlementAdapter {
   readonly idempotencyKeys: string[] = [];
   failNextTransfers = 0;
   delayMs = 0;
+  /** Transfers this adapter actually made, by order id. An outage throws before anything is recorded here. */
+  private readonly madeByOrder = new Map<string, TransferResult>();
 
   async getBalance(): Promise<bigint> {
     return 1_000_000n;
+  }
+
+  /** Answers "did you make this transfer": the transfer made for the order, or null when none was made. */
+  async findTransfer(req: { orderId: string }): Promise<TransferResult | null> {
+    return this.madeByOrder.get(req.orderId) ?? null;
   }
 
   async transferUSDC(req: TransferRequest): Promise<TransferResult> {
@@ -39,7 +46,9 @@ class CountingSettlementAdapter implements SettlementAdapter {
       throw new Error("simulated settlement outage");
     }
     const txHash = `0x${crypto.createHash("sha256").update(req.idempotencyKey).digest("hex")}`;
-    return { txHash, status: "submitted", timestamp: new Date(), mode: "local", simulated: true };
+    const made: TransferResult = { txHash, status: "submitted", timestamp: new Date(), mode: "local", simulated: true };
+    if (!this.madeByOrder.has(req.orderId)) this.madeByOrder.set(req.orderId, made);
+    return made;
   }
 
   async confirm(txHash: string): Promise<TransferResult> {

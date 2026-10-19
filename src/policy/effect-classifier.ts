@@ -37,13 +37,14 @@ const OPERATION_EFFECT_MAP: Record<string, EffectClass> = {
  * Fails closed if the operation is unrecognized.
  */
 export function classifyOperation(operationName: string): EffectClass {
-  const effect = OPERATION_EFFECT_MAP[operationName];
-  if (!effect) {
+  // Only the declared names classify. A plain object inherits names such as `constructor` and `__proto__`, so
+  // a lookup without an own-property check would return an inherited value instead of failing closed.
+  if (!Object.hasOwn(OPERATION_EFFECT_MAP, operationName)) {
     throw new Error(
       `Unrecognized operation '${operationName}'. Must be explicitly declared in effect classification map.`
     );
   }
-  return effect;
+  return OPERATION_EFFECT_MAP[operationName];
 }
 
 /**

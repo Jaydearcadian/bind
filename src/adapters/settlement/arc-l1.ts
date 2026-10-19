@@ -28,6 +28,7 @@ import {
   SettlementNotSupportedError,
   SettlementPayerMismatchError,
   SettlementRejectedError,
+  SettlementTransportError,
   transportErrorFrom,
 } from "./errors.js";
 import { BIND_SETTLEMENT_ABI } from "./bind-settlement.abi.js";
@@ -286,6 +287,25 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
     return this.#result(hash, "confirmed", { blockNumber });
   }
 
+  /**
+   * Looks up the settlement made for an order id, from the deploy block to the latest block. A
+   * SettlementExecuted log is emitted only by a successful transaction, so a log found here is a confirmed
+   * transfer and is returned as `confirmed` with its real hash and block. No log means no settlement has been
+   * mined for the order, and null is returned. That is not proof that nothing is in flight: a transaction that
+   * was sent but is not yet mined has no log. That is safe only because the contract refuses a second
+   * settleOrder for the same order id (OrderAlreadySettled). See docs/decisions/0019-settlement-through-the-ledger.md.
+   * An RPC failure throws; it is never reported as null.
+   */
+  async findTransfer(req: { orderId: string }): Promise<TransferResult | null> {
+    const contractAddress = this.#contractAddress();
+    const log = await this.#findSettlement(contractAddress, keccak256(toHex(req.orderId)));
+    if (!log) return null;
+    if (!log.transactionHash) {
+      throw new SettlementTransportError("settlement lookup", "the settlement log has no transaction hash");
+    }
+    return this.#result(log.transactionHash, "confirmed", log.blockNumber === null ? {} : { blockNumber: Number(log.blockNumber) });
+  }
+
   async depositEscrow(_req: TransferRequest, _milestoneId: string): Promise<TransferResult> {
     throw new SettlementNotSupportedError("depositEscrow");
   }
@@ -330,8 +350,8 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
       throw new SettlementRejectedError(decoded.errorName, decoded.args);
     }
     const earlier = await this.#findSettlement(contractAddress, orderId32);
-    if (!earlier) throw new SettlementRejectedError("OrderAlreadySettled");
-    return this.#result(earlier, "submitted");
+    if (!earlier?.transactionHash) throw new SettlementRejectedError("OrderAlreadySettled");
+    return this.#result(earlier.transactionHash, "submitted");
   }
 
   #contractAddress(): Address {
@@ -383,8 +403,14 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
     return item as AbiEvent;
   }
 
-  /** Recovers the transaction hash of the settlement that already paid this order id. Scans from the deploy block. */
-  async #findSettlement(contractAddress: Address, orderId32: Hex): Promise<Hex | undefined> {
+  /**
+   * The SettlementExecuted log of the settlement that paid this order id, scanned from the deploy block to the
+   * latest block. Undefined when there is none. An RPC failure throws, so it is never read as "no settlement".
+   */
+  async #findSettlement(
+    contractAddress: Address,
+    orderId32: Hex
+  ): Promise<{ transactionHash: Hex | null; blockNumber: bigint | null } | undefined> {
     let logs: Awaited<ReturnType<PublicClient["getLogs"]>>;
     try {
       logs = await this.#publicClient.getLogs({
@@ -396,7 +422,9 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
     } catch (error) {
       throw transportErrorFrom("settlement lookup", error, this.#secrets());
     }
-    return logs[0]?.transactionHash ?? undefined;
+    const log = logs[0];
+    if (!log) return undefined;
+    return { transactionHash: log.transactionHash, blockNumber: log.blockNumber };
   }
 
   async #pollReceipt(hash: Hex): Promise<TransactionReceipt | undefined> {

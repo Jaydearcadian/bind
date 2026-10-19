@@ -26,6 +26,12 @@ export interface SettlementAdapter {
   getBalance(address: string): Promise<bigint>;
   transferUSDC(req: TransferRequest): Promise<TransferResult>;
   confirm(txHash: string): Promise<TransferResult>;
+  /**
+   * Looks up the transfer made for an order id. Returns null when this adapter has no settlement for that
+   * order. Throws when the answer is unknown (for example an RPC failure): it never returns null for that.
+   * Optional: an adapter without it cannot reconcile a transfer whose outcome is unknown.
+   */
+  findTransfer?(req: { orderId: string }): Promise<TransferResult | null>;
   depositEscrow(req: TransferRequest, milestoneId: string): Promise<TransferResult>;
   releaseEscrow(milestoneId: string, toAddress: string): Promise<TransferResult>;
 }

@@ -56,3 +56,60 @@ describe("LocalSettlementSimulator", () => {
     expect(await sim.getBalance(SUPPLIER)).toBe(500000n);
   });
 });
+
+describe("LocalSettlementSimulator idempotency and transfer lookup", () => {
+  const request = (overrides: Partial<{ amountCents: bigint; orderId: string; idempotencyKey: string }> = {}) => ({
+    fromAddress: TREASURY,
+    toAddress: SUPPLIER,
+    amountCents: 100n,
+    currency: "USDC",
+    orderId: "ord_idem_1",
+    idempotencyKey: "idem_pay_ord_idem_1",
+    ...overrides,
+  });
+
+  it("the same idempotency key moves money once", async () => {
+    const sim = new LocalSettlementSimulator();
+    const first = await sim.transferUSDC(request());
+    const second = await sim.transferUSDC(request());
+
+    expect(second).toEqual(first);
+    expect(await sim.getBalance(TREASURY)).toBe(1000000n - 100n);
+    expect(await sim.getBalance(SUPPLIER)).toBe(100n);
+  });
+
+  it("a failed insufficient-balance attempt is not remembered", async () => {
+    const sim = new LocalSettlementSimulator();
+    const key = "idem_pay_ord_idem_retry";
+    await expect(sim.transferUSDC(request({ amountCents: 999_999_999n, orderId: "ord_idem_retry", idempotencyKey: key }))).rejects.toThrow(
+      /Insufficient USDC balance/
+    );
+    expect(await sim.findTransfer({ orderId: "ord_idem_retry" })).toBeNull();
+
+    // The same key, with an amount the treasury can pay, is a new attempt and moves the money.
+    const sent = await sim.transferUSDC(request({ amountCents: 100n, orderId: "ord_idem_retry", idempotencyKey: key }));
+    expect(sent.status).toBe("submitted");
+    expect(await sim.getBalance(TREASURY)).toBe(1000000n - 100n);
+    expect(await sim.getBalance(SUPPLIER)).toBe(100n);
+  });
+
+  it("findTransfer returns the remembered transfer and null for an unknown order", async () => {
+    const sim = new LocalSettlementSimulator();
+    expect(await sim.findTransfer({ orderId: "ord_idem_lookup" })).toBeNull();
+
+    const sent = await sim.transferUSDC(request({ orderId: "ord_idem_lookup", idempotencyKey: "idem_pay_ord_idem_lookup" }));
+
+    expect(await sim.findTransfer({ orderId: "ord_idem_lookup" })).toEqual(sent);
+    expect(await sim.findTransfer({ orderId: "ord_idem_unknown" })).toBeNull();
+  });
+
+  it("a second key for an order that is already settled returns the earlier transfer and moves nothing", async () => {
+    // The Arc contract refuses a second settlement of one order id. The simulator does the same.
+    const sim = new LocalSettlementSimulator();
+    const first = await sim.transferUSDC(request({ orderId: "ord_idem_twice", idempotencyKey: "idem_a" }));
+    const second = await sim.transferUSDC(request({ orderId: "ord_idem_twice", idempotencyKey: "idem_b" }));
+
+    expect(second.txHash).toBe(first.txHash);
+    expect(await sim.getBalance(TREASURY)).toBe(1000000n - 100n);
+  });
+});
