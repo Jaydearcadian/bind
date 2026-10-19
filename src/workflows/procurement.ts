@@ -412,6 +412,8 @@ export class ProcurementWorkflowRunner {
    * call can be retried; nothing has been restocked or journaled at that point.
    */
   async fulfillAndReconcile(orderId: string): Promise<ReconcileResult> {
+    // Task 5/10 recovery: an order left in `settling` after a crash or a failed
+    // finalising step has no automatic recovery yet; it holds as RECONCILE_IN_PROGRESS.
     const claimRes = await query(
       `UPDATE orders SET status = 'settling', updated_at = NOW()
        WHERE id = $1 AND status = 'confirmed'
@@ -429,7 +431,16 @@ export class ProcurementWorkflowRunner {
         return this.storedReconcileResult(current);
       }
       if (current.status === "settling") {
-        return { status: MatchStatus.MATCHED, reconciled: false, hold: "RECONCILE_IN_PROGRESS" };
+        // Report the stored match outcome if there is one. MatchStatus.UNMATCHED is the
+        // "no match evaluated yet" value, so a hold never claims MATCHED on its own.
+        const matchRes = await query(`SELECT match_status FROM three_way_matches WHERE order_id = $1;`, [
+          current.id,
+        ]);
+        return {
+          status: (matchRes.rows[0]?.match_status as MatchStatus) ?? MatchStatus.UNMATCHED,
+          reconciled: false,
+          hold: "RECONCILE_IN_PROGRESS",
+        };
       }
       throw new Error(`Order '${orderId}' is in status '${current.status}' and cannot be reconciled.`);
     }
@@ -443,11 +454,16 @@ export class ProcurementWorkflowRunner {
       // after a successful transfer the order stays `settling` (a visible hold)
       // rather than being offered for a second payment.
       if (!progress.paid) {
-        await query(
-          `UPDATE orders SET status = 'confirmed', updated_at = NOW()
-           WHERE id = $1 AND status = 'settling';`,
-          [order.id]
-        );
+        try {
+          await query(
+            `UPDATE orders SET status = 'confirmed', updated_at = NOW()
+             WHERE id = $1 AND status = 'settling';`,
+            [order.id]
+          );
+        } catch (releaseErr) {
+          // Never mask the original failure. The order stays `settling` (held).
+          console.error(`Could not release settlement claim on order '${order.id}':`, releaseErr);
+        }
       }
       throw err;
     }
@@ -468,7 +484,7 @@ export class ProcurementWorkflowRunner {
 
     // Delivery receipt: reuse the stored one when a previous attempt already ingested it.
     const storedReceipt = await query(
-      `SELECT * FROM delivery_receipts WHERE order_id = $1 ORDER BY received_at ASC, id ASC LIMIT 1;`,
+      `SELECT * FROM delivery_receipts WHERE order_id = $1 ORDER BY received_at DESC, id DESC LIMIT 1;`,
       [order.id]
     );
     let receipt: { receiptId: string; receivedQuantity: number };
@@ -494,7 +510,7 @@ export class ProcurementWorkflowRunner {
 
     // Supplier bill: same rule.
     const storedBill = await query(
-      `SELECT * FROM supplier_bills WHERE order_id = $1 ORDER BY received_at ASC, id ASC LIMIT 1;`,
+      `SELECT * FROM supplier_bills WHERE order_id = $1 ORDER BY received_at DESC, id DESC LIMIT 1;`,
       [order.id]
     );
     let bill: {
@@ -579,7 +595,13 @@ export class ProcurementWorkflowRunner {
     await query(
       `INSERT INTO three_way_matches (id, order_id, delivery_receipt_id, supplier_bill_id, match_status, variance_cents, notes, matched_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-       ON CONFLICT (order_id) DO NOTHING;`,
+       ON CONFLICT (order_id) DO UPDATE SET
+         delivery_receipt_id = EXCLUDED.delivery_receipt_id,
+         supplier_bill_id = EXCLUDED.supplier_bill_id,
+         match_status = EXCLUDED.match_status,
+         variance_cents = EXCLUDED.variance_cents,
+         notes = EXCLUDED.notes,
+         matched_at = NOW();`,
       [
         `match_${order.id}`,
         order.id,
@@ -613,6 +635,13 @@ export class ProcurementWorkflowRunner {
       idempotencyKey: `idem_pay_${order.id}`,
     });
     progress.paid = true;
+
+    // Make the payment durable on the claimed row before the finalising step, so a
+    // failure from here on leaves `settling` with the tx hash recorded.
+    await query(`UPDATE orders SET tx_hash = $1, updated_at = NOW() WHERE id = $2 AND status = 'settling';`, [
+      transferRes.txHash,
+      order.id,
+    ]);
 
     // Record the payment and restock in one transaction, and only if this call still
     // holds the claim, so restock cannot happen twice.

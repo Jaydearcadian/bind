@@ -6,6 +6,7 @@ import { provisionWorkspace } from "../../src/templates/registry.js";
 import { ProcurementWorkflowRunner } from "../../src/workflows/procurement.js";
 import { MatchStatus } from "../../src/accounting/three-way-match.js";
 import { WorkflowState } from "../../src/workflows/types.js";
+import { getSupplierAdapter } from "../../src/adapters/suppliers/index.js";
 import type {
   SettlementAdapter,
   TransferRequest,
@@ -145,11 +146,16 @@ describe("Reconcile exactly once", () => {
     const values = results.map((r) => (r as PromiseFulfilledResult<Awaited<ReturnType<typeof runner.fulfillAndReconcile>>>).value);
     expect(settlement.transferCalls).toBe(1);
 
-    const winners = values.filter((v) => v.reconciled && !v.alreadyReconciled);
+    // The adapter holds the claim for 150ms, so every other caller sees `settling`.
+    const winners = values.filter((v) => v.reconciled);
+    const losers = values.filter((v) => !v.reconciled);
     expect(winners.length).toBe(1);
-    for (const loser of values.filter((v) => v !== winners[0])) {
-      expect(loser.reconciled === true ? loser.alreadyReconciled : loser.hold).toBeTruthy();
-      if (!loser.reconciled) expect(loser.hold).toBe("RECONCILE_IN_PROGRESS");
+    expect(winners[0].alreadyReconciled).toBeUndefined();
+    expect(losers.length).toBe(4);
+    for (const loser of losers) {
+      expect(loser).toMatchObject({ reconciled: false, hold: "RECONCILE_IN_PROGRESS" });
+      expect(loser.txHash).toBeUndefined();
+      expect(loser.alreadyReconciled).toBeUndefined();
     }
 
     expect(await stockOf(wsId)).toBe(startingStock + received);
@@ -202,5 +208,133 @@ describe("Reconcile exactly once", () => {
     expect(matches.rows.length).toBe(1);
     expect(matches.rows[0].id).toBe(`match_${orderId}`);
     expect(matches.rows[0].match_status).toBe(MatchStatus.MATCHED);
+  });
+
+  it("a caller arriving while settlement is in flight gets the exact hold shape", async () => {
+    const { orderId } = await confirmedOrder();
+    settlement.delayMs = 300;
+
+    const winner = runner.fulfillAndReconcile(orderId);
+    while (settlement.transferCalls === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    // The match row was stored before the adapter was called, so it is reported.
+    const during = await runner.fulfillAndReconcile(orderId);
+    expect(during).toEqual({ status: MatchStatus.MATCHED, reconciled: false, hold: "RECONCILE_IN_PROGRESS" });
+    await winner;
+    expect(settlement.transferCalls).toBe(1);
+  });
+
+  it("a hold with no stored match row does not claim MATCHED", async () => {
+    const { orderId } = await confirmedOrder();
+    await query(`UPDATE orders SET status = 'settling' WHERE id = $1;`, [orderId]);
+    const result = await runner.fulfillAndReconcile(orderId);
+    expect(result).toEqual({ status: MatchStatus.UNMATCHED, reconciled: false, hold: "RECONCILE_IN_PROGRESS" });
+    expect(settlement.transferCalls).toBe(0);
+  });
+
+  it("releases the claim after a non-MATCHED result and pays nothing", async () => {
+    const { wsId, orderId, startingStock } = await confirmedOrder();
+    const base = getSupplierAdapter("supp-sysco-metro");
+    const overbilling = Object.assign(Object.create(base), {
+      generateBill: async (...args: Parameters<typeof base.generateBill>) => {
+        const bill = await base.generateBill(...args);
+        return {
+          ...bill,
+          billedUnitPriceCents: bill.billedUnitPriceCents + 100n,
+          billedTotalCents: (bill.billedUnitPriceCents + 100n) * BigInt(Math.round(bill.billedQuantity)),
+        };
+      },
+    });
+    const mismatchRunner = new ProcurementWorkflowRunner({
+      settlementFor: () => settlement,
+      supplierFor: () => overbilling,
+    });
+
+    const result = await mismatchRunner.fulfillAndReconcile(orderId);
+    expect(result).toEqual({ status: MatchStatus.PRICE_DISCREPANCY, reconciled: false });
+    expect(settlement.transferCalls).toBe(0);
+    const order = await query(`SELECT status, tx_hash FROM orders WHERE id = $1;`, [orderId]);
+    expect(order.rows[0].status).toBe("confirmed");
+    expect(order.rows[0].tx_hash).toBeNull();
+    expect(await stockOf(wsId)).toBe(startingStock);
+  });
+
+  it("refuses an order that is not confirmed, settling or reconciled, and an unknown order", async () => {
+    const { orderId } = await confirmedOrder();
+    await query(`UPDATE orders SET status = 'cancelled' WHERE id = $1;`, [orderId]);
+    await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow(/status 'cancelled' and cannot be reconciled/);
+    await expect(runner.fulfillAndReconcile("ord_does_not_exist")).rejects.toThrow(/not found/);
+    expect(settlement.transferCalls).toBe(0);
+    const order = await query(`SELECT status FROM orders WHERE id = $1;`, [orderId]);
+    expect(order.rows[0].status).toBe("cancelled");
+  });
+
+  it("uses the latest receipt on retry and records the latest match", async () => {
+    const { orderId, received } = await confirmedOrder();
+    settlement.failNextTransfers = 1;
+    await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow(/simulated settlement outage/);
+
+    await query(
+      `INSERT INTO delivery_receipts (id, order_id, received_quantity, received_at, condition_notes, discrepancy_reported)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '1 minute', 'short delivery', TRUE);`,
+      [`dr_late_${orderId}`, orderId, received - 1]
+    );
+    const retry = await runner.fulfillAndReconcile(orderId);
+    expect(retry).toEqual({ status: MatchStatus.QUANTITY_DISCREPANCY, reconciled: false });
+    expect(settlement.transferCalls).toBe(1); // only the failed first attempt
+    const match = await query(`SELECT match_status FROM three_way_matches WHERE order_id = $1;`, [orderId]);
+    expect(match.rows.length).toBe(1);
+    expect(match.rows[0].match_status).toBe(MatchStatus.QUANTITY_DISCREPANCY);
+  });
+
+  it("keeps the order settling with the payment recorded when the finalising step fails", async () => {
+    const { wsId, orderId, startingStock } = await confirmedOrder();
+    await query(`
+      CREATE OR REPLACE FUNCTION test_block_restock() RETURNS trigger AS $f$
+      BEGIN RAISE EXCEPTION 'simulated database failure after payment'; END;
+      $f$ LANGUAGE plpgsql;`);
+    await query(
+      `CREATE TRIGGER test_block_restock BEFORE UPDATE ON inventory_items
+       FOR EACH ROW WHEN (NEW.workspace_id = '${wsId}') EXECUTE FUNCTION test_block_restock();`
+    );
+    try {
+      await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow(/simulated database failure after payment/);
+    } finally {
+      await query(`DROP TRIGGER IF EXISTS test_block_restock ON inventory_items;`);
+      await query(`DROP FUNCTION IF EXISTS test_block_restock();`);
+    }
+
+    const expectedHash = `0x${crypto.createHash("sha256").update(`idem_pay_${orderId}`).digest("hex")}`;
+    const order = await query(`SELECT status, tx_hash FROM orders WHERE id = $1;`, [orderId]);
+    expect(order.rows[0].status).toBe("settling");
+    expect(order.rows[0].tx_hash).toBe(expectedHash);
+    expect(await stockOf(wsId)).toBe(startingStock);
+
+    const again = await runner.fulfillAndReconcile(orderId);
+    expect(again).toEqual({ status: MatchStatus.MATCHED, reconciled: false, hold: "RECONCILE_IN_PROGRESS" });
+    expect(settlement.transferCalls).toBe(1);
+  });
+
+  it("rethrows the settlement error even when releasing the claim also fails", async () => {
+    const { orderId } = await confirmedOrder();
+    settlement.failNextTransfers = 1;
+    await query(`
+      CREATE OR REPLACE FUNCTION test_block_release() RETURNS trigger AS $f$
+      BEGIN RAISE EXCEPTION 'release blocked'; END;
+      $f$ LANGUAGE plpgsql;`);
+    await query(
+      `CREATE TRIGGER test_block_release BEFORE UPDATE ON orders
+       FOR EACH ROW WHEN (OLD.status = 'settling' AND NEW.status = 'confirmed' AND NEW.id = '${orderId}')
+       EXECUTE FUNCTION test_block_release();`
+    );
+    try {
+      await expect(runner.fulfillAndReconcile(orderId)).rejects.toThrow(/simulated settlement outage/);
+    } finally {
+      await query(`DROP TRIGGER IF EXISTS test_block_release ON orders;`);
+      await query(`DROP FUNCTION IF EXISTS test_block_release();`);
+    }
+    const order = await query(`SELECT status FROM orders WHERE id = $1;`, [orderId]);
+    expect(order.rows[0].status).toBe("settling");
   });
 });

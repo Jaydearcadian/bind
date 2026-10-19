@@ -251,10 +251,31 @@ CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_logs(workspace_id, creat
 CREATE INDEX IF NOT EXISTS idx_surface_bindings_ws ON surface_bindings(workspace_id, surface);
 CREATE INDEX IF NOT EXISTS idx_staged_docs_ws ON staged_documents(workspace_id, status);
 CREATE INDEX IF NOT EXISTS idx_journal_ws ON accounting_journal_entries(workspace_id, created_at DESC);
--- One match row per order. Earlier code generated a new id on every reconcile call, so
--- collapse any historical duplicates (keep the first recorded) before enforcing it.
+-- One match row per order, latest evaluation wins (same rule as the studio path).
+-- Earlier code generated a new id on every reconcile call. Before collapsing historical
+-- duplicates, copy every row about to be removed into an archive; evidence is never
+-- deleted without a copy. Re-running adds nothing (archive id is the primary key).
+CREATE TABLE IF NOT EXISTS three_way_matches_archive (
+    id VARCHAR(64) PRIMARY KEY,
+    order_id VARCHAR(64) NOT NULL,
+    delivery_receipt_id VARCHAR(64),
+    supplier_bill_id VARCHAR(64),
+    match_status TEXT NOT NULL,
+    variance_cents BIGINT NOT NULL DEFAULT 0,
+    notes TEXT,
+    matched_at TIMESTAMPTZ NOT NULL,
+    archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO three_way_matches_archive (id, order_id, delivery_receipt_id, supplier_bill_id, match_status, variance_cents, notes, matched_at)
+SELECT a.id, a.order_id, a.delivery_receipt_id, a.supplier_bill_id, a.match_status, a.variance_cents, a.notes, a.matched_at
+FROM three_way_matches a
+WHERE EXISTS (
+  SELECT 1 FROM three_way_matches b
+  WHERE b.order_id = a.order_id AND (b.matched_at, b.id) > (a.matched_at, a.id)
+)
+ON CONFLICT (id) DO NOTHING;
 DELETE FROM three_way_matches a
 USING three_way_matches b
 WHERE a.order_id = b.order_id
-  AND (a.matched_at, a.id) > (b.matched_at, b.id);
+  AND (b.matched_at, b.id) > (a.matched_at, a.id);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_three_way_matches_order ON three_way_matches(order_id);

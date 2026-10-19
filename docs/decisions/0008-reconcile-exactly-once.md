@@ -17,13 +17,17 @@ a timeout) paid the supplier again and restocked again, and only then failed on 
 - **Failure releases the claim.** If anything fails before the settlement adapter returns, or the match is
   not `MATCHED`, the order goes back to `confirmed`. Nothing has been restocked or journaled at that point.
   If a failure happens after the adapter returned a payment, the order is deliberately left `settling`
-  rather than offered for a second payment; recovering that case is a later task.
+  rather than offered for a second payment. The returned tx hash is written to the `settling` row
+  immediately after the adapter returns, so the payment stays on record. Recovery is Tasks 5 and 10.
+- `settling` counts toward the daily spend budget (three queries in `replenishmentTools.ts`).
 - **Pay record and restock in one transaction**, guarded by `status='settling'`, so restock cannot repeat.
 - **Receipts and bills are reused on retry.** The simulated supplier adapter makes ids with `Date.now()`,
   so a retry would otherwise insert a second receipt and bill. The runner now reads the stored ones first.
 - **One match row per order.** Id is `match_<orderId>` and a unique index on `three_way_matches(order_id)`
-  backs `ON CONFLICT DO NOTHING`. The migration first deletes historical duplicates (earliest kept),
-  because the old code generated a new id every call and the index could not otherwise be created.
+  backs `ON CONFLICT (order_id) DO UPDATE` (latest evaluation wins, same as the studio path). The migration
+  keeps the latest historical row per order and first copies every other row into
+  `three_way_matches_archive`, because the old code generated a new id every call and the index could not
+  otherwise be created.
 - **Constructor injection** of `settlementFor` and `supplierFor`, defaulting to the production factories.
 
 ## Studio document path

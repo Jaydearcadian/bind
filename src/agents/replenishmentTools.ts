@@ -30,13 +30,13 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
       }
       const ws = wsRes.rows[0];
 
-      // Calculate cumulative spend today from submitted, confirmed, or reconciled orders
+      // Calculate cumulative spend today from submitted, confirmed, settling, or reconciled orders
       const spendRes = await query(
         `SELECT COALESCE(SUM(total_price_cents), 0) AS daily_spent_cents
          FROM orders
          WHERE workspace_id = $1
            AND created_at >= CURRENT_DATE
-           AND status IN ('submitted', 'confirmed', 'reconciled');`,
+           AND status IN ('submitted', 'confirmed', 'settling', 'reconciled');`,
         [workspaceId]
       );
       const dailySpentCents = BigInt(spendRes.rows[0].daily_spent_cents || 0);
@@ -268,7 +268,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
          FROM orders
          WHERE workspace_id = $1
            AND created_at >= CURRENT_DATE
-           AND status IN ('submitted', 'confirmed', 'reconciled');`,
+           AND status IN ('submitted', 'confirmed', 'settling', 'reconciled');`,
         [workspaceId]
       );
       const dailySpentCents = BigInt(spendRes.rows[0]?.daily_spent_cents || 0);
@@ -420,7 +420,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
          FROM orders
          WHERE workspace_id = $1
            AND created_at >= CURRENT_DATE
-           AND status IN ('submitted', 'confirmed', 'reconciled');`,
+           AND status IN ('submitted', 'confirmed', 'settling', 'reconciled');`,
         [workspaceId]
       );
       const dailySpentCents = BigInt(spendRes.rows[0].daily_spent_cents || 0);
