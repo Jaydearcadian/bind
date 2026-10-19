@@ -38,9 +38,27 @@ describe("Approval lifecycle: decide once, expire, reject, revoke", () => {
     counter += 1;
     const wfId = `wf_appr_${run}_${counter}`;
     const approvalId = `appr_${run}_${counter}`;
+    const quote = quoteFor(`c${counter}`);
+    // The quote row the workflow refers to. The earlier fixture approved against a quote that did not exist; the
+    // approval-time commitment re-check reads the quote from the database, so the row must be there.
+    await query(
+      `INSERT INTO quotes (id, workspace_id, rfq_id, supplier_id, supplier_name, item_sku, quantity, unit_price_cents, total_price_cents, currency, valid_until)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'USDC', NOW() + INTERVAL '1 day');`,
+      [
+        quote.quoteId,
+        workspaceId,
+        quote.rfqId,
+        quote.supplierId,
+        quote.supplierName,
+        quote.sku,
+        quote.quantity,
+        quote.unitPriceCents,
+        quote.totalPriceCents,
+      ]
+    );
     await engine.createWorkflow(wfId, workspaceId, "kitchen_replenishment", `idem_appr_${run}_${counter}`, {
       itemName: "Organic All-Purpose Flour",
-      quote: quoteFor(`c${counter}`),
+      quote,
     });
     await engine.transition(wfId, {
       fromState: WorkflowState.DRAFT,

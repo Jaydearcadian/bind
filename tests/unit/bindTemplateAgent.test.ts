@@ -169,4 +169,39 @@ describe("Bind Template DeepAgent & Verifiable Decision Record", () => {
 
     expect(() => assertNoSpecDrift(driftedRecord)).toThrowError(/Contract address drifted/);
   });
+  it("renders an unchecked on-chain whitelist as 'not checked', never as true or false, and does not force an owner override", async () => {
+    const decision = await generateVerifiableDecisionRecord({
+      workflowId: "wf_test_null_whitelist",
+      templateId: "kitchen-ops",
+      skuName: "Organic Semolina Flour",
+      quantityRequested: 1,
+      candidateQuotes: [
+        {
+          vendorId: "v_unchecked",
+          vendorName: "Unchecked Supplier",
+          vendorWallet: "0x000000000000000000000000000000000000beef",
+          unitPriceUsdc: "1.0000",
+          totalPriceUsdc: "1.0000",
+          leadTimeDays: 1,
+          isWhitelistedOnChain: null,
+        },
+      ],
+      dailyLimitUsdc: "1.0",
+    });
+
+    expect(decision.selectedVendor.isWhitelistedOnChain).toBeNull();
+    expect(decision.onChainPolicyPreFlight.vendorWhitelisted).toBeNull();
+    expect(decision.onChainPolicyPreFlight.withinDailyLimit).toBe(true);
+    expect(decision.onChainPolicyPreFlight.requiresOwnerOverride).toBe(false);
+    if (decision.reasoningProvider === "deterministic-policy-engine") {
+      expect(decision.agentRationale).toContain("On-chain whitelist=not checked by Bind");
+      expect(decision.agentRationale).not.toContain("On-chain whitelist=true");
+      expect(decision.agentRationale).not.toContain("On-chain whitelist=false");
+    }
+
+    const { stateAnchorMarkdown } = await writeWorkflowAntiDriftFiles(decision);
+    expect(stateAnchorMarkdown).toContain("NOT_CHECKED_BY_BIND");
+    expect(stateAnchorMarkdown).not.toContain("UNWHITELISTED_0x65e822e9");
+    expect(stateAnchorMarkdown).not.toMatch(/Vendor Whitelist Check:\*\*\s*`PASS`/);
+  });
 });

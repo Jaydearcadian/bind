@@ -55,7 +55,7 @@ describe("Replenishment Tools & Open Template Discovery", () => {
       "Server recalculates all pricing in BigInt base units"
     );
     expect(tools.requestPolicyEvaluationTool.description).toContain(
-      "on-chain BindSettlement.sol policy"
+      "deterministic commitment gate"
     );
   });
 });

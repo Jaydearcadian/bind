@@ -3,6 +3,7 @@ import { WorkflowState } from "./types.js";
 import { query } from "../db/client.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
+import { authorizeCommitment, describeCommitmentDecision } from "../policy/commitment-gate.js";
 import { getSupplierAdapter } from "../adapters/suppliers/index.js";
 import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.js";
 import type { SupplierAdapter } from "../adapters/suppliers/types.js";
@@ -20,6 +21,9 @@ export interface ProcurementRunnerDeps {
 }
 
 export type { ReconcileResult } from "./settlement.js";
+
+/** Actor recorded when the approval-time re-check rejects an approval. */
+const POLICY_RECHECK_ACTOR = "system:policy-recheck";
 
 type ReceiptAndBill = Exclude<Awaited<ReturnType<EvidenceLoader>>, { pending: unknown }>;
 
@@ -297,6 +301,44 @@ export class ProcurementWorkflowRunner {
       throw new ApprovalDecisionError("APPROVAL_NOT_FOUND", `Approval '${approvalId}' not found.`);
     }
     const approval = apprRes.rows[0];
+    const waiting = await this.workflowEngine.getWorkflow(approval.entity_id);
+    const proposal = waiting?.contextData.replenishmentProposal || waiting?.contextData.quote;
+
+    // The approval was requested earlier. Limits, supplier status and quote expiry may have changed since, so
+    // the commitment is decided again from the database before anything is submitted. A pending approval
+    // that is still in its window is re-checked; any other state is refused by resolveApproval below.
+    const pending = approval.status === "pending" && new Date(approval.expires_at).getTime() > Date.now();
+    if (pending) {
+      // A waiting workflow with no stored proposal has no quote to check, so the gate denies it (QUOTE_NOT_FOUND).
+      const recheck = await authorizeCommitment({
+        workspaceId: approval.workspace_id,
+        workflowId: approval.entity_id,
+        actorRole: "procurement_agent",
+        supplierId: String(proposal?.supplierId ?? ""),
+        quoteId: String(proposal?.quoteId ?? ""),
+        quantity: Number(proposal?.quantity),
+        totalPriceCents: BigInt(proposal?.totalPriceCents ?? 0),
+      });
+      if (recheck.decision === PolicyDecision.DENY) {
+        // Cancels the waiting workflow in the same step as the rejection. No order and no supplier call follow.
+        await this.workflowEngine.resolveApproval(approvalId, "rejected", POLICY_RECHECK_ACTOR, recheck.reasonCodes.join(","));
+        await this.workflowEngine.recordAudit(
+          approval.workspace_id,
+          approval.entity_id,
+          "system",
+          POLICY_RECHECK_ACTOR,
+          EffectClass.COMMERCIAL_COMMITMENT,
+          "commitment.recheck",
+          PolicyDecision.DENY,
+          { approvalId, reasonCodes: recheck.reasonCodes, reason: describeCommitmentDecision(recheck), ...recheck.evidence }
+        );
+        throw new ApprovalDecisionError(
+          "POLICY_DENIED",
+          `Approval '${approvalId}' was refused: the commitment no longer passes policy. ${describeCommitmentDecision(recheck)}`,
+          recheck.reasonCodes
+        );
+      }
+    }
 
     const { workflowId } = await this.workflowEngine.resolveApproval(approvalId, "approved", decidedBy);
 

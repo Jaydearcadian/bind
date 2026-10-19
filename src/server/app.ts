@@ -48,7 +48,11 @@ const __dirname = path.dirname(__filename);
 function sendApprovalError(res: Response, err: any) {
   if (err instanceof ApprovalDecisionError) {
     const status = err.code === "APPROVAL_NOT_FOUND" ? 404 : 409;
-    return res.status(status).json({ error: err.message, code: err.code });
+    return res.status(status).json({
+      error: err.message,
+      code: err.code,
+      ...(err.reasonCodes ? { reasonCodes: err.reasonCodes } : {}),
+    });
   }
   return res.status(400).json({ error: err.message });
 }

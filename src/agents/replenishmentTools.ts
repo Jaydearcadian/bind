@@ -3,6 +3,9 @@ import { z } from "zod";
 import { query } from "../db/client.js";
 import { WorkflowState } from "../workflows/types.js";
 import { PolicyDecision } from "../policy/engine.js";
+import { EffectClass } from "../policy/effect-classifier.js";
+import { authorizeCommitment, describeCommitmentDecision } from "../policy/commitment-gate.js";
+import { WorkflowEngine } from "../workflows/engine.js";
 import { notificationEmitter } from "../adapters/web2/notifications.js";
 import { CANONICAL_ARC_LOCK } from "./antiDriftWriter.js";
 import { generateVerifiableDecisionRecord } from "./bindTemplateAgent.js";
@@ -17,6 +20,7 @@ export interface ReplenishmentToolsContext {
 
 export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
   const { workspaceId, workflowId } = ctx;
+  const workflowEngine = new WorkflowEngine();
 
   /**
    * Tool 1: get_business_context
@@ -388,13 +392,15 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
 
   /**
    * Tool 5: request_policy_evaluation
-   * Evaluates proposal against spending limits and on-chain BindSettlement.sol policy.
+   * Decides the proposal through the single commitment gate (src/policy/commitment-gate.ts). The model cannot
+   * change the decision: DENY fails the workflow, REQUIRE_APPROVAL asks the owner, ALLOW authorizes it.
    */
   const requestPolicyEvaluationTool = tool(
     async ({ requestId }: { requestId: string }) => {
       const targetWorkflowId = requestId || workflowId;
-      const wfRes = await query(`SELECT * FROM workflows WHERE id = $1;`, [
+      const wfRes = await query(`SELECT * FROM workflows WHERE id = $1 AND workspace_id = $2;`, [
         targetWorkflowId,
+        workspaceId,
       ]);
       if (wfRes.rows.length === 0) {
         throw new Error(`Workflow '${targetWorkflowId}' not found.`);
@@ -407,110 +413,65 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         );
       }
 
-      const wsRes = await query(`SELECT * FROM workspaces WHERE id = $1;`, [
-        workspaceId,
-      ]);
+      const wsRes = await query(`SELECT * FROM workspaces WHERE id = $1;`, [workspaceId]);
       const ws = wsRes.rows[0];
 
       const amountCents = BigInt(proposal.totalPriceCents);
-      const dailyLimitCents = BigInt(ws.budget_daily_limit_cents);
-      const approvalThresholdCents = BigInt(ws.approval_threshold_cents);
+      const decision = await authorizeCommitment({
+        workspaceId,
+        workflowId: targetWorkflowId,
+        actorRole: "procurement_agent",
+        supplierId: proposal.supplierId,
+        quoteId: proposal.quoteId,
+        quantity: proposal.quantity,
+        totalPriceCents: amountCents,
+        // Scorer or model escalation may only add an owner review, never allow a commitment.
+        ownerReviewRequested: Boolean(proposal.jevEvaluation?.holdForOwnerReview),
+      });
+      const auditEvidence = { ...decision.evidence, reasonCodes: decision.reasonCodes };
 
-      // Compute cumulative spend today
-      const spendRes = await query(
-        `SELECT COALESCE(SUM(total_price_cents), 0) AS daily_spent_cents
-         FROM orders
-         WHERE workspace_id = $1
-           AND created_at >= CURRENT_DATE
-           AND status IN (${spendStatusesSql()});`,
-        [workspaceId]
-      );
-      const dailySpentCents = BigInt(spendRes.rows[0].daily_spent_cents || 0);
-
-      // Check canonical agent_roles policy in PostgreSQL
-      const roleRes = await query(
-        `SELECT * FROM agent_roles WHERE workspace_id = $1 AND role_name = 'procurement_agent' LIMIT 1;`,
-        [workspaceId]
-      );
-      const procRole = roleRes.rows[0];
-      if (procRole) {
-        if (!procRole.enabled) {
-          const reason = `Role 'procurement_agent' is disabled for workspace '${workspaceId}'.`;
-          await query(
-            `UPDATE workflows SET state = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2;`,
-            [reason, targetWorkflowId]
-          );
-          return JSON.stringify({
-            requestId: targetWorkflowId,
-            policyDecision: "DENY",
-            workflowState: WorkflowState.FAILED,
-            reason,
-          });
-        }
-        const permittedEffects: string[] = procRole.permitted_effects || [];
-        if (!permittedEffects.includes("commercial_commitment")) {
-          const reason = `Role 'procurement_agent' does not have 'commercial_commitment' permission in workspace '${workspaceId}'.`;
-          await query(
-            `UPDATE workflows SET state = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2;`,
-            [reason, targetWorkflowId]
-          );
-          return JSON.stringify({
-            requestId: targetWorkflowId,
-            policyDecision: "DENY",
-            workflowState: WorkflowState.FAILED,
-            reason,
-          });
-        }
-      }
-
-      // Check against hard daily limit
-      if (dailySpentCents + amountCents > dailyLimitCents) {
+      if (decision.decision === PolicyDecision.DENY) {
+        const reason = describeCommitmentDecision(decision);
         await query(
-          `UPDATE workflows SET state = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2;`,
-          [
-            `Daily spend limit exceeded: attempting $${(Number(amountCents) / 100).toFixed(2)} when $${(Number(dailySpentCents) / 100).toFixed(2)} of $${(Number(dailyLimitCents) / 100).toFixed(2)} is already committed.`,
-            targetWorkflowId,
-          ]
+          `UPDATE workflows
+           SET state = 'failed', error_message = $1, context_data = context_data || $2::jsonb, updated_at = NOW()
+           WHERE id = $3;`,
+          [reason, JSON.stringify({ policyDecision: decision.decision, policyReasonCodes: decision.reasonCodes }), targetWorkflowId]
+        );
+        await workflowEngine.recordAudit(
+          workspaceId,
+          targetWorkflowId,
+          "agent",
+          "procurement_agent",
+          EffectClass.COMMERCIAL_COMMITMENT,
+          "commitment.evaluate",
+          PolicyDecision.DENY,
+          auditEvidence
         );
         return JSON.stringify({
           requestId: targetWorkflowId,
-          policyDecision: "DENY",
+          policyDecision: decision.decision,
           workflowState: WorkflowState.FAILED,
-          reason: `Spend ($${(Number(amountCents) / 100).toFixed(2)}) + today's spend ($${(Number(dailySpentCents) / 100).toFixed(2)}) exceeds daily limit ($${(Number(dailyLimitCents) / 100).toFixed(2)}).`,
+          reason,
+          reasonCodes: decision.reasonCodes,
         });
       }
 
-      // Check vendor whitelist against on-chain policy
-      const vendorWhitelisted =
-        proposal.supplierWallet.toLowerCase() ===
-        CANONICAL_ARC_LOCK.whitelistedVendor.toLowerCase();
-
-      // Model/scorer confidence may ONLY escalate to owner review, never grant financial authority
-      const jevHoldRequired = Boolean(proposal.jevEvaluation?.holdForOwnerReview);
-      const roleLimitCents = procRole ? BigInt(procRole.spending_limit_cents || 0) : approvalThresholdCents;
-      const exceedsRoleOrWorkspaceGate =
-        amountCents > approvalThresholdCents || (roleLimitCents > 0n && amountCents > roleLimitCents);
-
+      const policyDecision = decision.decision;
       let nextState: WorkflowState;
-      let policyDecision: PolicyDecision;
       let approvalId: string | undefined = undefined;
 
-      if (exceedsRoleOrWorkspaceGate || !vendorWhitelisted || jevHoldRequired) {
-        policyDecision = PolicyDecision.REQUIRE_APPROVAL;
+      if (policyDecision === PolicyDecision.REQUIRE_APPROVAL) {
         nextState = WorkflowState.AWAITING_APPROVAL;
         approvalId = `appr_${targetWorkflowId}`;
-
-        await query(
-          `INSERT INTO approvals (id, workspace_id, entity_type, entity_id, action_requested, amount_cents, requester_role, status, expires_at, created_at)
-           VALUES ($1, $2, 'order', $3, $4, $5, 'procurement_agent', 'pending', NOW() + INTERVAL '24 hours', NOW())
-           ON CONFLICT (id) DO NOTHING;`,
-          [
-            approvalId,
-            workspaceId,
-            targetWorkflowId,
-            `Purchase ${proposal.quantity}x ${proposal.itemName || proposal.sku} from ${proposal.supplierName} for $${(Number(amountCents) / 100).toFixed(2)} USDC`,
-            amountCents,
-          ]
+        await workflowEngine.createApproval(
+          approvalId,
+          workspaceId,
+          "order",
+          targetWorkflowId,
+          `Purchase ${proposal.quantity}x ${proposal.itemName || proposal.sku} from ${proposal.supplierName} for $${(Number(amountCents) / 100).toFixed(2)} USDC`,
+          amountCents,
+          "procurement_agent"
         );
 
         const displayItemName = proposal.itemName || proposal.sku;
@@ -524,7 +485,6 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
           approvalToken: approvalId,
         });
       } else {
-        policyDecision = PolicyDecision.ALLOW;
         nextState = WorkflowState.AUTHORIZED;
       }
 
@@ -542,10 +502,11 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
             unitPriceUsdc: (Number(proposal.unitPriceCents) / 100).toFixed(4),
             totalPriceUsdc: (Number(amountCents) / 100).toFixed(4),
             leadTimeDays: 2,
-            isWhitelistedOnChain: vendorWhitelisted,
+            // Bind does not read the on-chain whitelist. BindSettlement.sol enforces it at settlement.
+            isWhitelistedOnChain: null,
           },
         ],
-        dailyLimitUsdc: (Number(dailyLimitCents) / 100).toFixed(2),
+        dailyLimitUsdc: (Number(BigInt(ws.budget_daily_limit_cents)) / 100).toFixed(2),
       });
 
       await query(
@@ -558,6 +519,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
           nextState,
           JSON.stringify({
             policyDecision,
+            policyReasonCodes: decision.reasonCodes,
             approvalId,
             jevEvaluation: proposal.jevEvaluation,
             decisionRecord,
@@ -568,11 +530,23 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         ]
       );
 
+      await workflowEngine.recordAudit(
+        workspaceId,
+        targetWorkflowId,
+        "agent",
+        "procurement_agent",
+        EffectClass.COMMERCIAL_COMMITMENT,
+        "commitment.evaluate",
+        policyDecision,
+        auditEvidence
+      );
+
       return JSON.stringify({
         requestId: targetWorkflowId,
         policyDecision,
         workflowState: nextState,
         approvalId,
+        reasonCodes: decision.reasonCodes,
         decisionHash: decisionRecord.decisionHash,
         withinDailyLimit: true,
         requiresOwnerApproval: nextState === WorkflowState.AWAITING_APPROVAL,
@@ -581,7 +555,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
     {
       name: "request_policy_evaluation",
       description:
-        "Evaluates proposal against deterministic spending limits and on-chain BindSettlement.sol policy.",
+        "Decides the proposal through the deterministic commitment gate: agent role, supplier verification, quote validity and price, daily spend limit, role limit and owner approval threshold. It can escalate to owner approval but cannot grant it.",
       schema: z.object({
         requestId: z.string().describe("The workflow ID being evaluated."),
       }),

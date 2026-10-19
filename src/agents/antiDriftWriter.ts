@@ -159,7 +159,11 @@ export async function writeWorkflowAntiDriftFiles(
     record.onChainPolicyPreFlight.withinDailyLimit ? "PASS" : "EXCEEDS_LIMIT_0xef664d6a"
   }\`
 - **Vendor Whitelist Check:** \`${
-    record.onChainPolicyPreFlight.vendorWhitelisted ? "PASS" : "UNWHITELISTED_0x65e822e9"
+    record.onChainPolicyPreFlight.vendorWhitelisted === true
+      ? "PASS"
+      : record.onChainPolicyPreFlight.vendorWhitelisted === false
+      ? "UNWHITELISTED_0x65e822e9"
+      : "NOT_CHECKED_BY_BIND"
   }\`
 - **Canonical Decision Hash:** \`${record.decisionHash}\`
 ${

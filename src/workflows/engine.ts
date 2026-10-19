@@ -26,16 +26,18 @@ const APPROVAL_DECISION_TARGETS: Record<
   },
 };
 
-export type ApprovalErrorCode = "APPROVAL_NOT_FOUND" | "APPROVAL_NOT_PENDING" | "APPROVAL_EXPIRED";
+export type ApprovalErrorCode = "APPROVAL_NOT_FOUND" | "APPROVAL_NOT_PENDING" | "APPROVAL_EXPIRED" | "POLICY_DENIED";
 
 /** Typed failure for an approval decision, mapped to HTTP status by the API layer. */
 export class ApprovalDecisionError extends Error {
   readonly code: ApprovalErrorCode;
+  readonly reasonCodes?: string[];
 
-  constructor(code: ApprovalErrorCode, message: string) {
+  constructor(code: ApprovalErrorCode, message: string, reasonCodes?: string[]) {
     super(message);
     this.name = "ApprovalDecisionError";
     this.code = code;
+    this.reasonCodes = reasonCodes;
   }
 }
 
@@ -273,6 +275,8 @@ export class WorkflowEngine {
   }
 
   private sanitizeEvidence(obj: any): any {
+    // Arrays (for example reason codes) stay arrays; turning them into index-keyed objects loses their shape.
+    if (Array.isArray(obj)) return obj.map((item) => this.sanitizeEvidence(item));
     if (!obj || typeof obj !== "object") return obj;
     const clean: Record<string, any> = {};
     for (const [k, v] of Object.entries(obj)) {
