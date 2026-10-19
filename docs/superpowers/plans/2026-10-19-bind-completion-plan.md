@@ -262,7 +262,7 @@ The settlement contract client must be tested against the real compiled `BindSet
 
 **Files:**
 - Create: `src/auth/{tokens,middleware}.ts`, `docs/decisions/NNNN-owner-token-auth.md`, `tests/integration/auth-tenancy.test.ts`
-- Modify: `src/server/app.ts` (all `/api/workspaces/:id/*`, `/api/approvals/*`, `/api/orders/*`), `src/db/schema.sql` (`workspace_tokens`), `docs/decisions/0006-owner-authentication-open.md` (status becomes Accepted, option 1), `src/ui/public/app.js` (minimum change: a fetch wrapper that sends the stored token; to be replaced with the UI), `tests/e2e/dashboard.spec.ts` (obtain a token in setup)
+- Modify: `src/server/app.ts` (all `/api/workspaces/:id/*`, `/api/approvals/*`, `/api/orders/*`), `src/db/schema.sql` (`workspace_tokens`), `docs/decisions/0006-owner-authentication-open.md` (status becomes Accepted, option 1). **Per ADR 0016 do not touch `src/ui/`** (the UI is orphaned and will be rebuilt). The legacy browser tests in `tests/e2e/` cannot pass once a token is required: move them behind `npm run test:e2e:legacy`, out of the release gate, and record that in the commit message; keep every flow covered by HTTP-level integration tests with tokens.
 
 **Interfaces:**
 - Produces: `workspace_tokens(id, workspace_id, role 'owner'|'staff', token_hash, label, created_at, revoked_at)`; header `Authorization: Bearer <token>`; `req.actor = { workspaceId, role, tokenId }`; `POST /api/workspaces/onboard` returns the owner token once; `POST /api/workspaces/:id/tokens` (owner only) and `DELETE /api/workspaces/:id/tokens/:tokenId`. The decided-by field is taken from `req.actor`, never the body. Webhooks keep HMAC; the secret becomes per workspace.
@@ -270,7 +270,7 @@ The settlement contract client must be tested against the real compiled `BindSet
 - [ ] **Step 1: Failing tests:** no token gives 401; a token for workspace A gets 404 (not 403) on workspace B's approvals, orders, workflows and ledger by guessed id; staff token cannot approve, reject, revoke, or change policy (403); a revoked token stops working immediately; the body `decidedBy` is ignored and the audit row records the token's label; two workspaces never see each other's rows in any list endpoint; `GET /health` and `GET /ready` stay public and leak no data; token values are stored only as hashes and never appear in any response after creation or in logs.
 - [ ] **Step 2: Run.** Expected: FAIL.
 - [ ] **Step 3: Implement** with SHA-256 over a 32-byte random token, constant-time comparison, and a lookup by hash. Provision the demo workspace's owner token from `BIND_DEMO_OWNER_TOKEN` (the Vercel handler and the E2E setup). No unauthenticated development mode.
-- [ ] **Step 4: Run** the full suite including `npm run test:e2e`.
+- [ ] **Step 4: Run** the full suite (unit, integration, build, audit). The legacy e2e suite is not part of the gate (ADR 0016).
 - [ ] **Step 5: Commit** `feat(auth): per-workspace owner and staff tokens, tenancy enforced server side`.
 
 ### Task 7: Connector credential store
@@ -353,6 +353,21 @@ The settlement contract client must be tested against the real compiled `BindSet
 - [ ] **Step 2: Run, implement, run.**
 - [ ] **Step 3: Write `docs/RUNBOOK.md`:** start, stop, migrate, recover a stuck workflow, rotate a token, rotate the credential key, restore from backup.
 - [ ] **Step 4: Commit** `feat(ops): request ids, redacted logs, readiness, metrics, rate limits, runbook`.
+
+### Task 12b: Integration surface for the UI rebuild (API contract, SSE, SDK, MCP)
+
+Added after the owner's instruction that the UI will be rebuilt from scratch (ADR 0016). Do this after Task 12, when auth, workers, ledger and ops exist. The goal is that the new UI, an agent, or a script can drive Bind using only this surface.
+
+**Files (planned; confirm against the code when briefing):**
+- Create: `src/api/schemas.ts` (zod schemas for every request, response and error), `docs/openapi.json` generated from them (`npm run api:spec`, with a test that the committed file is current), `src/api/events.ts` + `GET /api/workspaces/:id/events` (SSE), `sdk/` (a typed TypeScript client, built from the same schemas, separate `tsconfig`, no secrets), `src/mcp/server.ts` (MCP server exposing the workspace tools), `docs/API.md`, tests under `tests/contract/` and `tests/integration/`.
+- Modify: `src/server/app.ts` (validate every route with its schema; one error shape `{ error: { code, message, requestId } }`; no route without a schema).
+
+**Requirements:**
+- SSE: authenticated per workspace (Task 6 token); events are `approval.requested|decided|expired`, `workflow.state_changed`, `order.status_changed`, `settlement.submitted|confirmed|held`, `effect.failed`; each has a monotonic id, supports `Last-Event-ID` replay from the audit/outbox so a reconnect loses nothing; a workspace never receives another workspace's events; heartbeat comments keep proxies open; a slow client does not block the server. Events come from persisted state (an outbox table), never invented.
+- MCP: first inspect the real MCP SDK version and its current API (Context7); expose only read tools and `external_request` tools directly. Any commercial commitment goes through the same policy gate and approval flow as the HTTP API; the MCP server can request an approval but never approve, sign, or broadcast (see AGENTS.md). Credentials never appear in tool output.
+- SDK: generated or hand-written from the schemas, with a contract test that runs the SDK against a live local server for every route, including the SSE stream and the error shape.
+- Tests: schema conformance for every route (response validates against its schema), unknown field and oversize body rejected, auth required on every route except `/health` and `/ready`, SSE replay after reconnect with no gaps and no duplicates, cross-tenant event isolation, MCP tool list matches the documented list, MCP cannot approve.
+- Commit `feat(api): schemas, OpenAPI, SSE event stream, typed SDK and MCP server`.
 
 ### Task 13: Contract gates that can run here
 
