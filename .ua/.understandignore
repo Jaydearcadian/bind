@@ -90,26 +90,27 @@
 # **/Specs/**/*.swift
 
 # --- Bind-specific exclusions (active) ---
+# Every pattern is anchored to the repo root with a leading slash, so it cannot match nested folders
+# such as src/workflows/ or templates/*/skills/.
 # Vendored third-party skills and agent tooling
-skills/
-.agents/
-.claude/
-.github/
+/skills/
+/.agents/
+/.claude/
 # Vendored Foundry library, build output, caches
-contracts/lib/
-contracts/out/
-contracts/cache/
-contracts/broadcast/
+/contracts/lib/
+/contracts/out/
+/contracts/cache/
+/contracts/broadcast/
 # UI is being replaced; its API usage is visible from the server routes
-src/ui/
+/src/ui/
 # Large design prose and its duplicate copy (not code structure)
-DESIGN.md
-BRAND_DIRECTION.md
-bind-design/
-# Derived workspace artifacts and run output
-templates/ws-*/
-workflows/
-test-results/
-playwright-report/
-.ua/
-package-lock.json
+/DESIGN.md
+/BRAND_DIRECTION.md
+/bind-design/
+# Derived workspace artifacts and run output at the repo root
+/templates/ws-*/
+/workflows/
+/test-results/
+/playwright-report/
+/.ua/
+/package-lock.json
