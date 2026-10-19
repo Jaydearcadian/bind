@@ -37,7 +37,11 @@ class PayeeSettlementAdapter implements SettlementAdapter {
   async transferUSDC(req: TransferRequest): Promise<TransferResult> {
     this.requests.push(req);
     const txHash = `0x${crypto.createHash("sha256").update(req.idempotencyKey).digest("hex")}`;
-    return { txHash, status: "settled", timestamp: new Date(), mode: "local" };
+    return { txHash, status: "submitted", timestamp: new Date(), mode: "local", simulated: true };
+  }
+
+  async confirm(txHash: string): Promise<TransferResult> {
+    return { txHash, status: "confirmed", timestamp: new Date(), mode: "local", simulated: true };
   }
 
   async depositEscrow(): Promise<TransferResult> {
