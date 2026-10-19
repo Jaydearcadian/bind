@@ -1,0 +1,10 @@
+{
+  "name": "bind-compile-contract",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated Solidity compiler for contracts/artifacts. Kept out of the root dependency tree because every solc release depends on a vulnerable tmp.",
+  "type": "module",
+  "dependencies": {
+    "solc": "0.8.37"
+  }
+}
