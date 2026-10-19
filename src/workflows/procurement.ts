@@ -1,10 +1,12 @@
 import { WorkflowEngine, ApprovalDecisionError } from "./engine.js";
 import { WorkflowState } from "./types.js";
-import { query } from "../db/client.js";
+import { query, withTransaction } from "../db/client.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
 import { getSupplierAdapter } from "../adapters/suppliers/index.js";
+import type { SupplierAdapter } from "../adapters/suppliers/types.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
+import type { SettlementAdapter } from "../adapters/settlement/types.js";
 import { evaluateThreeWayMatch, MatchStatus } from "../accounting/three-way-match.js";
 import { generateIdempotencyKey } from "../utils/idempotency.js";
 import { resolveTemplateDir } from "../agents/bindTemplateAgent.js";
@@ -12,8 +14,29 @@ import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
 import { createReplenishmentTools } from "../agents/replenishmentTools.js";
 import { recordIdempotentJournalEntry } from "../studio/documentsAndAccounting.js";
 
+export interface ProcurementRunnerDeps {
+  settlementFor?: (mode: string) => SettlementAdapter;
+  supplierFor?: (id: string) => SupplierAdapter;
+}
+
+export interface ReconcileResult {
+  status: MatchStatus;
+  reconciled: boolean;
+  txHash?: string;
+  alreadyReconciled?: boolean;
+  hold?: string;
+}
+
 export class ProcurementWorkflowRunner {
   private workflowEngine = new WorkflowEngine();
+  private readonly settlementFor: (mode: string) => SettlementAdapter;
+  private readonly supplierFor: (id: string) => SupplierAdapter;
+
+  constructor(deps: ProcurementRunnerDeps = {}) {
+    this.settlementFor =
+      deps.settlementFor ?? ((mode: string) => getSettlementAdapter(mode as "local" | "arc-testnet"));
+    this.supplierFor = deps.supplierFor ?? getSupplierAdapter;
+  }
 
   /**
    * Triggers the procurement replenishment workflow from low inventory.
@@ -108,7 +131,7 @@ export class ProcurementWorkflowRunner {
         );
       }
     }
-    const supplierAdapter = getSupplierAdapter(supplierId);
+    const supplierAdapter = this.supplierFor(supplierId);
 
     const quoteRes = await supplierAdapter.requestQuote({
       workspaceId,
@@ -325,7 +348,7 @@ export class ProcurementWorkflowRunner {
     const orderNumber = `PO-${Date.now().toString().slice(-6)}`;
     const idempotencyKey = `idem_ord_${orderId}`;
 
-    const supplierAdapter = getSupplierAdapter(quote.supplierId);
+    const supplierAdapter = this.supplierFor(quote.supplierId);
     const orderRes = await supplierAdapter.submitOrder({
       workspaceId,
       orderId,
@@ -381,44 +404,147 @@ export class ProcurementWorkflowRunner {
 
   /**
    * Ingests delivery receipt & bill, runs 3-way match, and reconciles.
+   *
+   * Reconciliation happens at most once per order. The order row is claimed with an
+   * atomic `confirmed -> settling` update before any effect, so concurrent or repeated
+   * calls cannot pay the supplier or restock twice. If the settlement adapter fails
+   * before a result is stored the claim is released (`settling -> confirmed`) and the
+   * call can be retried; nothing has been restocked or journaled at that point.
    */
-  async fulfillAndReconcile(
-    orderId: string
-  ): Promise<{ status: MatchStatus; reconciled: boolean; txHash?: string }> {
-    const orderRes = await query(`SELECT * FROM orders WHERE id = $1;`, [orderId]);
-    if (orderRes.rows.length === 0) {
-      throw new Error(`Order '${orderId}' not found.`);
+  async fulfillAndReconcile(orderId: string): Promise<ReconcileResult> {
+    const claimRes = await query(
+      `UPDATE orders SET status = 'settling', updated_at = NOW()
+       WHERE id = $1 AND status = 'confirmed'
+       RETURNING *;`,
+      [orderId]
+    );
+
+    if (claimRes.rows.length === 0) {
+      const currentRes = await query(`SELECT * FROM orders WHERE id = $1;`, [orderId]);
+      if (currentRes.rows.length === 0) {
+        throw new Error(`Order '${orderId}' not found.`);
+      }
+      const current = currentRes.rows[0];
+      if (current.status === "reconciled") {
+        return this.storedReconcileResult(current);
+      }
+      if (current.status === "settling") {
+        return { status: MatchStatus.MATCHED, reconciled: false, hold: "RECONCILE_IN_PROGRESS" };
+      }
+      throw new Error(`Order '${orderId}' is in status '${current.status}' and cannot be reconciled.`);
     }
-    const order = orderRes.rows[0];
-    const supplierAdapter = getSupplierAdapter(order.supplier_id);
 
-    // Generate or fetch Delivery Receipt
-    const receipt = await supplierAdapter.generateDeliveryReceipt(
-      order.id,
-      order.item_sku,
-      Number(order.quantity)
-    );
-    await query(
-      `INSERT INTO delivery_receipts (id, order_id, received_quantity, received_at, condition_notes, discrepancy_reported)
-       VALUES ($1, $2, $3, NOW(), $4, FALSE)
-       ON CONFLICT (id) DO NOTHING;`,
-      [receipt.receiptId, order.id, receipt.receivedQuantity, receipt.conditionNotes]
-    );
+    const order = claimRes.rows[0];
+    const progress = { paid: false };
+    try {
+      return await this.settleClaimedOrder(order, progress);
+    } catch (err) {
+      // Release the claim unless the adapter already returned a payment. If we fail
+      // after a successful transfer the order stays `settling` (a visible hold)
+      // rather than being offered for a second payment.
+      if (!progress.paid) {
+        await query(
+          `UPDATE orders SET status = 'confirmed', updated_at = NOW()
+           WHERE id = $1 AND status = 'settling';`,
+          [order.id]
+        );
+      }
+      throw err;
+    }
+  }
 
-    // Generate or fetch Supplier Bill
-    const bill = await supplierAdapter.generateBill(
-      order.id,
-      order.item_sku,
-      Number(order.quantity),
-      BigInt(order.unit_price_cents),
-      order.supplier_id
+  private async storedReconcileResult(order: any): Promise<ReconcileResult> {
+    const matchRes = await query(`SELECT match_status FROM three_way_matches WHERE order_id = $1;`, [order.id]);
+    return {
+      status: (matchRes.rows[0]?.match_status as MatchStatus) ?? MatchStatus.MATCHED,
+      reconciled: true,
+      txHash: order.tx_hash ?? undefined,
+      alreadyReconciled: true,
+    };
+  }
+
+  private async settleClaimedOrder(order: any, progress: { paid: boolean }): Promise<ReconcileResult> {
+    const supplierAdapter = this.supplierFor(order.supplier_id);
+
+    // Delivery receipt: reuse the stored one when a previous attempt already ingested it.
+    const storedReceipt = await query(
+      `SELECT * FROM delivery_receipts WHERE order_id = $1 ORDER BY received_at ASC, id ASC LIMIT 1;`,
+      [order.id]
     );
-    await query(
-      `INSERT INTO supplier_bills (id, order_id, bill_number, billed_quantity, billed_unit_price_cents, billed_total_cents, currency, received_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'USDC', NOW())
-       ON CONFLICT (id) DO NOTHING;`,
-      [bill.billId, order.id, bill.billNumber, bill.billedQuantity, bill.billedUnitPriceCents, bill.billedTotalCents]
+    let receipt: { receiptId: string; receivedQuantity: number };
+    if (storedReceipt.rows.length > 0) {
+      receipt = {
+        receiptId: storedReceipt.rows[0].id,
+        receivedQuantity: Number(storedReceipt.rows[0].received_quantity),
+      };
+    } else {
+      const generated = await supplierAdapter.generateDeliveryReceipt(
+        order.id,
+        order.item_sku,
+        Number(order.quantity)
+      );
+      await query(
+        `INSERT INTO delivery_receipts (id, order_id, received_quantity, received_at, condition_notes, discrepancy_reported)
+         VALUES ($1, $2, $3, NOW(), $4, FALSE)
+         ON CONFLICT (id) DO NOTHING;`,
+        [generated.receiptId, order.id, generated.receivedQuantity, generated.conditionNotes]
+      );
+      receipt = { receiptId: generated.receiptId, receivedQuantity: generated.receivedQuantity };
+    }
+
+    // Supplier bill: same rule.
+    const storedBill = await query(
+      `SELECT * FROM supplier_bills WHERE order_id = $1 ORDER BY received_at ASC, id ASC LIMIT 1;`,
+      [order.id]
     );
+    let bill: {
+      billId: string;
+      billNumber: string;
+      vendorId: string;
+      billedQuantity: number;
+      billedUnitPriceCents: bigint;
+      billedTotalCents: bigint;
+    };
+    if (storedBill.rows.length > 0) {
+      const row = storedBill.rows[0];
+      bill = {
+        billId: row.id,
+        billNumber: row.bill_number,
+        vendorId: order.supplier_id,
+        billedQuantity: Number(row.billed_quantity),
+        billedUnitPriceCents: BigInt(row.billed_unit_price_cents),
+        billedTotalCents: BigInt(row.billed_total_cents),
+      };
+    } else {
+      const generated = await supplierAdapter.generateBill(
+        order.id,
+        order.item_sku,
+        Number(order.quantity),
+        BigInt(order.unit_price_cents),
+        order.supplier_id
+      );
+      await query(
+        `INSERT INTO supplier_bills (id, order_id, bill_number, billed_quantity, billed_unit_price_cents, billed_total_cents, currency, received_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'USDC', NOW())
+         ON CONFLICT (id) DO NOTHING;`,
+        [
+          generated.billId,
+          order.id,
+          generated.billNumber,
+          generated.billedQuantity,
+          generated.billedUnitPriceCents,
+          generated.billedTotalCents,
+        ]
+      );
+      bill = {
+        billId: generated.billId,
+        billNumber: generated.billNumber,
+        vendorId: generated.vendorId,
+        billedQuantity: generated.billedQuantity,
+        billedUnitPriceCents: BigInt(generated.billedUnitPriceCents),
+        billedTotalCents: BigInt(generated.billedTotalCents),
+      };
+    }
 
     // Run 3-Way Match
     const matchResult = evaluateThreeWayMatch(
@@ -444,17 +570,18 @@ export class ProcurementWorkflowRunner {
         vendorId: bill.vendorId,
         sku: order.item_sku,
         billedQuantity: bill.billedQuantity,
-        billedUnitPriceCents: BigInt(bill.billedUnitPriceCents),
-        billedTotalCents: BigInt(bill.billedTotalCents),
+        billedUnitPriceCents: bill.billedUnitPriceCents,
+        billedTotalCents: bill.billedTotalCents,
       }
     );
 
-    // Save 3-Way Match Result
+    // Save 3-Way Match Result: one row per order, deterministic id.
     await query(
       `INSERT INTO three_way_matches (id, order_id, delivery_receipt_id, supplier_bill_id, match_status, variance_cents, notes, matched_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW());`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       ON CONFLICT (order_id) DO NOTHING;`,
       [
-        `match_${Date.now()}`,
+        `match_${order.id}`,
         order.id,
         receipt.receiptId,
         bill.billId,
@@ -465,12 +592,17 @@ export class ProcurementWorkflowRunner {
     );
 
     if (matchResult.status !== MatchStatus.MATCHED) {
+      // Nothing was paid: release the claim so the order can be corrected and retried.
+      await query(
+        `UPDATE orders SET status = 'confirmed', updated_at = NOW() WHERE id = $1 AND status = 'settling';`,
+        [order.id]
+      );
       return { status: matchResult.status, reconciled: false };
     }
 
     // Execute Settlement payment
     const wsRes = await query(`SELECT * FROM workspaces WHERE id = $1;`, [order.workspace_id]);
-    const settlementAdapter = getSettlementAdapter(wsRes.rows[0].settlement_mode);
+    const settlementAdapter = this.settlementFor(wsRes.rows[0].settlement_mode);
 
     const transferRes = await settlementAdapter.transferUSDC({
       fromAddress: wsRes.rows[0].settlement_address || "0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2",
@@ -480,20 +612,29 @@ export class ProcurementWorkflowRunner {
       orderId: order.id,
       idempotencyKey: `idem_pay_${order.id}`,
     });
+    progress.paid = true;
 
-    // Update order with tx_hash and status reconciled
-    await query(
-      `UPDATE orders SET status = 'reconciled', tx_hash = $1, updated_at = NOW() WHERE id = $2;`,
-      [transferRes.txHash, order.id]
-    );
-
-    // Restock Inventory
-    await query(
-      `UPDATE inventory_items
-       SET current_quantity = current_quantity + $1, updated_at = NOW()
-       WHERE workspace_id = $2 AND sku = $3;`,
-      [receipt.receivedQuantity, order.workspace_id, order.item_sku]
-    );
+    // Record the payment and restock in one transaction, and only if this call still
+    // holds the claim, so restock cannot happen twice.
+    const finalized = await withTransaction(async (client) => {
+      const upd = await client.query(
+        `UPDATE orders SET status = 'reconciled', tx_hash = $1, updated_at = NOW()
+         WHERE id = $2 AND status = 'settling'
+         RETURNING id;`,
+        [transferRes.txHash, order.id]
+      );
+      if (upd.rows.length === 0) return false;
+      await client.query(
+        `UPDATE inventory_items
+         SET current_quantity = current_quantity + $1, updated_at = NOW()
+         WHERE workspace_id = $2 AND sku = $3;`,
+        [receipt.receivedQuantity, order.workspace_id, order.item_sku]
+      );
+      return true;
+    });
+    if (!finalized) {
+      throw new Error(`Order '${order.id}' lost its settlement claim after payment ${transferRes.txHash}.`);
+    }
 
     // Find associated workflow and transition to RECONCILED
     const wfRes = await query(

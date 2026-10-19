@@ -466,7 +466,14 @@ export async function confirmStagedDocument(
 
   await query(
     `INSERT INTO three_way_matches (id, order_id, delivery_receipt_id, supplier_bill_id, match_status, variance_cents, notes, matched_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW());`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+     ON CONFLICT (order_id) DO UPDATE SET
+       delivery_receipt_id = EXCLUDED.delivery_receipt_id,
+       supplier_bill_id = EXCLUDED.supplier_bill_id,
+       match_status = EXCLUDED.match_status,
+       variance_cents = EXCLUDED.variance_cents,
+       notes = EXCLUDED.notes,
+       matched_at = NOW();`,
     [
       `match_doc_${Date.now()}`,
       order.id,

@@ -251,4 +251,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_logs(workspace_id, creat
 CREATE INDEX IF NOT EXISTS idx_surface_bindings_ws ON surface_bindings(workspace_id, surface);
 CREATE INDEX IF NOT EXISTS idx_staged_docs_ws ON staged_documents(workspace_id, status);
 CREATE INDEX IF NOT EXISTS idx_journal_ws ON accounting_journal_entries(workspace_id, created_at DESC);
-
+-- One match row per order. Earlier code generated a new id on every reconcile call, so
+-- collapse any historical duplicates (keep the first recorded) before enforcing it.
+DELETE FROM three_way_matches a
+USING three_way_matches b
+WHERE a.order_id = b.order_id
+  AND (a.matched_at, a.id) > (b.matched_at, b.id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_three_way_matches_order ON three_way_matches(order_id);
