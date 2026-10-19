@@ -4,6 +4,7 @@ import { query } from "../db/client.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
 import { getSupplierAdapter } from "../adapters/suppliers/index.js";
+import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.js";
 import type { SupplierAdapter } from "../adapters/suppliers/types.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import type { SettlementAdapter } from "../adapters/settlement/types.js";
@@ -121,10 +122,10 @@ export class ProcurementWorkflowRunner {
       } else {
         supplierId = `${workspaceId}_supp-sysco-metro`;
         await query(
-          `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, created_at)
-           VALUES ($1, $2, 'Sysco Metro Restock', 'simulated_sysco', 'orders@sysco-sim.local', TRUE, TRUE, NOW())
+          `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, payment_address, created_at)
+           VALUES ($1, $2, 'Sysco Metro Restock', 'simulated_sysco', 'orders@sysco-sim.local', TRUE, TRUE, $3, NOW())
            ON CONFLICT (id) DO NOTHING;`,
-          [supplierId, workspaceId]
+          [supplierId, workspaceId, simulatedPaymentAddress(supplierId)]
         );
       }
     }

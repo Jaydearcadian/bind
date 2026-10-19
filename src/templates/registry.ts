@@ -2,6 +2,7 @@ import { kitchenTemplate } from "./kitchen-v1.js";
 import { agencyTemplate } from "./agency-v1.js";
 import { WorkspaceTemplate } from "./types.js";
 import { withTransaction } from "../db/client.js";
+import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.js";
 
 const BASE_TEMPLATES: Record<string, WorkspaceTemplate> = {
   "kitchen-v1": kitchenTemplate,
@@ -43,7 +44,12 @@ export async function provisionWorkspace(
   const dailyLimit = options?.customDailyLimitCents ?? template.defaultDailyLimitCents;
   const approvalThreshold = options?.customApprovalThresholdCents ?? template.defaultApprovalThresholdCents;
   const settlementMode = options?.settlementMode ?? "local";
-  const settlementAddress = options?.settlementAddress || "0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2";
+  // No shared default payer wallet. A local workspace gets its own simulated address. An
+  // arc-testnet workspace without an address stores NULL, and its payments are held until one is set.
+  const explicitSettlementAddress = options?.settlementAddress || null;
+  const settlementAddress =
+    explicitSettlementAddress ??
+    (settlementMode === "local" ? simulatedPaymentAddress(`workspace:${workspaceId}`) : null);
 
   await withTransaction(async (client) => {
     // 1. Insert Workspace
@@ -53,12 +59,21 @@ export async function provisionWorkspace(
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name,
          template_id = EXCLUDED.template_id,
-         settlement_address = EXCLUDED.settlement_address,
+         settlement_address = COALESCE($8::text, workspaces.settlement_address, EXCLUDED.settlement_address),
          settlement_mode = EXCLUDED.settlement_mode,
          budget_daily_limit_cents = EXCLUDED.budget_daily_limit_cents,
          approval_threshold_cents = EXCLUDED.approval_threshold_cents,
          updated_at = NOW();`,
-      [workspaceId, name, templateId, settlementAddress, settlementMode, dailyLimit, approvalThreshold]
+      [
+        workspaceId,
+        name,
+        templateId,
+        settlementAddress,
+        settlementMode,
+        dailyLimit,
+        approvalThreshold,
+        explicitSettlementAddress,
+      ]
     );
 
     // 2. Insert Agent Roles
@@ -90,11 +105,22 @@ export async function provisionWorkspace(
     if (template.seedSuppliers) {
       for (const supp of template.seedSuppliers) {
         const suppId = `${workspaceId}_${supp.id}`;
+        // Only simulated suppliers get a payee address here; a real supplier gets one from its owner.
+        const paymentAddress = supp.isSimulated ? simulatedPaymentAddress(suppId) : null;
         await client.query(
-          `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, endpoint_url)
-           VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7)
+          `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, endpoint_url, payment_address)
+           VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7, $8)
            ON CONFLICT (id) DO NOTHING;`,
-          [suppId, workspaceId, supp.name, supp.adapterType, supp.contactEmail, supp.isSimulated, supp.endpointUrl]
+          [
+            suppId,
+            workspaceId,
+            supp.name,
+            supp.adapterType,
+            supp.contactEmail,
+            supp.isSimulated,
+            supp.endpointUrl,
+            paymentAddress,
+          ]
         );
       }
     }

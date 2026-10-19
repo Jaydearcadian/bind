@@ -11,6 +11,10 @@ import { WorkflowCrashRecoveryRunner } from "../workflows/recovery.js";
 import { webhookReceiver } from "../adapters/web2/webhook-receiver.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import {
+  normalizePaymentAddress,
+  simulatedPaymentAddress,
+} from "../adapters/suppliers/payment-address.js";
+import {
   SocialSurfaceEventSchema,
   SurfaceAuthorizationError,
   verifyAndAuthorizeSurfaceEvent,
@@ -361,16 +365,27 @@ export function createApp(): express.Express {
     try {
       const supp = InitialSupplierSchema.parse(req.body);
       const fullSuppId = supp.id.startsWith(`${id}_`) ? supp.id : `${id}_${supp.id}`;
+      // Optional payee address. When sent it must be a valid EVM address, stored checksummed.
+      // Omitted: a simulated supplier gets its simulated address, a real one stays without an address.
+      const rawPayment = req.body?.paymentAddress;
+      const hasPayment = rawPayment !== undefined && rawPayment !== null && rawPayment !== "";
+      const providedPayment = hasPayment ? normalizePaymentAddress(rawPayment) : null;
+      if (hasPayment && providedPayment === null) {
+        res.status(400).json({ error: "paymentAddress must be a valid EVM address" });
+        return;
+      }
+      const paymentAddress = providedPayment ?? (supp.isSimulated ? simulatedPaymentAddress(fullSuppId) : null);
       const ins = await query(
-        `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, endpoint_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, endpoint_url, payment_address)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (id) DO UPDATE SET
            name = EXCLUDED.name,
            adapter_type = EXCLUDED.adapter_type,
            contact_email = EXCLUDED.contact_email,
            verified = EXCLUDED.verified,
            is_simulated = EXCLUDED.is_simulated,
-           endpoint_url = EXCLUDED.endpoint_url
+           endpoint_url = EXCLUDED.endpoint_url,
+           payment_address = COALESCE(EXCLUDED.payment_address, suppliers.payment_address)
          RETURNING *;`,
         [
           fullSuppId,
@@ -381,6 +396,7 @@ export function createApp(): express.Express {
           supp.verified,
           supp.isSimulated,
           supp.endpointUrl || null,
+          paymentAddress,
         ]
       );
       res.status(201).json(ins.rows[0]);

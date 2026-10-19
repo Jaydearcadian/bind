@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { query, withTransaction } from "../db/client.js";
 import { getTemplate } from "../templates/registry.js";
+import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.js";
 import { CANONICAL_ARC_LOCK } from "../agents/antiDriftWriter.js";
 import { templatesArtifactsDir } from "../utils/artifacts.js";
 
@@ -79,7 +80,7 @@ export const OnboardWorkspaceSchema = z.object({
   settlementAddress: z
     .string()
     .regex(/^0x[a-fA-F0-9]{40}$/, "Must be a valid 40-hex-character EVM address")
-    .default("0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2"),
+    .optional(),
   budgetDailyLimitCents: z.number().int().positive(),
   approvalThresholdCents: z.number().int().nonnegative(),
   supplies: z.array(InitialSupplyItemSchema).default([]),
@@ -183,6 +184,12 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
     );
   }
 
+  // Same rule as provisionWorkspace: a local workspace gets its own simulated address, an
+  // arc-testnet workspace without an address stores NULL (payments are held until one is set).
+  const settlementAddress =
+    input.settlementAddress ??
+    (input.settlementMode === "local" ? simulatedPaymentAddress(`workspace:${input.workspaceId}`) : null);
+
   await withTransaction(async (client) => {
     await client.query(
       `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents, created_at, updated_at)
@@ -190,7 +197,7 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name,
          template_id = EXCLUDED.template_id,
-         settlement_address = EXCLUDED.settlement_address,
+         settlement_address = COALESCE($8::text, workspaces.settlement_address, EXCLUDED.settlement_address),
          settlement_mode = EXCLUDED.settlement_mode,
          budget_daily_limit_cents = EXCLUDED.budget_daily_limit_cents,
          approval_threshold_cents = EXCLUDED.approval_threshold_cents,
@@ -199,10 +206,11 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
         input.workspaceId,
         input.name,
         input.workspaceId,
-        input.settlementAddress,
+        settlementAddress,
         input.settlementMode,
         input.budgetDailyLimitCents,
         input.approvalThresholdCents,
+        input.settlementAddress ?? null,
       ]
     );
 
@@ -227,12 +235,13 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
         ? supp.id
         : `${input.workspaceId}_${supp.id}`;
       await client.query(
-        `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, endpoint_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, endpoint_url, payment_address)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (id) DO UPDATE SET
            name = EXCLUDED.name,
            verified = EXCLUDED.verified,
-           contact_email = EXCLUDED.contact_email;`,
+           contact_email = EXCLUDED.contact_email,
+           payment_address = COALESCE(suppliers.payment_address, EXCLUDED.payment_address);`,
         [
           fullSuppId,
           input.workspaceId,
@@ -242,6 +251,7 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
           supp.verified,
           supp.isSimulated,
           supp.endpointUrl || null,
+          supp.isSimulated ? simulatedPaymentAddress(fullSuppId) : null,
         ]
       );
     }
@@ -437,7 +447,7 @@ export async function syncWorkspaceDerivedTemplateFiles(workspaceId: string) {
 ## 1. Workspace Authority & Spending Policy
 - **Workspace ID:** \`${ws.id}\`
 - **Settlement Mode:** \`${ws.settlement_mode}\`
-- **Treasury Address:** \`${ws.settlement_address}\`
+- **Treasury Address:** \`${ws.settlement_address ?? "not set"}\`
 - **BindSettlement Contract (Arc Testnet 5042002):** \`${CANONICAL_ARC_LOCK.bindSettlementContract}\`
 - **Hard Daily Spend Limit:** \`${dailyFormatted}\`
 - **Owner Approval Gate:** Orders exceeding \`${gateFormatted}\` require explicit owner sign-off.

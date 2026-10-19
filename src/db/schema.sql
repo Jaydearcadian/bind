@@ -54,6 +54,13 @@ CREATE TABLE IF NOT EXISTS suppliers (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Payee address for the supplier. Simulated suppliers get a deterministic, clearly simulated
+-- address (same algorithm as simulatedPaymentAddress in src/adapters/suppliers/payment-address.ts).
+-- Real suppliers stay NULL until the owner records one; settlement holds the order until then.
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS payment_address TEXT;
+UPDATE suppliers SET payment_address = '0x' || substr(md5(id) || md5(id || 'x'), 1, 40)
+WHERE is_simulated = TRUE AND payment_address IS NULL;
+
 CREATE TABLE IF NOT EXISTS quotes (
     id VARCHAR(64) PRIMARY KEY,
     workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

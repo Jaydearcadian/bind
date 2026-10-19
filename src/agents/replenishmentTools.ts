@@ -36,7 +36,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
          FROM orders
          WHERE workspace_id = $1
            AND created_at >= CURRENT_DATE
-           AND status IN ('submitted', 'confirmed', 'settling', 'reconciled');`,
+           AND status IN ('submitted', 'confirmed', 'settling', 'payment_hold', 'reconciled');`,
         [workspaceId]
       );
       const dailySpentCents = BigInt(spendRes.rows[0].daily_spent_cents || 0);
@@ -268,7 +268,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
          FROM orders
          WHERE workspace_id = $1
            AND created_at >= CURRENT_DATE
-           AND status IN ('submitted', 'confirmed', 'settling', 'reconciled');`,
+           AND status IN ('submitted', 'confirmed', 'settling', 'payment_hold', 'reconciled');`,
         [workspaceId]
       );
       const dailySpentCents = BigInt(spendRes.rows[0]?.daily_spent_cents || 0);
@@ -420,7 +420,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
          FROM orders
          WHERE workspace_id = $1
            AND created_at >= CURRENT_DATE
-           AND status IN ('submitted', 'confirmed', 'settling', 'reconciled');`,
+           AND status IN ('submitted', 'confirmed', 'settling', 'payment_hold', 'reconciled');`,
         [workspaceId]
       );
       const dailySpentCents = BigInt(spendRes.rows[0].daily_spent_cents || 0);

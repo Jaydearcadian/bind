@@ -8,12 +8,23 @@ import { evaluateThreeWayMatch, MatchStatus } from "../accounting/three-way-matc
 import { recordIdempotentJournalEntry } from "../accounting/journal.js";
 import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
 
+/**
+ * Why an order is not paid. RECONCILE_IN_PROGRESS means another caller holds the claim.
+ * The three payment codes mean the order is held in `payment_hold`: the match passed, but
+ * no payee or payer is verified, so nothing is paid or restocked until the record is fixed.
+ */
+export type ReconcileHold =
+  | "RECONCILE_IN_PROGRESS"
+  | "SUPPLIER_NOT_VERIFIED"
+  | "SUPPLIER_PAYMENT_ADDRESS_MISSING"
+  | "WORKSPACE_SETTLEMENT_ADDRESS_MISSING";
+
 export interface ReconcileResult {
   status: MatchStatus;
   reconciled: boolean;
   txHash?: string;
   alreadyReconciled?: boolean;
-  hold?: string;
+  hold?: ReconcileHold;
   varianceCents?: string;
   discrepancyReason?: string;
   pending?: "AWAITING_DELIVERY_RECEIPT" | "AWAITING_SUPPLIER_BILL";
@@ -53,7 +64,7 @@ export class OrderSettlementService {
 
   /**
    * Reconciles an order at most once. The order row is claimed with an atomic
-   * `confirmed -> settling` update before any effect, so concurrent or repeated calls
+   * `confirmed | payment_hold -> settling` update before any effect, so concurrent or repeated calls
    * cannot pay the supplier or restock twice. If the settlement adapter fails before a
    * result is stored the claim is released (`settling -> confirmed`) and the call can be
    * retried; nothing has been restocked or journaled at that point.
@@ -61,9 +72,10 @@ export class OrderSettlementService {
   async settle(orderId: string, loadEvidence: EvidenceLoader): Promise<ReconcileResult> {
     // Task 5/10 recovery: an order left in `settling` after a crash or a failed
     // finalising step has no automatic recovery yet; it holds as RECONCILE_IN_PROGRESS.
+    // `payment_hold` orders are claimable: a hold is retried once the payment record is fixed.
     const claimRes = await query(
       `UPDATE orders SET status = 'settling', updated_at = NOW()
-       WHERE id = $1 AND status = 'confirmed'
+       WHERE id = $1 AND status IN ('confirmed', 'payment_hold')
        RETURNING *;`,
       [orderId]
     );
@@ -226,13 +238,46 @@ export class OrderSettlementService {
       };
     }
 
-    // Execute Settlement payment
+    // The payee is the order's supplier as recorded; the payer is the workspace wallet. A
+    // missing or unverified record holds the order. It never falls back to a constant address.
     const wsRes = await query(`SELECT * FROM workspaces WHERE id = $1;`, [order.workspace_id]);
-    const settlementAdapter = this.settlementFor(wsRes.rows[0].settlement_mode);
+    const workspace = wsRes.rows[0];
+    const suppRes = await query(`SELECT * FROM suppliers WHERE id = $1;`, [order.supplier_id]);
+    const supplier = suppRes.rows[0];
+
+    let hold: ReconcileHold | null = null;
+    if (!supplier || !supplier.verified) {
+      hold = "SUPPLIER_NOT_VERIFIED";
+    } else if (!supplier.payment_address) {
+      hold = "SUPPLIER_PAYMENT_ADDRESS_MISSING";
+    } else if (!workspace.settlement_address) {
+      hold = "WORKSPACE_SETTLEMENT_ADDRESS_MISSING";
+    }
+    if (hold) {
+      // Keep the match row (already written above) and hold the claim as payment_hold.
+      await query(
+        `UPDATE orders SET status = 'payment_hold', updated_at = NOW() WHERE id = $1 AND status = 'settling';`,
+        [order.id]
+      );
+      await this.workflowEngine.recordAudit(
+        order.workspace_id,
+        null,
+        "system",
+        "settlement_engine",
+        EffectClass.COMMERCIAL_COMMITMENT,
+        "settlement.payment_hold",
+        PolicyDecision.DENY,
+        { orderId: order.id, hold }
+      );
+      return { status: MatchStatus.MATCHED, reconciled: false, hold };
+    }
+
+    // Execute Settlement payment
+    const settlementAdapter = this.settlementFor(workspace.settlement_mode);
 
     const transferRes = await settlementAdapter.transferUSDC({
-      fromAddress: wsRes.rows[0].settlement_address || "0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2",
-      toAddress: "0xa8358AED200D6CB6C856F972D853C1be833006ea",
+      fromAddress: workspace.settlement_address,
+      toAddress: supplier.payment_address,
       amountCents: matchResult.payableAmountCents,
       currency: "USDC",
       orderId: order.id,
