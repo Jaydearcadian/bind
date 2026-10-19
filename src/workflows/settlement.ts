@@ -19,6 +19,9 @@ export type ReconcileHold =
   | "SUPPLIER_PAYMENT_ADDRESS_MISSING"
   | "WORKSPACE_SETTLEMENT_ADDRESS_MISSING";
 
+/** The statuses an order can hold before a settlement claim; the claim restores the one it replaced. */
+type ClaimableStatus = "confirmed" | "payment_hold";
+
 export interface ReconcileResult {
   status: MatchStatus;
   reconciled: boolean;
@@ -66,21 +69,29 @@ export class OrderSettlementService {
    * Reconciles an order at most once. The order row is claimed with an atomic
    * `confirmed | payment_hold -> settling` update before any effect, so concurrent or repeated calls
    * cannot pay the supplier or restock twice. If the settlement adapter fails before a
-   * result is stored the claim is released (`settling -> confirmed`) and the call can be
-   * retried; nothing has been restocked or journaled at that point.
+   * result is stored, or the result is not MATCHED, the claim is released to the status it
+   * replaced (`confirmed` or `payment_hold`) and the call can be retried. Nothing has been
+   * restocked or journaled at that point.
    */
   async settle(orderId: string, loadEvidence: EvidenceLoader): Promise<ReconcileResult> {
-    // Task 5/10 recovery: an order left in `settling` after a crash or a failed
-    // finalising step has no automatic recovery yet; it holds as RECONCILE_IN_PROGRESS.
-    // `payment_hold` orders are claimable: a hold is retried once the payment record is fixed.
-    const claimRes = await query(
-      `UPDATE orders SET status = 'settling', updated_at = NOW()
-       WHERE id = $1 AND status IN ('confirmed', 'payment_hold')
-       RETURNING *;`,
-      [orderId]
-    );
+    // The claim is attempted at most twice. A caller can lose the claim to a holder that then
+    // parks the order in `payment_hold`, which is claimable. One retry covers that; if the
+    // order is still held after the second attempt, the caller reports RECONCILE_IN_PROGRESS.
+    let claimed: any = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      // The claim also returns the status it replaced, so every release restores exactly that.
+      const claimRes = await query(
+        `WITH prev AS (SELECT status FROM orders WHERE id = $1 FOR UPDATE)
+         UPDATE orders o SET status = 'settling', updated_at = NOW() FROM prev
+         WHERE o.id = $1 AND o.status IN ('confirmed', 'payment_hold')
+         RETURNING o.*, prev.status AS prev_status;`,
+        [orderId]
+      );
+      if (claimRes.rows.length > 0) {
+        claimed = claimRes.rows[0];
+        break;
+      }
 
-    if (claimRes.rows.length === 0) {
       const currentRes = await query(`SELECT * FROM orders WHERE id = $1;`, [orderId]);
       if (currentRes.rows.length === 0) {
         throw new Error(`Order '${orderId}' not found.`);
@@ -90,35 +101,35 @@ export class OrderSettlementService {
         return this.storedReconcileResult(current);
       }
       if (current.status === "settling") {
-        // Report the stored match outcome if there is one. MatchStatus.UNMATCHED is the
-        // "no match evaluated yet" value, so a hold never claims MATCHED on its own.
-        const matchRes = await query(`SELECT match_status FROM three_way_matches WHERE order_id = $1;`, [
-          current.id,
-        ]);
-        return {
-          status: (matchRes.rows[0]?.match_status as MatchStatus) ?? MatchStatus.UNMATCHED,
-          reconciled: false,
-          hold: "RECONCILE_IN_PROGRESS",
-        };
+        // Task 5/10 recovery: an order left in `settling` after a crash or a failed finalising
+        // step has no automatic recovery yet; it holds as RECONCILE_IN_PROGRESS. Report the
+        // stored match outcome if there is one. MatchStatus.UNMATCHED is the "no match evaluated
+        // yet" value, so a hold never claims MATCHED on its own.
+        return this.inProgressResult(current.id);
+      }
+      if (current.status === "payment_hold") {
+        if (attempt < 2) continue;
+        // Still held after the retry, so the caller cannot claim it. Nothing is paid here.
+        return this.inProgressResult(current.id);
       }
       throw new Error(`Order '${orderId}' is in status '${current.status}' and cannot be reconciled.`);
     }
+    if (claimed === null) {
+      throw new Error(`Order '${orderId}' could not be claimed for settlement.`);
+    }
 
-    const order = claimRes.rows[0];
+    const { prev_status: prevStatusRaw, ...order } = claimed;
+    const prevStatus: ClaimableStatus = prevStatusRaw === "payment_hold" ? "payment_hold" : "confirmed";
     const progress = { paid: false };
     try {
-      return await this.settleClaimedOrder(order, loadEvidence, progress);
+      return await this.settleClaimedOrder(order, loadEvidence, progress, prevStatus);
     } catch (err) {
       // Release the claim unless the adapter already returned a payment. If we fail
       // after a successful transfer the order stays `settling` (a visible hold)
       // rather than being offered for a second payment.
       if (!progress.paid) {
         try {
-          await query(
-            `UPDATE orders SET status = 'confirmed', updated_at = NOW()
-             WHERE id = $1 AND status = 'settling';`,
-            [order.id]
-          );
+          await this.releaseClaim(order.id, prevStatus);
         } catch (releaseErr) {
           // Never mask the original failure. The order stays `settling` (held).
           console.error(`Could not release settlement claim on order '${order.id}':`, releaseErr);
@@ -126,6 +137,24 @@ export class OrderSettlementService {
       }
       throw err;
     }
+  }
+
+  /** Puts a claimed order back to the status it had before the claim. */
+  private async releaseClaim(orderId: string, status: ClaimableStatus): Promise<void> {
+    await query(
+      `UPDATE orders SET status = $2, updated_at = NOW() WHERE id = $1 AND status = 'settling';`,
+      [orderId, status]
+    );
+  }
+
+  /** The hold reported to a caller that cannot claim an order another caller is settling or has held. */
+  private async inProgressResult(orderId: string): Promise<ReconcileResult> {
+    const matchRes = await query(`SELECT match_status FROM three_way_matches WHERE order_id = $1;`, [orderId]);
+    return {
+      status: (matchRes.rows[0]?.match_status as MatchStatus) ?? MatchStatus.UNMATCHED,
+      reconciled: false,
+      hold: "RECONCILE_IN_PROGRESS",
+    };
   }
 
   private async storedReconcileResult(order: any): Promise<ReconcileResult> {
@@ -141,15 +170,14 @@ export class OrderSettlementService {
   private async settleClaimedOrder(
     order: any,
     loadEvidence: EvidenceLoader,
-    progress: { paid: boolean }
+    progress: { paid: boolean },
+    prevStatus: ClaimableStatus
   ): Promise<ReconcileResult> {
     const evidence = await loadEvidence(order);
     if ("pending" in evidence) {
       // Nothing can be matched yet. Release the claim so the missing document can arrive
       // and the order can be settled by a later call.
-      await query(`UPDATE orders SET status = 'confirmed', updated_at = NOW() WHERE id = $1 AND status = 'settling';`, [
-        order.id,
-      ]);
+      await this.releaseClaim(order.id, prevStatus);
       return { status: MatchStatus.UNMATCHED, reconciled: false, pending: evidence.pending };
     }
     const { receipt, bill } = evidence;
@@ -226,10 +254,7 @@ export class OrderSettlementService {
 
     if (matchResult.status !== MatchStatus.MATCHED) {
       // Nothing was paid: release the claim so the order can be corrected and retried.
-      await query(
-        `UPDATE orders SET status = 'confirmed', updated_at = NOW() WHERE id = $1 AND status = 'settling';`,
-        [order.id]
-      );
+      await this.releaseClaim(order.id, prevStatus);
       return {
         status: matchResult.status,
         reconciled: false,
@@ -246,7 +271,8 @@ export class OrderSettlementService {
     const supplier = suppRes.rows[0];
 
     let hold: ReconcileHold | null = null;
-    if (!supplier || !supplier.verified) {
+    // A supplier record from another workspace is never a payee, even when it is verified and payable.
+    if (!supplier || supplier.workspace_id !== order.workspace_id || !supplier.verified) {
       hold = "SUPPLIER_NOT_VERIFIED";
     } else if (!supplier.payment_address) {
       hold = "SUPPLIER_PAYMENT_ADDRESS_MISSING";

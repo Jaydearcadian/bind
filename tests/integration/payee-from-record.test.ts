@@ -7,6 +7,7 @@ import { query, closePool } from "../../src/db/client.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import { provisionWorkspace } from "../../src/templates/registry.js";
 import { ProcurementWorkflowRunner } from "../../src/workflows/procurement.js";
+import { OrderSettlementService } from "../../src/workflows/settlement.js";
 import { createReplenishmentTools } from "../../src/agents/replenishmentTools.js";
 import { MatchStatus } from "../../src/accounting/three-way-match.js";
 import { WorkflowState } from "../../src/workflows/types.js";
@@ -319,5 +320,81 @@ describe("The payee comes from the verified supplier record", () => {
     await runMigrations();
 
     expect(await paymentAddressOf(suppId)).toBe(simulatedPaymentAddress(suppId));
+  });
+
+  it("callers racing for a held order never throw and never pay", async () => {
+    const wsId = await workspace();
+    const { orderId, supplierId } = await orderFor(wsId, FLOUR);
+    await query(`UPDATE suppliers SET payment_address = NULL WHERE id = $1;`, [supplierId]);
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, () => runner.fulfillAndReconcile(orderId))
+    );
+
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+    const values = results.map((r) => (r as PromiseFulfilledResult<any>).value);
+    for (const value of values) {
+      expect(value.reconciled).toBe(false);
+      expect(["SUPPLIER_PAYMENT_ADDRESS_MISSING", "RECONCILE_IN_PROGRESS"]).toContain(value.hold);
+    }
+    expect(settlement.transferCalls).toBe(0);
+    expect((await orderRow(orderId)).status).toBe("payment_hold");
+  });
+
+  it("a held order stays payment_hold when evidence loading fails on retry", async () => {
+    const wsId = await workspace();
+    const { orderId, supplierId } = await orderFor(wsId, FLOUR);
+    await query(`UPDATE suppliers SET payment_address = NULL WHERE id = $1;`, [supplierId]);
+    expect((await runner.fulfillAndReconcile(orderId)).hold).toBe("SUPPLIER_PAYMENT_ADDRESS_MISSING");
+    expect((await orderRow(orderId)).status).toBe("payment_hold");
+
+    const service = new OrderSettlementService({ settlementFor: () => settlement });
+    await expect(
+      service.settle(orderId, async () => {
+        throw new Error("evidence source unavailable");
+      })
+    ).rejects.toThrow(/evidence source unavailable/);
+
+    expect((await orderRow(orderId)).status).toBe("payment_hold");
+    expect(settlement.transferCalls).toBe(0);
+  });
+
+  it("a held order stays payment_hold when the match is not MATCHED on retry", async () => {
+    const wsId = await workspace();
+    const { orderId, supplierId } = await orderFor(wsId, FLOUR);
+    await query(`UPDATE suppliers SET payment_address = NULL WHERE id = $1;`, [supplierId]);
+    expect((await runner.fulfillAndReconcile(orderId)).hold).toBe("SUPPLIER_PAYMENT_ADDRESS_MISSING");
+
+    // Stored bill now overcharges by $1.00 per unit, so the retry's match is a price discrepancy.
+    await query(
+      `UPDATE supplier_bills
+       SET billed_unit_price_cents = billed_unit_price_cents + 100,
+           billed_total_cents = (billed_unit_price_cents + 100) * billed_quantity
+       WHERE order_id = $1;`,
+      [orderId]
+    );
+    const retry = await runner.fulfillAndReconcile(orderId);
+    expect(retry).toEqual({ status: MatchStatus.PRICE_DISCREPANCY, reconciled: false });
+
+    expect((await orderRow(orderId)).status).toBe("payment_hold");
+    expect(settlement.transferCalls).toBe(0);
+  });
+
+  it("a supplier from another workspace is never paid", async () => {
+    const wsA = await workspace();
+    const wsB = await workspace();
+    const { orderId } = await orderFor(wsA, FLOUR);
+    const foreignSupplier = `${wsB}_supp-sysco-metro`;
+    const foreign = await query(`SELECT verified, payment_address FROM suppliers WHERE id = $1;`, [foreignSupplier]);
+    expect(foreign.rows[0].verified).toBe(true);
+    expect(foreign.rows[0].payment_address).not.toBeNull();
+
+    // Point workspace A's order at workspace B's verified, payable supplier record.
+    await query(`UPDATE orders SET supplier_id = $2 WHERE id = $1;`, [orderId, foreignSupplier]);
+
+    const result = await runner.fulfillAndReconcile(orderId);
+    expect(result).toEqual({ status: MatchStatus.MATCHED, reconciled: false, hold: "SUPPLIER_NOT_VERIFIED" });
+    expect(settlement.transferCalls).toBe(0);
+    expect((await orderRow(orderId)).status).toBe("payment_hold");
   });
 });

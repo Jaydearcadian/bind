@@ -27,3 +27,10 @@ party is the error this project exists to prevent.
 - A payment can only reach an address recorded on the order's own supplier.
 - Existing workspaces keep their address. Real suppliers without an address stay held until the owner
   adds one. Held orders are visible as `payment_hold` and are not retried automatically.
+
+## Fix round 1
+- A caller that loses the claim retries it once if the order is `payment_hold`. If it is still held, the
+  caller reports `RECONCILE_IN_PROGRESS` and never throws.
+- Every release restores the status the claim replaced (`confirmed` or `payment_hold`), so a failed retry
+  keeps the hold label.
+- A supplier from another workspace counts as `SUPPLIER_NOT_VERIFIED`.
