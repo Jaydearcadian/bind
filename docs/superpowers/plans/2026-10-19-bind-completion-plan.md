@@ -199,6 +199,31 @@ The settlement contract client must be tested against the real compiled `BindSet
 - [ ] **Step 4: Run** full gates and the browser tests; run `npm run map:functions`.
 - [ ] **Step 5: Commit** `fix(settlement): reconcile only after confirmed settlement; confirmSettlement and truthful labels`.
 
+### Task 3d: A Circle CLI adapter that does not claim what it did not verify
+
+`src/adapters/circleAgentStack.ts` is only reachable through the unused `createBindCircleAgent`, but it is the module the README's Arc evidence came from, and it states things it never checked:
+- With the live CLI off (the default) `executeBindSettlement` returns `paymentStatus: "SETTLED_ON_ARC_TESTNET"`, a made-up `0xsim_arc_<timestamp>_<random>` hash and `"badge": "LOCAL_PASS"`.
+- Any CLI failure (timeout, missing binary, parse error) is reported as `REVERTED_BY_ONCHAIN_POLICY`. An unknown outcome presented as a definite revert invites a duplicate payment on retry.
+- A live success is labelled settled the moment the CLI returns a hash (that is `submitted`, not `confirmed`).
+- With the CLI off, `queryVendorWhitelistStatus` answers `true` for one hard-coded demo vendor and calls it `LOCAL_VERIFIED_FALLBACK`. That is an invented chain read.
+
+**Files:**
+- Modify: `src/adapters/circleAgentStack.ts`, `src/agents/bindCircleDeepAgent.ts` (types only, if needed)
+- Test: `tests/unit/circle-agent-stack.test.ts`
+
+**Interfaces:**
+- `CircleSettlementExecutionResult.paymentStatus: "SIMULATED_LOCAL" | "SUBMITTED_ON_ARC_TESTNET" | "REJECTED_BY_ONCHAIN_POLICY" | "OUTCOME_UNKNOWN"`. `executionMode: "LIVE_CIRCLE_CLI_ARC_TESTNET" | "SIMULATED_NO_LIVE_CLI"`. `CircleContractQueryResult.executionMode` takes the same two values and gains `whitelisted: boolean | null` (`null` when nothing was actually read).
+- `new CircleAgentStackAdapter(agentWalletAddress?: string, deps?: { exec?: (file: string, args: string[], opts: { timeout: number }) => Promise<{ stdout: string }>; env?: Record<string, string | undefined> })`. Defaults: promisified `execFile` and `process.env`.
+- Simulated path (live CLI not enabled or no wallet): `paymentStatus: "SIMULATED_LOCAL"`, no `txHash`, `rawOutput` is JSON `{ "status": "simulated", "note": "live Circle CLI not enabled" }`; the whitelist query returns `whitelisted: null`. No invented hash, no `LOCAL_PASS` badge.
+- Live path: parsed output with a transaction hash gives `SUBMITTED_ON_ARC_TESTNET`; output without a hash gives `OUTCOME_UNKNOWN`; a CLI error whose output matches `/revert|DailyLimitExceeded|VendorNotWhitelisted|OrderAlreadySettled/i` gives `REJECTED_BY_ONCHAIN_POLICY`; every other error (timeout, `ENOENT`, bad JSON) gives `OUTCOME_UNKNOWN`. The live whitelist query returns `whitelisted` parsed from `data.result`, or `null` if it cannot be parsed.
+- The private contract and vendor constants stay (they are Arc demo configuration).
+
+- [ ] **Step 1: Failing tests** (inject `exec`; no process is spawned): `simulated execution claims neither settlement nor a transaction hash`; `simulated whitelist query returns null, not true`; `a live success with a hash is submitted, never settled`; `a live success without a hash is outcome unknown`; `a revert message is a rejection`; `a timeout is outcome unknown, never a rejection`; `a missing binary is outcome unknown`; `malformed JSON is outcome unknown`; `the live whitelist query parses data.result true and false, and returns null for garbage`.
+- [ ] **Step 2: Run.** Expected: FAIL.
+- [ ] **Step 3: Implement.** Update `bindCircleDeepAgent.ts` only where the changed types force it.
+- [ ] **Step 4: Run** the full gates; `grep -rn "0xsim_arc\|LOCAL_PASS" src` (expected: no output).
+- [ ] **Step 5: Commit** `fix(circle): never report a simulated or unconfirmed Circle CLI result as settled`.
+
 ### Task 4: One policy gate for every commitment
 
 **Files:**
