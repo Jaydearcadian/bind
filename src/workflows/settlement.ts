@@ -315,10 +315,26 @@ export class OrderSettlementService {
     }
   }
 
-  /** Finishes a claimed order whose transfer was sent earlier: confirms it, then pays or holds or releases. */
+  /**
+   * Finishes a claimed order whose transfer was sent earlier: confirms it, then pays or holds or releases.
+   * Facts about the payment come only from the payment record stored with the transfer, never from the
+   * latest documents, which may have changed since the transfer was sent.
+   */
   private async confirmClaimedOrder(order: any): Promise<ReconcileResult> {
     if (!order.tx_hash) {
       throw new Error(`Order '${order.id}' is settlement_submitted without a transaction hash.`);
+    }
+    const missing = [
+      ["settled_amount_cents", order.settled_amount_cents],
+      ["settled_receipt_id", order.settled_receipt_id],
+      ["settled_bill_id", order.settled_bill_id],
+    ]
+      .filter(([, value]) => value === null || value === undefined)
+      .map(([name]) => name);
+    if (missing.length > 0) {
+      throw new Error(
+        `Order '${order.id}' cannot be finished: its payment record is missing ${missing.join(", ")}.`
+      );
     }
     const wsRes = await query(`SELECT * FROM workspaces WHERE id = $1;`, [order.workspace_id]);
     const workspace = wsRes.rows[0];
@@ -342,26 +358,22 @@ export class OrderSettlementService {
       return this.awaitingResult(order.id, order.tx_hash);
     }
 
-    // The latest stored receipt and bill are the ones this payment is finished against, as on the settle path.
-    const receiptRes = await query(
-      `SELECT received_quantity FROM delivery_receipts WHERE order_id = $1 ORDER BY received_at DESC, id DESC LIMIT 1;`,
-      [order.id]
-    );
+    // Restock the quantity of the receipt the payment was matched against. A missing receipt is an error,
+    // never a reason to read a different one.
+    const receiptRes = await query(`SELECT received_quantity FROM delivery_receipts WHERE id = $1 AND order_id = $2;`, [
+      order.settled_receipt_id,
+      order.id,
+    ]);
     if (receiptRes.rows.length === 0) {
-      throw new Error(`Order '${order.id}' has no stored delivery receipt to restock from.`);
-    }
-    const billRes = await query(
-      `SELECT billed_total_cents FROM supplier_bills WHERE order_id = $1 ORDER BY received_at DESC, id DESC LIMIT 1;`,
-      [order.id]
-    );
-    if (billRes.rows.length === 0) {
-      throw new Error(`Order '${order.id}' has no stored supplier bill to record the payment against.`);
+      throw new Error(
+        `Order '${order.id}' cannot be finished: payment receipt '${order.settled_receipt_id}' is not stored.`
+      );
     }
     await this.finaliseConfirmedPayment(order, {
       txHash: order.tx_hash,
       settledAt: outcome.timestamp,
       receivedQuantity: Number(receiptRes.rows[0].received_quantity),
-      payableAmountCents: BigInt(billRes.rows[0].billed_total_cents),
+      payableAmountCents: BigInt(order.settled_amount_cents),
       mode: adapter.mode,
     });
     return { status: await this.matchStatusOf(order.id), reconciled: true, txHash: order.tx_hash };
@@ -597,11 +609,14 @@ export class OrderSettlementService {
     progress.paid = true;
 
     // Make the transfer durable on the claimed row before anything else, so a failure from here on
-    // leaves the order `settling` with the hash recorded.
-    await query(`UPDATE orders SET tx_hash = $1, updated_at = NOW() WHERE id = $2 AND status = 'settling';`, [
-      transfer.txHash,
-      order.id,
-    ]);
+    // leaves the order `settling` with the hash recorded. The payment record (amount and the receipt and bill
+    // it was matched against) is written in the same statement, so confirmation finishes this payment as made.
+    await query(
+      `UPDATE orders
+       SET tx_hash = $1, settled_amount_cents = $3, settled_receipt_id = $4, settled_bill_id = $5, updated_at = NOW()
+       WHERE id = $2 AND status = 'settling';`,
+      [transfer.txHash, order.id, matchResult.payableAmountCents, receipt.receiptId, bill.billId]
+    );
 
     let outcome = outcomeOf(transfer);
     if (outcome.kind === "unconfirmed") {

@@ -30,6 +30,9 @@ also requires a `matchHash`, which the caller did not pass.
 - The finalising step (restock and status in one transaction, anti-drift write, transition, audit, journal) is one
   private method used by both paths. The anti-drift label is `SETTLED_ON_ARC_TESTNET` only for the Arc adapter and
   `SETTLED_LOCAL_SIMULATION` for every other adapter. Both labels read as "awaiting physical delivery".
+- The payment record is three columns on `orders`: `settled_amount_cents`, `settled_receipt_id` and `settled_bill_id`.
+  They are written in the same statement that stores `tx_hash`, and confirmation reads only them. An order with any of
+  them missing is refused with an error, never finished against the latest documents.
 - `settlement_submitted` counts toward the daily spend. The three spend queries read one list,
   `SPEND_COUNTING_ORDER_STATUSES` in `src/orders/statuses.ts`.
 - `POST /api/orders/:id/confirm-settlement` returns 200 with the result, 404 `ORDER_NOT_FOUND`, 409

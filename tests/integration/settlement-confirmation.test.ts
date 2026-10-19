@@ -595,4 +595,100 @@ describe("Settlement waits for confirmation before an order is paid", () => {
     expect(error).toBeInstanceOf(SettlementOrderError);
     expect((error as SettlementOrderError).code).toBe("ORDER_NOT_FOUND");
   });
+
+  it("confirmSettlement finishes against the receipt, bill and amount that were paid, not the latest stored documents", async () => {
+    const adapter = new ScriptedSettlementAdapter("local");
+    adapter.transferStatus = "submitted";
+    adapter.confirmStatus = "submitted";
+    const runner = new ProcurementWorkflowRunner({ settlementFor: () => adapter });
+    const wsId = await newWorkspace();
+    const { orderId } = await confirmedOrder(runner, wsId, FLOUR);
+    const paid = await runner.fulfillAndReconcile(orderId);
+    expect(paid.pending).toBe(AWAITING);
+    const order = await orderRow(orderId);
+    const stockBefore = await stockOf(wsId, FLOUR);
+    const paidQuantity = Number(order.quantity);
+
+    // Newer documents are stored after the payment was sent. They must not change what the payment was for.
+    const laterReceiptId = `rcpt_later_${orderId}`;
+    const laterBillId = `bill_later_${orderId}`;
+    await query(
+      `INSERT INTO delivery_receipts (id, order_id, received_quantity, received_at, condition_notes, discrepancy_reported)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '1 hour', 'later receipt', FALSE);`,
+      [laterReceiptId, orderId, paidQuantity + 7]
+    );
+    await query(
+      `INSERT INTO supplier_bills (id, order_id, bill_number, billed_quantity, billed_unit_price_cents, billed_total_cents, currency, received_at)
+       VALUES ($1, $2, 'BILL-LATER', $3, 1000, 999999, 'USDC', NOW() + INTERVAL '1 hour');`,
+      [laterBillId, orderId, paidQuantity + 7]
+    );
+
+    adapter.confirmStatus = "confirmed";
+    const result = await runner.confirmSettlement(orderId);
+    expect(result).toMatchObject({ reconciled: true, txHash: paid.txHash });
+
+    const journal = await query(`SELECT amount_cents FROM accounting_journal_entries WHERE order_id = $1;`, [orderId]);
+    expect(journal.rows).toHaveLength(1);
+    expect(BigInt(journal.rows[0].amount_cents)).toBe(BigInt(order.total_price_cents));
+    expect(await stockOf(wsId, FLOUR)).toBe(stockBefore + paidQuantity);
+    const finished = await orderRow(orderId);
+    expect(finished.status).toBe("reconciled");
+
+    // The payment record keeps the documents that were matched when the transfer was sent.
+    expect(BigInt(finished.settled_amount_cents)).toBe(BigInt(order.total_price_cents));
+    expect(finished.settled_receipt_id).not.toBe(laterReceiptId);
+    expect(finished.settled_bill_id).not.toBe(laterBillId);
+    expect(finished.settled_receipt_id).toEqual(expect.any(String));
+    expect(finished.settled_bill_id).toEqual(expect.any(String));
+  });
+
+  it("confirmSettlement refuses to guess when the payment record is incomplete", async () => {
+    const adapter = new ScriptedSettlementAdapter("local");
+    adapter.transferStatus = "submitted";
+    adapter.confirmStatus = "submitted";
+    const runner = new ProcurementWorkflowRunner({ settlementFor: () => adapter });
+    const wsId = await newWorkspace();
+    const { orderId } = await confirmedOrder(runner, wsId, FLOUR);
+    expect((await runner.fulfillAndReconcile(orderId)).pending).toBe(AWAITING);
+    const stockBefore = await stockOf(wsId, FLOUR);
+
+    await query(`UPDATE orders SET settled_amount_cents = NULL WHERE id = $1;`, [orderId]);
+    adapter.confirmStatus = "confirmed";
+
+    const error = await runner.confirmSettlement(orderId).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(orderId);
+    expect((error as Error).message).toContain("settled_amount_cents");
+
+    expect((await orderRow(orderId)).status).toBe("settlement_submitted");
+    expect(await stockOf(wsId, FLOUR)).toBe(stockBefore);
+    const journal = await query(`SELECT 1 FROM accounting_journal_entries WHERE order_id = $1;`, [orderId]);
+    expect(journal.rows).toHaveLength(0);
+  });
+
+  it("the payment record columns exist after migrations, and a second run changes nothing", async () => {
+    const columns = async () =>
+      (
+        await query(
+          `SELECT column_name, data_type FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'orders'
+             AND column_name IN ('settled_amount_cents', 'settled_receipt_id', 'settled_bill_id')
+           ORDER BY column_name;`
+        )
+      ).rows;
+    const expected = [
+      { column_name: "settled_amount_cents", data_type: "bigint" },
+      { column_name: "settled_bill_id", data_type: "text" },
+      { column_name: "settled_receipt_id", data_type: "text" },
+    ];
+
+    // Recreate the table shape from before this change, then migrate.
+    await query(`ALTER TABLE orders DROP COLUMN IF EXISTS settled_amount_cents, DROP COLUMN IF EXISTS settled_receipt_id, DROP COLUMN IF EXISTS settled_bill_id;`);
+    expect(await columns()).toEqual([]);
+
+    await runMigrations();
+    expect(await columns()).toEqual(expected);
+    await runMigrations();
+    expect(await columns()).toEqual(expected);
+  });
 });

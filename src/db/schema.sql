@@ -88,13 +88,20 @@ CREATE TABLE IF NOT EXISTS orders (
     unit_price_cents BIGINT NOT NULL,
     total_price_cents BIGINT NOT NULL,
     currency TEXT NOT NULL DEFAULT 'USDC',
-    status TEXT NOT NULL, -- 'draft', 'awaiting_approval', 'authorized', 'submitted', 'confirmed', 'fulfilled', 'reconciled', 'cancelled'
+    status TEXT NOT NULL, -- 'draft', 'awaiting_approval', 'authorized', 'submitted', 'confirmed', 'settling', 'payment_hold', 'settlement_submitted', 'fulfilled', 'reconciled', 'cancelled'
     idempotency_key TEXT UNIQUE NOT NULL,
     external_order_ref TEXT,
     tx_hash TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Payment record: the amount and the documents that a transfer was sent against. Written in the same statement
+-- that stores the transaction hash, so a later confirmation finishes the payment as it was made, never against
+-- whatever documents are stored when it is confirmed. NULL on orders that have not been paid.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS settled_amount_cents BIGINT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS settled_receipt_id TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS settled_bill_id TEXT;
 
 CREATE TABLE IF NOT EXISTS delivery_receipts (
     id VARCHAR(64) PRIMARY KEY,
