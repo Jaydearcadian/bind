@@ -1,7 +1,9 @@
 # ADR 0006: Owner authentication for approval decisions (OPEN)
 
 ## Status
-Proposed. Needs a product decision before implementation.
+Accepted by default (2026-10-19): option 1, per-workspace owner and staff tokens. The owner was asked and did not choose
+between the options, and the choice is reversible (sessions can be added later). Implementation is Task 6 of
+`docs/superpowers/plans/2026-10-19-bind-completion-plan.md`.
 
 ## Context
 The HTTP API has no authentication or session layer. Any caller who can reach the server can:
