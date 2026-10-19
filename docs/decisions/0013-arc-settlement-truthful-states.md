@@ -20,9 +20,19 @@ and never sent a transaction. The local simulator also reported `settled`. Nothi
 - `confirm` waits at most `confirmWaitMs`. Any RPC failure, or no receipt in time, returns `submitted`. Unknown outcomes
   are never reported as confirmed. A reverted receipt is `failed` with `REVERTED`, and a success without the event is
   `failed` with `EVENT_MISSING`.
-- The BindSettlement ABI is read from `contracts/artifacts/BindSettlement.json` in the constructor, not imported
-  statically. A missing artifact then fails only when the Arc adapter is built, not when the settlement module is
-  imported, so local mode keeps working.
+- The BindSettlement ABI is a generated module, `src/adapters/settlement/bind-settlement.abi.ts`, written by
+  `tools/compile-contract/generate.mjs` alongside `contracts/artifacts/BindSettlement.json`. It carries the same
+  `sourceSha256`, and a unit test checks that it equals the artifact. No runtime file read happens, so serverless
+  builds that ship only `dist/` work.
+- Every viem call that can fail for a non-settlement reason (chain id check, pre-flight call without revert data,
+  settleOrder send, settlement lookup, receipt decode) is wrapped in `SettlementTransportError`. Its message is
+  `RPC request failed during <operation>: <reason>`, the reason is the viem short message with URLs replaced by
+  `[redacted-url]` and the RPC URL and signer key replaced by `[redacted]`. It has no `cause`, so the raw RPC error,
+  and any token in the RPC URL, is not carried with it. A revert with data is always decoded first.
+- The adapter keeps its RPC URL, chain, transport, signer key, signer and wallet client in ES private fields, so
+  `JSON.stringify` and `util.inspect` of the adapter show none of them.
+- Settlement recovery (`OrderAlreadySettled`) scans from `BIND_SETTLEMENT_DEPLOY_BLOCK` (default 0) rather than
+  always from block 0.
 - Arc `depositEscrow` and `releaseEscrow` throw `SettlementNotSupportedError`. The local simulator keeps them with the
   same status model and `simulated: true`.
 - The local simulator returns `submitted` with `simulated: true`, and `confirmed` for any well-formed hash. It has no

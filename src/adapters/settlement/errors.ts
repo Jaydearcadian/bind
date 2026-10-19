@@ -55,3 +55,43 @@ export class SettlementNotSupportedError extends Error {
     this.name = "SettlementNotSupportedError";
   }
 }
+
+/**
+ * An RPC or transport call failed for a reason that is not a settlement decision. The message carries only the
+ * operation and a redacted reason. It never has a `cause`, because a cause would keep the raw RPC error (and its URL).
+ */
+export class SettlementTransportError extends Error {
+  readonly operation: string;
+
+  constructor(operation: string, reason: string) {
+    super(`RPC request failed during ${operation}: ${reason}`);
+    this.name = "SettlementTransportError";
+    this.operation = operation;
+  }
+}
+
+const URL_PATTERN = /https?:\/\/[^\s"'<>)]+/gi;
+
+/**
+ * Removes URLs and known secrets from text. Every URL becomes [redacted-url]; every occurrence of a
+ * non-empty secret becomes [redacted]. Pure: it does not read configuration.
+ */
+export function redactSecrets(text: string, secrets: readonly string[]): string {
+  let out = text.replace(URL_PATTERN, "[redacted-url]");
+  for (const secret of secrets) {
+    if (secret) out = out.split(secret).join("[redacted]");
+  }
+  return out;
+}
+
+/** Builds the transport error for a failed viem call, using the error's short message and redacting it. */
+export function transportErrorFrom(operation: string, error: unknown, secrets: readonly string[]): SettlementTransportError {
+  const details = error as { shortMessage?: unknown; message?: unknown } | null;
+  const raw =
+    typeof details?.shortMessage === "string"
+      ? details.shortMessage
+      : typeof details?.message === "string"
+        ? details.message
+        : "unknown error";
+  return new SettlementTransportError(operation, redactSecrets(raw, secrets));
+}

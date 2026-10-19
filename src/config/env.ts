@@ -17,6 +17,7 @@ const envSchema = z.object({
   ARC_CHAIN_ID: z.coerce.number().default(5042002),
   BIND_SETTLEMENT_ADDRESS: z.string().optional(),
   ARC_SIGNER_PRIVATE_KEY: z.string().optional(),
+  BIND_SETTLEMENT_DEPLOY_BLOCK: z.string().regex(/^\d+$/, "must be a non-negative integer").optional(),
   SUPPLIER_ADAPTER_MODE: z.enum(["simulated", "live"]).default("simulated"),
   SESSION_SECRET: z.string().default("f3b890f6723e42d765870bca578b8a071c7b8c8d839352e051c5beea2d78bfb0"),
   ALLOW_NO_CONTRACTS: z.string().optional().default("1"),

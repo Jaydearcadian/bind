@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { loadArtifact } from "../helpers/bind-settlement.js";
+import { BIND_SETTLEMENT_ABI, BIND_SETTLEMENT_SOURCE_SHA256 } from "../../src/adapters/settlement/bind-settlement.abi.js";
 
 const SOURCE_URL = new URL("../../contracts/src/BindSettlement.sol", import.meta.url);
 
@@ -24,5 +25,11 @@ describe("committed BindSettlement compile artifact", () => {
   it("the artifact bytecode is non-empty hex", () => {
     const { bytecode } = loadArtifact();
     expect(bytecode).toMatch(/^0x(?:[0-9a-fA-F]{2})+$/);
+  });
+
+  it("the generated ABI module equals the artifact ABI and carries the same source hash", () => {
+    const artifact = loadArtifact();
+    expect(BIND_SETTLEMENT_ABI).toEqual(artifact.abi);
+    expect(BIND_SETTLEMENT_SOURCE_SHA256).toBe(artifact.sourceSha256);
   });
 });

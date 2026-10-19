@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { custom, keccak256, toHex, type Address, type AbiEvent, type Hex, type Transport } from "viem";
+import { inspect } from "node:util";
 import { privateKeyToAccount } from "viem/accounts";
 import { createLocalChain, type LocalChain } from "../helpers/local-chain.js";
 import { deployBindSettlement } from "../helpers/bind-settlement.js";
@@ -10,6 +11,7 @@ import {
   SettlementNotSupportedError,
   SettlementPayerMismatchError,
   SettlementRejectedError,
+  SettlementTransportError,
 } from "../../src/adapters/settlement/errors.js";
 import type { TransferRequest } from "../../src/adapters/settlement/types.js";
 
@@ -43,11 +45,12 @@ function transportFor(chain: LocalChain): Transport {
 function makeAdapter(
   chain: LocalChain,
   contractAddress: Address | undefined,
-  opts: { chainId?: number; transport?: Transport; signerPrivateKey?: Hex | undefined } = {}
+  opts: { chainId?: number; transport?: Transport; signerPrivateKey?: Hex | undefined; deployBlock?: bigint } = {}
 ): ArcL1SettlementAdapter {
   return new ArcL1SettlementAdapter({
     chainId: opts.chainId ?? CHAIN_ID,
     contractAddress,
+    deployBlock: opts.deployBlock,
     signerPrivateKey: "signerPrivateKey" in opts ? opts.signerPrivateKey : SIGNER_KEY,
     transport: opts.transport ?? transportFor(chain),
     confirmWaitMs: 0,
@@ -280,5 +283,68 @@ describe("Arc settlement adapter against the in-process BindSettlement contract"
 
     const releaseError = await rejectionOf(env.adapter.releaseEscrow("ms_1", SUPPLIER));
     expect(releaseError).toBeInstanceOf(SettlementNotSupportedError);
+  });
+
+  it("transport failures never expose the RPC URL or token", async () => {
+    const RPC_URL = "https://rpc.example.test/v1/SECRETTOKEN-123";
+    const failure = "request to https://rpc.example.test/v1/SECRETTOKEN-123 failed";
+    const cases = [
+      { method: "eth_chainId", operation: "chain id check", settledFirst: false },
+      { method: "eth_call", operation: "pre-flight call", settledFirst: false },
+      { method: "eth_sendRawTransaction", operation: "settleOrder send", settledFirst: false },
+      { method: "eth_getLogs", operation: "settlement lookup", settledFirst: true },
+    ];
+    for (const c of cases) {
+      // A fresh chain per case. For eth_getLogs, an earlier settlement must succeed so the lookup is reached.
+      const local = await setup();
+      if (c.settledFirst) await local.adapter.transferUSDC(settleRequest());
+      const flaky = new ArcL1SettlementAdapter({
+        chainId: CHAIN_ID,
+        contractAddress: local.deployed.address,
+        signerPrivateKey: SIGNER_KEY,
+        rpcUrl: RPC_URL,
+        transport: custom({
+          request: (args: { method: string; params?: unknown[] }) =>
+            args.method === c.method ? Promise.reject(new Error(failure)) : local.chain.request(args),
+        } as any),
+        confirmWaitMs: 0,
+      });
+
+      const error = await rejectionOf(flaky.transferUSDC(settleRequest()));
+      expect(error, c.method).toBeInstanceOf(SettlementTransportError);
+      expect(error.operation, c.method).toBe(c.operation);
+      expect(error.message, c.method).not.toContain("SECRETTOKEN-123");
+      expect(error.message, c.method).not.toContain("https://");
+      expect(error.cause, c.method).toBeUndefined();
+      const json = JSON.stringify(error);
+      expect(json, c.method).not.toContain("SECRETTOKEN-123");
+      expect(json, c.method).not.toContain("https://");
+    }
+  });
+
+  it("the adapter does not expose the signer key through JSON.stringify or util.inspect", async () => {
+    // A transfer builds the signer and the wallet client, which are the objects that hold the key.
+    await env.adapter.transferUSDC(settleRequest());
+    const json = JSON.stringify(env.adapter);
+    const shown = inspect(env.adapter, { showHidden: true, depth: 6 });
+    for (const text of [json, shown]) {
+      expect(text).not.toContain(SIGNER_KEY);
+      expect(text).not.toContain("11".repeat(32));
+    }
+  });
+
+  it("settlement recovery scans from the configured deploy block", async () => {
+    const first = await env.adapter.transferUSDC(settleRequest());
+    const settledBlock = env.chain.blockNumber();
+
+    // Control: a scan from block 0 finds the earlier settlement.
+    const control = makeAdapter(env.chain, env.deployed.address, { deployBlock: 0n });
+    expect((await control.transferUSDC(settleRequest())).txHash).toBe(first.txHash);
+
+    // A scan that starts after the settlement block cannot see it, so the duplicate is refused.
+    const late = makeAdapter(env.chain, env.deployed.address, { deployBlock: settledBlock + 1n });
+    const error = await rejectionOf(late.transferUSDC(settleRequest()));
+    expect(error).toBeInstanceOf(SettlementRejectedError);
+    expect(error.code).toBe("OrderAlreadySettled");
   });
 });
