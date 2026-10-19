@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { query } from "../db/client.js";
 import { provisionWorkspace, listTemplates } from "../templates/registry.js";
 import { ProcurementWorkflowRunner } from "../workflows/procurement.js";
+import { ApprovalDecisionError } from "../workflows/engine.js";
 import { WorkflowCrashRecoveryRunner } from "../workflows/recovery.js";
 import { webhookReceiver } from "../adapters/web2/webhook-receiver.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
@@ -37,6 +38,15 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/** Maps an approval decision failure to its HTTP status; anything else stays a 400. */
+function sendApprovalError(res: Response, err: any) {
+  if (err instanceof ApprovalDecisionError) {
+    const status = err.code === "APPROVAL_NOT_FOUND" ? 404 : 409;
+    return res.status(status).json({ error: err.message, code: err.code });
+  }
+  return res.status(400).json({ error: err.message });
+}
 
 export function createApp(): express.Express {
   const app = express();
@@ -239,6 +249,7 @@ export function createApp(): express.Express {
   // Approvals
   app.get("/api/workspaces/:id/approvals", async (req: Request, res: Response) => {
     const { id } = req.params;
+    await procurementRunner.expireApprovals({ workspaceId: id });
     const apprRes = await query(
       "SELECT * FROM approvals WHERE workspace_id = $1 ORDER BY created_at DESC;",
       [id]
@@ -253,7 +264,7 @@ export function createApp(): express.Express {
       const result = await procurementRunner.approveAndSubmit(id, decidedBy);
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendApprovalError(res, err);
     }
   });
 
@@ -261,13 +272,31 @@ export function createApp(): express.Express {
     const { id } = req.params;
     const { reason, decidedBy } = req.body;
     try {
-      await query(
-        "UPDATE approvals SET status = 'rejected', reason = $1, decided_by = $2, decided_at = NOW() WHERE id = $3 AND status = 'pending';",
-        [reason || "Rejected by owner", decidedBy || "owner@bind.local", id]
+      const result = await procurementRunner.declineApproval(
+        id,
+        "rejected",
+        decidedBy || "owner@bind.local",
+        reason
       );
-      res.json({ status: "rejected", approvalId: id });
+      res.json({ status: "rejected", approvalId: id, ...result });
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      sendApprovalError(res, err);
+    }
+  });
+
+  app.post("/api/approvals/:id/revoke", async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { reason, decidedBy } = req.body;
+    try {
+      const result = await procurementRunner.declineApproval(
+        id,
+        "revoked",
+        decidedBy || "owner@bind.local",
+        reason
+      );
+      res.json({ status: "revoked", approvalId: id, ...result });
+    } catch (err: any) {
+      sendApprovalError(res, err);
     }
   });
 
@@ -535,19 +564,19 @@ export function createApp(): express.Express {
               result,
             });
           } catch (err: any) {
-            return res.status(400).json({ error: err.message });
+            return sendApprovalError(res, err);
           }
         } else {
-          await query(
-            `UPDATE approvals
-             SET status = 'rejected', reason = $1, decided_by = $2, decided_at = NOW()
-             WHERE id = $3 AND status = 'pending';`,
-            [
-              event.reason || "Rejected by owner via surface card",
-              event.actorId,
+          try {
+            await procurementRunner.declineApproval(
               event.approvalId,
-            ]
-          );
+              "rejected",
+              event.actorId,
+              event.reason || "Rejected by owner via surface card"
+            );
+          } catch (err: any) {
+            return sendApprovalError(res, err);
+          }
           return res.json({
             status: "processed",
             eventType: event.eventType,

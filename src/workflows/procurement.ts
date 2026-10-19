@@ -1,4 +1,4 @@
-import { WorkflowEngine } from "./engine.js";
+import { WorkflowEngine, ApprovalDecisionError } from "./engine.js";
 import { WorkflowState } from "./types.js";
 import { query } from "../db/client.js";
 import { PolicyDecision } from "../policy/engine.js";
@@ -273,24 +273,38 @@ export class ProcurementWorkflowRunner {
   ): Promise<{ workflowId: string; state: WorkflowState; orderId?: string }> {
     const apprRes = await query(`SELECT * FROM approvals WHERE id = $1;`, [approvalId]);
     if (apprRes.rows.length === 0) {
-      throw new Error(`Approval '${approvalId}' not found.`);
+      throw new ApprovalDecisionError("APPROVAL_NOT_FOUND", `Approval '${approvalId}' not found.`);
     }
     const approval = apprRes.rows[0];
-    const workflowId = approval.entity_id;
 
-    await this.workflowEngine.decideApproval(approvalId, "approved", decidedBy);
-
-    await this.workflowEngine.transition(workflowId, {
-      fromState: WorkflowState.AWAITING_APPROVAL,
-      toState: WorkflowState.AUTHORIZED,
-      patchContext: { approvedBy: decidedBy },
-    });
+    const { workflowId } = await this.workflowEngine.resolveApproval(approvalId, "approved", decidedBy);
 
     const wf = await this.workflowEngine.getWorkflow(workflowId);
     const quoteRes = wf!.contextData.replenishmentProposal || wf!.contextData.quote;
     const itemName = wf!.contextData.itemName || quoteRes.sku;
 
     return this.executeOrderSubmission(workflowId, approval.workspace_id, quoteRes, itemName);
+  }
+
+  /**
+   * Expires pending approvals past their window and cancels their workflows.
+   */
+  async expireApprovals(filter: { workspaceId?: string; approvalId?: string } = {}): Promise<number> {
+    return this.workflowEngine.expireApprovals(filter);
+  }
+
+  /**
+   * Rejects or revokes a pending approval. The waiting workflow is cancelled and
+   * no order is submitted.
+   */
+  async declineApproval(
+    approvalId: string,
+    decision: "rejected" | "revoked",
+    decidedBy: string,
+    reason?: string
+  ): Promise<{ workflowId: string; state: WorkflowState }> {
+    const { workflowId } = await this.workflowEngine.resolveApproval(approvalId, decision, decidedBy, reason);
+    return { workflowId, state: WorkflowState.CANCELLED };
   }
 
   /**

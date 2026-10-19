@@ -9,6 +9,36 @@ function safeJsonStringify(obj: any): string {
   );
 }
 
+export type ApprovalDecision = "approved" | "rejected" | "revoked";
+
+const APPROVAL_DECISION_TARGETS: Record<
+  ApprovalDecision,
+  { workflowState: WorkflowState; errorMessage: (reason?: string) => string | null }
+> = {
+  approved: { workflowState: WorkflowState.AUTHORIZED, errorMessage: () => null },
+  rejected: {
+    workflowState: WorkflowState.CANCELLED,
+    errorMessage: (reason) => reason || "Rejected by owner",
+  },
+  revoked: {
+    workflowState: WorkflowState.CANCELLED,
+    errorMessage: (reason) => reason || "Approval revoked by owner",
+  },
+};
+
+export type ApprovalErrorCode = "APPROVAL_NOT_FOUND" | "APPROVAL_NOT_PENDING" | "APPROVAL_EXPIRED";
+
+/** Typed failure for an approval decision, mapped to HTTP status by the API layer. */
+export class ApprovalDecisionError extends Error {
+  readonly code: ApprovalErrorCode;
+
+  constructor(code: ApprovalErrorCode, message: string) {
+    super(message);
+    this.name = "ApprovalDecisionError";
+    this.code = code;
+  }
+}
+
 export class WorkflowEngine {
   private mapRow(row: any): WorkflowRecord {
     return {
@@ -146,19 +176,99 @@ export class WorkflowEngine {
   }
 
   /**
-   * Owner resolves an approval (approved or rejected).
+   * Owner resolves a pending approval. The approval decision and the workflow
+   * transition happen in one statement, so a crash cannot leave an approved
+   * approval attached to a workflow that is still waiting.
+   *
+   * Only a pending, unexpired approval whose workflow is AWAITING_APPROVAL can
+   * be resolved. Anything else throws an ApprovalDecisionError.
    */
-  async decideApproval(
+  async resolveApproval(
     approvalId: string,
-    status: "approved" | "rejected",
+    decision: ApprovalDecision,
     decidedBy: string,
     reason?: string
-  ): Promise<void> {
-    await query(
-      `UPDATE approvals
-       SET status = $1, decided_by = $2, reason = $3, decided_at = NOW()
-       WHERE id = $4 AND status = 'pending';`,
-      [status, decidedBy, reason || null, approvalId]
+  ): Promise<{ workflowId: string }> {
+    const target = APPROVAL_DECISION_TARGETS[decision];
+    const patch = decision === "approved" ? { approvedBy: decidedBy } : {};
+    const res = await query(
+      `WITH decided AS (
+         UPDATE approvals
+         SET status = $1, decided_by = $2, reason = $3, decided_at = NOW()
+         WHERE id = $4 AND status = 'pending' AND expires_at > NOW()
+         RETURNING entity_id
+       )
+       UPDATE workflows
+       SET state = $5,
+           error_message = $6,
+           context_data = context_data || $7::jsonb,
+           updated_at = NOW()
+       WHERE id IN (SELECT entity_id FROM decided) AND state = 'awaiting_approval'
+       RETURNING id;`,
+      [
+        decision,
+        decidedBy,
+        reason || null,
+        approvalId,
+        target.workflowState,
+        target.errorMessage(reason),
+        safeJsonStringify(patch),
+      ]
+    );
+
+    if (res.rowCount === 0) {
+      await this.explainUnresolvedApproval(approvalId);
+    }
+    return { workflowId: res.rows[0].id };
+  }
+
+  /**
+   * Marks pending approvals past their window as expired and cancels their
+   * waiting workflows. Optionally limited to one workspace or one approval.
+   */
+  async expireApprovals(filter: { workspaceId?: string; approvalId?: string } = {}): Promise<number> {
+    const res = await query(
+      `WITH expired AS (
+         UPDATE approvals
+         SET status = 'expired', reason = 'Owner approval window elapsed', decided_at = NOW()
+         WHERE status = 'pending'
+           AND expires_at <= NOW()
+           AND ($1::text IS NULL OR workspace_id = $1)
+           AND ($2::text IS NULL OR id = $2)
+         RETURNING entity_id
+       ),
+       cancelled AS (
+         UPDATE workflows
+         SET state = 'cancelled', error_message = 'Owner approval window elapsed', updated_at = NOW()
+         WHERE id IN (SELECT entity_id FROM expired) AND state = 'awaiting_approval'
+         RETURNING id
+       )
+       SELECT (SELECT COUNT(*) FROM expired)::int AS expired_count;`,
+      [filter.workspaceId ?? null, filter.approvalId ?? null]
+    );
+    return res.rows[0].expired_count;
+  }
+
+  /**
+   * Explains why a resolve call changed nothing. Expiry is applied here so a
+   * late decision always leaves the approval and workflow in a final state.
+   */
+  private async explainUnresolvedApproval(approvalId: string): Promise<never> {
+    const row = await query(
+      `SELECT status, expires_at <= NOW() AS is_past_window FROM approvals WHERE id = $1;`,
+      [approvalId]
+    );
+    if (row.rows.length === 0) {
+      throw new ApprovalDecisionError("APPROVAL_NOT_FOUND", `Approval '${approvalId}' not found.`);
+    }
+    const { status, is_past_window } = row.rows[0];
+    if (status === "pending" && is_past_window) {
+      await this.expireApprovals({ approvalId });
+      throw new ApprovalDecisionError("APPROVAL_EXPIRED", `Approval '${approvalId}' has expired.`);
+    }
+    throw new ApprovalDecisionError(
+      "APPROVAL_NOT_PENDING",
+      `Approval '${approvalId}' is '${status}' and cannot be decided.`
     );
   }
 

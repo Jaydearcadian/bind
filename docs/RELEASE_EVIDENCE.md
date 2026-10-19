@@ -157,3 +157,46 @@ Live endpoint verification against `https://bind-gilt.vercel.app` (all `LIVE_REA
 - `/health` returns `500` with a raw connection error when `DATABASE_URL` is absent;
   `/api/*` degrades gracefully with `503`.
 
+
+---
+
+## 8. Approval lifecycle slice (2026-10-19)
+
+### 8.1 What changed
+- Approvals are decided once. Approve, reject, and revoke move the approval and its workflow in one SQL statement (ADR 0005).
+- Expired approvals are refused, marked `expired`, and their workflows cancelled. Listing approvals applies expiry for that workspace only.
+- New `POST /api/approvals/:id/revoke`. Reject and revoke cancel the waiting workflow and submit nothing.
+- The surface-card reject path now goes through the same engine code. Previously it left the workflow waiting.
+- Unknown approval: `404 APPROVAL_NOT_FOUND`. Already decided or expired: `409` with `code`.
+- The approval card shows Revoke, and a reject error now shows a message instead of failing silently.
+- Not changed: the database schema, the contracts, and the Vercel deployment.
+
+### 8.2 Commands and results (local, from a clean `npm ci`, PostgreSQL 16.15 on 127.0.0.1)
+```
+npm ci                                  # clean install from package-lock.json
+npm run lint                            # exit 0
+npm run typecheck                       # exit 0
+npm run test:unit                       # 10 files, 49 passed
+npm run test:integration                # 6 files, 23 passed (15 existing + 8 new in approval-lifecycle.test.ts)
+npm run build                           # exit 0
+npx playwright test -c <config with launchOptions.executablePath=/opt/pw-browsers/chromium> tests/e2e/
+                                        # 8 passed (Desktop Chrome + Mobile Chrome)
+```
+Classification: `LOCAL_PASS` for all of the above.
+
+Notes on the browser run:
+- `npx playwright test` as written failed before reaching the app. The project pins a Playwright build whose Chromium is not installed here (`chromium_headless_shell-1248` missing). The pre-installed Chromium at `/opt/pw-browsers/chromium` was used through a temporary, untracked config. The repo config is unchanged.
+- `forge test` and `forge coverage` were not re-run. `forge` is not installed in this container, and no Solidity changed. The Section 3 results still describe the unchanged contract, and they were not re-verified in this slice.
+
+### 8.3 Known gaps and risks (open)
+| Area | Status | Why it matters |
+| :--- | :--- | :--- |
+| Owner authentication on approval and workspace routes | **Open. See ADR 0006** | Any caller can approve, reject, or revoke, and read any workspace by id. This is the main blocker before real use. |
+| Browser test for the Revoke button | `NOT_RUN` | The API path is covered by integration tests. The button is not exercised in a browser. |
+| Background expiry sweeper | Not built | Expiry applies on decision and on list read. An untouched approval stays `pending` in the database until someone reads or decides it. |
+| Crash injection between approval steps | Not run | The single-statement design should prevent a partial state. A fault-injection test would prove it. |
+| Live LLM replenishment agent (`NEBIUS_API_KEY`) | `NOT_RUN` | No key in this environment. |
+| Supplier, accounting, and messaging connectors | Simulated | Labelled `SIMULATED_SUPPLIER_ADAPTER` / `simulated`. No live counterparty is connected. |
+| Credential store for connectors | Not built | Required by the spec ("connect or configure tools with server-side credential storage"). |
+| Workflow cancel by owner (outside approvals) | Not built | Required by the spec's lifecycle, and needed for recovery. |
+| Live Vercel deployment | Not redeployed in this slice | Production still runs the previous commit until redeployed and checked. |
