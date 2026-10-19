@@ -106,18 +106,28 @@ Task 1 made `fulfillAndReconcile` exactly-once. The studio document-confirm rout
 
 ### Task 2: Pay the verified supplier, not a hard-coded address
 
+`src/workflows/settlement.ts` (`settleClaimedOrder`, around line 233) pays `toAddress: "0xa8358AED200D6CB6C856F972D853C1be833006ea"` for every order and falls back to the demo deployer wallet `0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2` when a workspace has no settlement address. The `suppliers` table has no payment address. Paying the wrong party is the "right amount to the wrong vendor" error the project exists to prevent.
+
 **Files:**
-- Modify: `src/workflows/procurement.ts` (settlement call), `src/db/schema.sql` (`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS payment_address TEXT`), `src/server/app.ts` (supplier route), `src/templates/kitchen-v1.ts`, `src/templates/agency-v1.ts`
-- Test: `tests/integration/payee-from-record.test.ts`, extend `tests/integration/db-migrations.test.ts`
+- Modify: `src/workflows/settlement.ts`, `src/db/schema.sql`, `src/server/app.ts` (supplier route, around line 350), `src/templates/kitchen-v1.ts`, `src/templates/agency-v1.ts`, `src/templates/registry.ts` (supplier insert), `src/workflows/procurement.ts` (the fallback supplier insert near line 100), `src/agents/replenishmentTools.ts` (three spend queries)
+- Create: `src/adapters/suppliers/payment-address.ts`
+- Test: `tests/integration/payee-from-record.test.ts`; extend `tests/integration/db-migrations.test.ts` or add `tests/integration/supplier-payment-address-migration.test.ts`
 
 **Interfaces:**
-- Produces: `suppliers.payment_address` (EVM address, checksummed with viem `getAddress`), reconcile `hold` codes `SUPPLIER_PAYMENT_ADDRESS_MISSING`, `SUPPLIER_NOT_VERIFIED`, `WORKSPACE_SETTLEMENT_ADDRESS_MISSING`.
+- Produces in `src/adapters/suppliers/payment-address.ts`:
+  - `export function simulatedPaymentAddress(supplierId: string): string` returns `"0x" + (md5hex(supplierId) + md5hex(supplierId + "x")).slice(0, 40)` in lowercase (Node `crypto.createHash("md5")`). Used only for suppliers with `is_simulated = TRUE`.
+  - `export function normalizePaymentAddress(raw: unknown): string | null` returns the viem `getAddress(...)` checksummed address when `isAddress(raw, { strict: false })`, otherwise `null`.
+- Schema: `ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS payment_address TEXT;` plus an idempotent backfill for simulated suppliers only: `UPDATE suppliers SET payment_address = '0x' || substr(md5(id) || md5(id || 'x'), 1, 40) WHERE is_simulated = TRUE AND payment_address IS NULL;` (same algorithm as the TypeScript helper; a test pins them equal).
+- Order status `payment_hold` (a held order is still a commitment). `settle` claims orders with `status IN ('confirmed','payment_hold')`. The three daily-spend queries in `replenishmentTools.ts` count `payment_hold` as well.
+- `ReconcileResult.hold` gains `"SUPPLIER_PAYMENT_ADDRESS_MISSING" | "SUPPLIER_NOT_VERIFIED" | "WORKSPACE_SETTLEMENT_ADDRESS_MISSING"`. A hold is returned after the match passes and before any payment: the claim is released to `payment_hold` (not `confirmed`), the match row stays, nothing is paid or restocked, an audit row `settlement.payment_hold` (DENY, evidence with the hold code) is written.
+- `POST /api/workspaces/:id/suppliers` accepts optional `paymentAddress`; a malformed value gives `400` with `error: "paymentAddress must be a valid EVM address"`. Stored checksummed.
+- The two literal addresses must not appear anywhere under `src/` afterwards.
 
-- [ ] **Step 1: Failing tests:** `settlement pays the supplier on the order, not a constant` (two suppliers with different addresses; assert the adapter received each order's own address); `an order whose supplier has no payment address is held, not paid` (hold code, no adapter call, order status `payment_hold`); `an unverified supplier is never paid`; `a workspace without a settlement address is held` (no deployer fallback); `POST suppliers rejects a malformed address`; migration test: a database created from the previous schema gains the column without data loss.
+- [ ] **Step 1: Failing tests** in `payee-from-record.test.ts` (use the counting settlement adapter pattern from `reconcile-once.test.ts`): `settlement pays the supplier on the order, not a constant` (two orders with two different suppliers; assert each transfer's `toAddress` equals that supplier's stored address); `an order whose supplier has no payment address is held as payment_hold and nothing is paid`; `an unverified supplier is never paid`; `a workspace without a settlement address is held, with no deployer fallback`; `a held order settles once the payment address is added, and pays once`; `a payment_hold order still counts toward the daily budget`; `POST suppliers rejects a malformed paymentAddress with 400 and stores a valid one checksummed`; `simulatedPaymentAddress matches the SQL backfill` (seed a simulated supplier row with NULL address, run `runMigrations()`, compare). Migration test: starting from a `suppliers` table without the column (drop the column in the test), `runMigrations()` adds it, keeps existing rows, and a second run changes nothing.
 - [ ] **Step 2: Run** the new tests. Expected: FAIL.
-- [ ] **Step 3: Implement.** Delete the two literal addresses in `fulfillAndReconcile`. Validate addresses with viem `isAddress`. Simulated template suppliers get deterministic labelled local addresses (`0x...` derived from the supplier id) so local flows still reconcile.
-- [ ] **Step 4: Run** unit, integration, and `grep -rn "0xa8358\|0xA4D196" src` (expected: no match in `src/`).
-- [ ] **Step 5: Commit** `fix(settlement): pay the order's verified supplier address`.
+- [ ] **Step 3: Implement.** In `settleClaimedOrder` after the match passes and before payment: load the supplier row by `order.supplier_id`; hold with the right code when not verified, when `payment_address` is null, or when the workspace `settlement_address` is null. Delete both literal addresses. New suppliers created by templates, the registry, the fallback insert in `procurement.ts`, and the supplier route get `payment_address` (simulated ones from `simulatedPaymentAddress`; the studio `manual_quote` supplier stays without one on purpose, so the owner must add it).
+- [ ] **Step 4: Run** unit, integration, and `grep -rn "0xa8358\|0xA4D196" src` (expected: no output). Existing tests that reconcile with a workspace lacking a settlement address must be given one in their setup; do not weaken their assertions.
+- [ ] **Step 5: Commit** `fix(settlement): pay the order's verified supplier address, never a constant`.
 
 ### Task 3: Settlement states that tell the truth, and a real Arc client
 
