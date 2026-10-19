@@ -107,9 +107,11 @@ export class OrderSettlementService {
         // yet" value, so a hold never claims MATCHED on its own.
         return this.inProgressResult(current.id);
       }
-      if (current.status === "payment_hold") {
+      if (current.status === "confirmed" || current.status === "payment_hold") {
+        // Both are claimable. A holder can release to `confirmed` (evidence pending, or a match
+        // that is not MATCHED) or park the order in `payment_hold`. Retry once; if the order is
+        // still unclaimed after the second attempt, report RECONCILE_IN_PROGRESS. Nothing is paid here.
         if (attempt < 2) continue;
-        // Still held after the retry, so the caller cannot claim it. Nothing is paid here.
         return this.inProgressResult(current.id);
       }
       throw new Error(`Order '${orderId}' is in status '${current.status}' and cannot be reconciled.`);

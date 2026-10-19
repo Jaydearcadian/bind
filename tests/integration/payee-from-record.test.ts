@@ -397,4 +397,29 @@ describe("The payee comes from the verified supplier record", () => {
     expect(settlement.transferCalls).toBe(0);
     expect((await orderRow(orderId)).status).toBe("payment_hold");
   });
+
+  it("callers racing while evidence is pending never throw and never pay", async () => {
+    const wsId = await workspace();
+    const { orderId } = await orderFor(wsId, FLOUR);
+    const service = new OrderSettlementService({ settlementFor: () => settlement });
+    const pendingLoader = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return { pending: "AWAITING_DELIVERY_RECEIPT" as const };
+    };
+
+    // 30 callers: the claim-to-read window is a few ms and the pool has 20 connections, so the
+    // reads queue behind the holder's release. Ten callers did not reproduce the race in 8 runs.
+    const results = await Promise.allSettled(
+      Array.from({ length: 30 }, () => service.settle(orderId, pendingLoader))
+    );
+
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+    const values = results.map((r) => (r as PromiseFulfilledResult<any>).value);
+    for (const value of values) {
+      expect(value.reconciled).toBe(false);
+      expect(["AWAITING_DELIVERY_RECEIPT", "RECONCILE_IN_PROGRESS"]).toContain(value.pending ?? value.hold);
+    }
+    expect(settlement.transferCalls).toBe(0);
+    expect((await orderRow(orderId)).status).toBe("confirmed");
+  });
 });
