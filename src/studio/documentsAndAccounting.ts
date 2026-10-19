@@ -16,7 +16,8 @@ export const ExtractDocumentInputSchema = z.object({
 });
 
 export const ConfirmDocumentInputSchema = z.object({
-  decidedBy: z.string().default("owner@bind.local"),
+  // Recorded as the confirming owner. The route sets it from the owner token; there is no fixed fallback (ADR 0022).
+  decidedBy: z.string().min(1).max(200),
   linkedOrderId: z.string().optional(),
   sku: z.string().optional(),
   supplierId: z.string().optional(),

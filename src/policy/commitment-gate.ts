@@ -19,7 +19,8 @@ export type CommitmentReasonCode =
   | "DAILY_LIMIT_EXCEEDED"
   | "ROLE_LIMIT_EXCEEDED"
   | "ABOVE_APPROVAL_THRESHOLD"
-  | "OWNER_REVIEW_REQUESTED";
+  | "OWNER_REVIEW_REQUESTED"
+  | "AGENTS_PAUSED";
 
 export interface CommitmentInput {
   workspaceId: string;
@@ -41,7 +42,13 @@ export interface CommitmentDecision {
 
 /** Plain database facts for one decision. Every row was loaded with the caller's workspace id. */
 export interface CommitmentFacts {
-  workspace: { workspaceId: string; budgetDailyLimitCents: bigint; approvalThresholdCents: bigint } | null;
+  workspace: {
+    workspaceId: string;
+    budgetDailyLimitCents: bigint;
+    approvalThresholdCents: bigint;
+    /** The owner's pause switch (ADR 0022). Optional so fixtures written before it still type-check: absent means not paused. */
+    agentsPaused?: boolean;
+  } | null;
   role: {
     id: string;
     workspaceId: string;
@@ -76,6 +83,9 @@ export function decideCommitment(facts: CommitmentFacts, input: CommitmentInput)
   const quote = facts.quote && facts.quote.workspaceId === input.workspaceId ? facts.quote : null;
 
   const denials: CommitmentReasonCode[] = [];
+
+  // 1. The owner's pause switch denies every commitment while it is on. An approval cannot override it.
+  if (workspace?.agentsPaused === true) denials.push("AGENTS_PAUSED");
 
   // 2. The role must exist in this workspace, be enabled and hold commercial_commitment. A missing row is a denial.
   let roleGranted = false;
@@ -139,6 +149,7 @@ export function decideCommitment(facts: CommitmentFacts, input: CommitmentInput)
     roleLimitCents: role ? role.spendingLimitCents.toString() : null,
     quoteValidUntil: quote ? quote.validUntil.toISOString() : null,
     ownerReviewRequested: input.ownerReviewRequested === true,
+    agentsPaused: workspace ? workspace.agentsPaused === true : null,
   };
 
   if (denials.length > 0 || !roleGranted || !workspace || !quote || !role) {
@@ -162,7 +173,7 @@ export function decideCommitment(facts: CommitmentFacts, input: CommitmentInput)
 /** Loads the facts for one decision from PostgreSQL, every read scoped to the caller's workspace. */
 export async function loadCommitmentFacts(input: CommitmentInput): Promise<CommitmentFacts> {
   const wsRes = await query(
-    `SELECT id, budget_daily_limit_cents, approval_threshold_cents FROM workspaces WHERE id = $1;`,
+    `SELECT id, budget_daily_limit_cents, approval_threshold_cents, agents_paused FROM workspaces WHERE id = $1;`,
     [input.workspaceId]
   );
   const roleRes = await query(
@@ -201,6 +212,7 @@ export async function loadCommitmentFacts(input: CommitmentInput): Promise<Commi
           workspaceId: ws.id,
           budgetDailyLimitCents: BigInt(ws.budget_daily_limit_cents),
           approvalThresholdCents: BigInt(ws.approval_threshold_cents),
+          agentsPaused: ws.agents_paused === true,
         }
       : null,
     role: role
@@ -242,6 +254,7 @@ const REASON_SENTENCE: Record<CommitmentReasonCode, string> = {
   ROLE_LIMIT_EXCEEDED: "The amount is above the agent's per-transaction limit.",
   ABOVE_APPROVAL_THRESHOLD: "The amount is above the owner approval threshold.",
   OWNER_REVIEW_REQUESTED: "Owner review was requested.",
+  AGENTS_PAUSED: "The owner has paused the agents for this workspace.",
 };
 
 function usd(cents: unknown): string {

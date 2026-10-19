@@ -11,7 +11,12 @@ export default defineConfig({
     fileParallelism: false,
     // Test-only value. The redaction tests need a configured secret to prove it never reaches stored text,
     // and a clean checkout has no .env.local. It is not used outside tests.
-    env: { SESSION_SECRET: "test-only-session-secret-0123456789abcdef" },
+    // Test-only webhook secrets (ADR 0022). Not used outside tests. Fixed values, so tests can derive signatures.
+    env: {
+      SESSION_SECRET: "test-only-session-secret-0123456789abcdef",
+      BIND_MASTER_SECRET: "test-only-master-secret-0123456789abcdef0123456789",
+      BIND_WEBHOOK_SECRET: "test-only-webhook-secret-0123456789abcdef0123456789",
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],

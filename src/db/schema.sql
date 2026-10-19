@@ -212,6 +212,11 @@ ALTER TABLE agent_roles
 ALTER TABLE quotes
   ADD COLUMN IF NOT EXISTS provenance TEXT NOT NULL DEFAULT 'SIMULATED_SUPPLIER_ADAPTER';
 
+-- Owner pause switch (ADR 0022). While TRUE the commitment gate denies every commitment and no replenishment starts.
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS agents_paused BOOLEAN NOT NULL DEFAULT FALSE;
+-- Webhook signing secret version (ADR 0022). Rotation increments it; the secret is derived from the master secret.
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS webhook_secret_version INT NOT NULL DEFAULT 1;
+
 CREATE TABLE IF NOT EXISTS surface_bindings (
     id VARCHAR(64) PRIMARY KEY,
     workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

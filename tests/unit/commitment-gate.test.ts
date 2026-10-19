@@ -178,6 +178,19 @@ describe("Single commitment gate: pure decision", () => {
     }
   });
 
+  it("denies while the workspace agents are paused", () => {
+    const f = facts({
+      workspace: { workspaceId: WS, budgetDailyLimitCents: 100000n, approvalThresholdCents: 25000n, agentsPaused: true },
+    });
+    const d = decideCommitment(f, input());
+    expect(d.decision).toBe(PolicyDecision.DENY);
+    expect(d.reasonCodes).toEqual(["AGENTS_PAUSED"]);
+    // A pause is a denial, not an escalation: an owner approval cannot resume a commitment while paused.
+    const escalated = decideCommitment(f, input({ ownerReviewRequested: true }));
+    expect(escalated.decision).toBe(PolicyDecision.DENY);
+    expect(escalated.reasonCodes).toEqual(["AGENTS_PAUSED"]);
+  });
+
   it("owner review requested escalates but never allows", () => {
     const d = decideCommitment(facts(), input({ ownerReviewRequested: true }));
     expect(d.decision).toBe(PolicyDecision.REQUIRE_APPROVAL);

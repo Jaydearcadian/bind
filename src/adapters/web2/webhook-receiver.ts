@@ -1,49 +1,66 @@
-import crypto from "crypto";
 import { query } from "../../db/client.js";
+import { config } from "../../config/env.js";
+import { newId } from "../../utils/ids.js";
+import { signPayload, verifySignature, WebhookNotConfiguredError } from "../../webhooks/signing.js";
 import { InboundWebhookEvent } from "./types.js";
 
+/** Reason returned when the event could not be stored. The database error itself is never returned (ADR 0022). */
+export const WEBHOOK_NOT_RECORDED = "Webhook could not be recorded";
+
+export type WebhookSecretSource = string | null | undefined | (() => string | null | undefined);
+
+export interface ProcessEventResult {
+  accepted: boolean;
+  reason?: string;
+  /** True when the event was not stored because of a storage failure. The caller may retry it. */
+  retryable?: boolean;
+}
+
+/**
+ * Standard webhooks: a shared secret from configuration, a signature over the raw body, and a replay check on
+ * (provider, event_id). There is no default secret. With no secret configured, computing or verifying a signature
+ * throws WebhookNotConfiguredError, and the route answers 503.
+ */
 export class WebhookReceiver {
-  constructor(private readonly secretKey: string = "whsec_test_secret_key_12345") {}
+  private readonly secretOf: () => string | null | undefined;
 
-  /**
-   * Computes an HMAC SHA-256 signature for payload verification.
-   */
-  computeSignature(payload: string, timestamp: number): string {
-    return crypto
-      .createHmac("sha256", this.secretKey)
-      .update(`${timestamp}.${payload}`)
-      .digest("hex");
+  constructor(secret: WebhookSecretSource = () => config.BIND_WEBHOOK_SECRET) {
+    this.secretOf = typeof secret === "function" ? secret : () => secret;
+  }
+
+  private secret(): string {
+    const value = this.secretOf();
+    if (!value) throw new WebhookNotConfiguredError();
+    return value;
+  }
+
+  /** HMAC SHA-256 over `timestamp.rawBody`, in hex. */
+  computeSignature(payload: string | Buffer, timestamp: number): string {
+    return signPayload(this.secret(), timestamp, payload);
+  }
+
+  /** Verifies the signature and rejects timestamps older than 300s or more than 60s in the future. Never throws on bad input. */
+  verifySignature(rawBody: string | Buffer, signatureHeader: string, timestampHeader: number): boolean {
+    return verifySignature({
+      secret: this.secret(),
+      timestamp: timestampHeader,
+      rawBody,
+      signature: signatureHeader,
+    });
   }
 
   /**
-   * Verifies HMAC signature and rejects expired requests (>5 minutes old).
+   * Stores an incoming event. Returns accepted: false with a reason when the event was already recorded for this
+   * provider, or when it could not be recorded (retryable). The row id is random and carries no client text.
    */
-  verifySignature(rawBody: string, signatureHeader: string, timestampHeader: number): boolean {
-    const now = Math.floor(Date.now() / 1000);
-    // Reject timestamps older than 300s or more than 60s in the future
-    if (Math.abs(now - timestampHeader) > 300) {
-      return false;
-    }
-
-    const expectedSignature = this.computeSignature(rawBody, timestampHeader);
-    return crypto.timingSafeEqual(
-      Buffer.from(signatureHeader, "utf-8"),
-      Buffer.from(expectedSignature, "utf-8")
-    );
-  }
-
-  /**
-   * Deduplicates and stores incoming webhook in PostgreSQL.
-   * Returns true if event is new and recorded, false if already processed (replay).
-   */
-  async processEvent(event: InboundWebhookEvent): Promise<{ accepted: boolean; reason?: string }> {
+  async processEvent(event: InboundWebhookEvent): Promise<ProcessEventResult> {
     try {
       const res = await query(
         `INSERT INTO inbound_webhooks (id, provider, event_id, payload, status, received_at)
          VALUES ($1, $2, $3, $4, 'received', NOW())
          ON CONFLICT (provider, event_id) DO NOTHING
          RETURNING id;`,
-        [`wh_${Date.now()}_${event.eventId}`, event.provider, event.eventId, JSON.stringify(event.payload)]
+        [newId("wh"), event.provider, event.eventId, JSON.stringify(event.payload)]
       );
 
       if (res.rowCount === 0) {
@@ -54,10 +71,11 @@ export class WebhookReceiver {
       }
 
       return { accepted: true };
-    } catch (err: any) {
-      return { accepted: false, reason: err.message };
+    } catch {
+      return { accepted: false, reason: WEBHOOK_NOT_RECORDED, retryable: true };
     }
   }
 }
 
+/** The receiver for the process configuration. The API builds its own per app, so tests can run unconfigured. */
 export const webhookReceiver = new WebhookReceiver();

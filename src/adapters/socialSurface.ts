@@ -102,8 +102,9 @@ export function assertSurfaceRoleAuthorized(
 }
 
 /**
- * Verifies inbound surface event against canonical PostgreSQL surface_bindings for the workspace.
- * If the actor is registered in surface_bindings, their database-assigned role overrides any role claimed in the payload.
+ * Authorizes an inbound surface event against the canonical surface_bindings row for (workspace, surface, actor).
+ * The role comes only from that row. The actorRole in the payload is never used for authority (ADR 0022). An actor
+ * with no binding is refused for every event type, so an unknown sender cannot claim a role.
  */
 export async function verifyAndAuthorizeSurfaceEvent(
   event: SocialSurfaceEvent
@@ -115,16 +116,27 @@ export async function verifyAndAuthorizeSurfaceEvent(
     [event.workspaceId, event.surface, event.actorId]
   );
 
-  const registeredRole = res.rows[0]?.actor_role as "owner" | "staff" | undefined;
-  const bindingStatus = res.rows[0]?.integration_status || "simulated_unregistered";
-  const effectiveRole = registeredRole || event.actorRole;
+  const row = res.rows[0];
+  if (!row) {
+    throw new SurfaceAuthorizationError(
+      `Actor ${event.actorId} on ${event.surface} has no binding in this workspace. Unbound actors cannot send events.`
+    );
+  }
+  const effectiveRole = row.actor_role as "owner" | "staff";
+  const bindingStatus: string = row.integration_status || "simulated";
 
   assertSurfaceRoleAuthorized(event, effectiveRole);
 
   return { effectiveRole, bindingStatus };
 }
 
-export async function upsertSurfaceBinding(workspaceId: string, rawInput: unknown) {
+/** Who a binding change is recorded as: the owner token's label, passed in by the route. */
+export interface SurfaceBindingActor {
+  type: "owner";
+  id: string;
+}
+
+export async function upsertSurfaceBinding(workspaceId: string, rawInput: unknown, actor: SurfaceBindingActor) {
   const input = SurfaceBindingUpsertSchema.parse(rawInput);
   // Never allow claiming 'verified' status unless provider verification secret is configured in env
   const safeStatus =
@@ -155,10 +167,12 @@ export async function upsertSurfaceBinding(workspaceId: string, rawInput: unknow
 
   await query(
     `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, 'owner', 'owner@bind.local', 'commercial_commitment', 'surface.bind_identity', 'ALLOW', $3::jsonb, NOW());`,
+     VALUES ($1, $2, $3, $4, 'commercial_commitment', 'surface.bind_identity', 'ALLOW', $5::jsonb, NOW());`,
     [
       newId("audit_surf"),
       workspaceId,
+      actor.type,
+      actor.id,
       JSON.stringify({
         surface: input.surface,
         actorId: input.actorId,

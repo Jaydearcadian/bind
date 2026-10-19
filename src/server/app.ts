@@ -13,7 +13,7 @@ import { ProcurementWorkflowRunner } from "../workflows/procurement.js";
 import { ApprovalDecisionError } from "../workflows/engine.js";
 import { SettlementOrderError } from "../workflows/settlement.js";
 import { WorkflowCrashRecoveryRunner } from "../workflows/recovery.js";
-import { webhookReceiver } from "../adapters/web2/webhook-receiver.js";
+import { WebhookReceiver } from "../adapters/web2/webhook-receiver.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import {
   normalizePaymentAddress,
@@ -25,7 +25,15 @@ import {
   verifyAndAuthorizeSurfaceEvent,
   upsertSurfaceBinding,
   listSurfaceBindings,
+  type SocialSurfaceEvent,
 } from "../adapters/socialSurface.js";
+import { verifySignature, workspaceWebhookSecret } from "../webhooks/signing.js";
+import {
+  setAgentsPaused,
+  viewWebhookSecret,
+  rotateWebhookSecret,
+} from "../studio/workspaceControls.js";
+import { newId } from "../utils/ids.js";
 import {
   SAFE_AGENT_TOOLS,
   FORBIDDEN_AGENT_CAPABILITIES,
@@ -126,6 +134,31 @@ async function createWithOwnerToken<T>(workspaceId: string, create: () => Promis
 export interface CreateAppOptions {
   /** Browser origins allowed to call the API. Defaults to BIND_CORS_ORIGINS. An empty list sends no CORS headers. */
   corsOrigins?: string[];
+  /**
+   * Overrides for the webhook secrets (ADR 0022). null means unset, which fails closed with 503. Omitted means the
+   * value from the environment. Tests use this to run unconfigured.
+   */
+  secrets?: { masterSecret?: string | null; webhookSecret?: string | null };
+}
+
+const WEBHOOK_UNAUTHORIZED = { error: "Invalid signature or expired timestamp" };
+const WEBHOOK_NOT_CONFIGURED = { error: "Webhook signing is not configured" };
+
+/** The raw bytes of a JSON request, kept by express.json so a signature is checked over what was sent. */
+type RawBodyRequest = Request & { rawBody?: Buffer };
+
+/**
+ * True when the x-bind-signature and x-bind-timestamp headers authenticate the exact bytes received. Any missing or
+ * malformed header, or a request with no raw body, is refused.
+ */
+function requestSignatureValid(req: Request, secret: string): boolean {
+  const raw = (req as RawBodyRequest).rawBody;
+  const signature = req.headers["x-bind-signature"];
+  const timestamp = req.headers["x-bind-timestamp"];
+  if (!Buffer.isBuffer(raw)) return false;
+  if (typeof signature !== "string") return false;
+  if (typeof timestamp !== "string" || !/^\d{1,15}$/.test(timestamp)) return false;
+  return verifySignature({ secret, timestamp: Number(timestamp), rawBody: raw, signature });
 }
 
 export function createApp(options: CreateAppOptions = {}): express.Express {
@@ -133,6 +166,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   const procurementRunner = new ProcurementWorkflowRunner();
   const recoveryRunner = new WorkflowCrashRecoveryRunner();
   const corsOrigins = options.corsOrigins ?? parseCorsOrigins(config.BIND_CORS_ORIGINS);
+  const masterSecret =
+    options.secrets?.masterSecret !== undefined ? (options.secrets.masterSecret ?? undefined) : config.BIND_MASTER_SECRET;
+  const webhookSecret =
+    options.secrets?.webhookSecret !== undefined ? (options.secrets.webhookSecret ?? undefined) : config.BIND_WEBHOOK_SECRET;
+  const receiver = new WebhookReceiver(() => webhookSecret);
 
   app.use(helmet({
     contentSecurityPolicy: false, // Allow CDN resources for Tailwind in UI
@@ -140,7 +178,13 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   if (corsOrigins.length > 0) {
     app.use(cors({ origin: corsOrigins }));
   }
-  app.use(express.json());
+  app.use(
+    express.json({
+      verify: (req, _res, buf) => {
+        (req as RawBodyRequest).rawBody = buf;
+      },
+    })
+  );
 
   // Serve static UI assets with no-store cache headers so updates are always fresh
   const staticPath = path.resolve(__dirname, "../../src/ui/public");
@@ -560,7 +604,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.post("/api/workspaces/:id/surfaces", ...workspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
-      const binding = await upsertSurfaceBinding(id, req.body);
+      const binding = await upsertSurfaceBinding(id, req.body, { type: "owner", id: decidedByOf(req.actor!.label) });
       res.status(201).json(binding);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
@@ -587,7 +631,12 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.post("/api/workspaces/:id/documents/:docId/confirm", ...workspaceOwner, async (req: Request, res: Response) => {
     const { id, docId } = req.params;
     try {
-      const confirmed = await confirmStagedDocument(id, docId, req.body);
+      // The confirming owner is the token label. The body's decidedBy is ignored (ADR 0021, ADR 0022).
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const confirmed = await confirmStagedDocument(id, docId, {
+        ...body,
+        decidedBy: decidedByOf(req.actor!.label),
+      });
       res.json(confirmed);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
@@ -667,136 +716,222 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     }
   });
 
-  // Inbound Webhooks (Standard and Social/POS Surface)
+  // Owner pause switch (ADR 0022). While paused, the commitment gate denies every commitment and no replenishment starts.
+  app.put("/api/workspaces/:id/agents-paused", ...workspaceOwner, async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const paused = req.body?.paused;
+    if (typeof paused !== "boolean") {
+      return res.status(400).json({ error: "paused must be true or false." });
+    }
+    try {
+      const stored = await setAgentsPaused(id, paused, { type: "owner", id: decidedByOf(req.actor!.label) }, "owner_api");
+      if (stored === null) return res.status(404).json({ error: "Workspace not found" });
+      res.json({ workspaceId: id, paused: stored });
+    } catch {
+      res.status(500).json({ error: "Pause could not be recorded" });
+    }
+  });
+
+  // Webhook signing secret (owner only, ADR 0022). The secret is derived from the master secret and the version.
+  app.get("/api/workspaces/:id/webhook-secret", ...workspaceOwner, async (req: Request, res: Response) => {
+    if (!masterSecret) return res.status(503).json(WEBHOOK_NOT_CONFIGURED);
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const shown = await viewWebhookSecret(req.params.id, masterSecret, { type: "owner", id: decidedByOf(req.actor!.label) });
+      if (shown === null) return res.status(404).json({ error: "Workspace not found" });
+      res.json(shown);
+    } catch {
+      res.status(500).json({ error: "Webhook secret unavailable" });
+    }
+  });
+
+  app.post("/api/workspaces/:id/webhook-secret/rotate", ...workspaceOwner, async (req: Request, res: Response) => {
+    if (!masterSecret) return res.status(503).json(WEBHOOK_NOT_CONFIGURED);
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const rotated = await rotateWebhookSecret(req.params.id, masterSecret, { type: "owner", id: decidedByOf(req.actor!.label) });
+      if (rotated === null) return res.status(404).json({ error: "Workspace not found" });
+      res.json(rotated);
+    } catch {
+      res.status(500).json({ error: "Webhook secret could not be rotated" });
+    }
+  });
+
+  // Inbound Webhooks (Standard and Social/POS Surface). Every request is authenticated before anything is recorded.
+  // A surface event is checked in this order: schema, workspace exists, signature for that workspace, replay, binding.
+  // A standard event is checked: signature with the configured secret, then its fields. See docs/decisions/0022.
   app.post("/api/webhooks/incoming", async (req: Request, res: Response) => {
-    // 1. Check if incoming body is a Social / POS Surface event
-    const surfaceParsed = SocialSurfaceEventSchema.safeParse(req.body);
-    if (surfaceParsed.success) {
-      const event = surfaceParsed.data;
-      let authMeta: { effectiveRole: "owner" | "staff"; bindingStatus: string };
-      try {
-        authMeta = await verifyAndAuthorizeSurfaceEvent(event);
-      } catch (err: any) {
-        if (err instanceof SurfaceAuthorizationError) {
-          return res.status(403).json({ error: err.message });
-        }
-        return res.status(400).json({ error: err.message });
+    try {
+      const surfaceParsed = SocialSurfaceEventSchema.safeParse(req.body);
+      if (surfaceParsed.success) {
+        return await handleSurfaceEvent(req, res, surfaceParsed.data);
       }
-
-      if (event.eventType === "SURFACE_STOCK_OBSERVED") {
-        const itemRes = await query(
-          `UPDATE inventory_items
-           SET current_quantity = $1, updated_at = NOW()
-           WHERE workspace_id = $2 AND sku = $3
-           RETURNING *;`,
-          [event.observedQuantity, event.workspaceId, event.sku]
-        );
-        const item = itemRes.rows[0];
-        let replenishmentResult = null;
-        if (item && Number(item.current_quantity) < Number(item.par_level)) {
-          try {
-            replenishmentResult = await procurementRunner.startReplenishment(
-              event.workspaceId,
-              event.sku,
-              `surface_${event.surface}`
-            );
-          } catch (err: any) {
-            return res.status(400).json({ error: err.message });
-          }
-        }
-        return res.json({
-          status: "processed",
-          eventType: event.eventType,
-          effectiveRole: authMeta.effectiveRole,
-          bindingStatus: authMeta.bindingStatus,
-          observedQuantity: event.observedQuantity,
-          parLevel: item ? Number(item.par_level) : undefined,
-          replenishmentTriggered: Boolean(replenishmentResult),
-          replenishmentResult,
-        });
+      return await handleStandardWebhook(req, res);
+    } catch {
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Webhook could not be processed" });
       }
+    }
+  });
 
-      if (event.eventType === "SURFACE_OWNER_APPROVAL_DECISION") {
-        if (event.decision === "approve") {
-          try {
-            const result = await procurementRunner.approveAndSubmit(
-              event.approvalId,
-              event.actorId,
-              event.workspaceId
-            );
-            return res.json({
-              status: "processed",
-              eventType: event.eventType,
-              effectiveRole: authMeta.effectiveRole,
-              bindingStatus: authMeta.bindingStatus,
-              decision: "approve",
-              result,
-            });
-          } catch (err: any) {
-            return sendApprovalError(res, err);
-          }
-        } else {
-          try {
-            await procurementRunner.declineApproval(
-              event.approvalId,
-              "rejected",
-              event.actorId,
-              event.workspaceId,
-              event.reason || "Rejected by owner via surface card"
-            );
-          } catch (err: any) {
-            return sendApprovalError(res, err);
-          }
+  async function handleSurfaceEvent(req: Request, res: Response, event: SocialSurfaceEvent) {
+    // (2) The workspace must exist. An unknown one gets the same 401 as a bad signature, so existence is not revealed.
+    const wsRes = await query(`SELECT webhook_secret_version FROM workspaces WHERE id = $1;`, [event.workspaceId]);
+    if (wsRes.rows.length === 0) {
+      return res.status(401).json(WEBHOOK_UNAUTHORIZED);
+    }
+
+    // (3) Signed over the raw body with this workspace's secret at its current version. No master secret: nothing runs.
+    if (!masterSecret) {
+      return res.status(503).json(WEBHOOK_NOT_CONFIGURED);
+    }
+    const secret = workspaceWebhookSecret(masterSecret, event.workspaceId, Number(wsRes.rows[0].webhook_secret_version));
+    if (!requestSignatureValid(req, secret)) {
+      return res.status(401).json(WEBHOOK_UNAUTHORIZED);
+    }
+
+    // (4) Replay. Only a verified request reaches this insert, so an unsigned request cannot use up an event id.
+    // The provider names the workspace and the surface, so the same event id in two workspaces is two events.
+    const recorded = await query(
+      `INSERT INTO inbound_webhooks (id, provider, event_id, payload, status, received_at)
+       VALUES ($1, $2, $3, $4::jsonb, 'received', NOW())
+       ON CONFLICT (provider, event_id) DO NOTHING
+       RETURNING id;`,
+      [newId("wh"), `surface:${event.workspaceId}:${event.surface}`, event.eventId, JSON.stringify(event)]
+    );
+    if ((recorded.rowCount ?? 0) === 0) {
+      return res.json({ status: "duplicate", eventId: event.eventId });
+    }
+
+    // (5) The actor must be bound in this workspace. The role comes from the binding, never from the payload.
+    // Only an authorization refusal is answered here. Anything else (a storage failure) goes to the generic 500.
+    let authMeta: { effectiveRole: "owner" | "staff"; bindingStatus: string };
+    try {
+      authMeta = await verifyAndAuthorizeSurfaceEvent(event);
+    } catch (err: any) {
+      if (err instanceof SurfaceAuthorizationError) {
+        return res.status(403).json({ error: err.message });
+      }
+      throw err;
+    }
+
+    // The surface actor, recorded as the decider of any approval or pause change it makes.
+    const surfaceActor = `surface:${event.surface}:${event.actorId}`;
+
+    if (event.eventType === "SURFACE_STOCK_OBSERVED") {
+      const itemRes = await query(
+        `UPDATE inventory_items
+         SET current_quantity = $1, updated_at = NOW()
+         WHERE workspace_id = $2 AND sku = $3
+         RETURNING *;`,
+        [event.observedQuantity, event.workspaceId, event.sku]
+      );
+      const item = itemRes.rows[0];
+      let replenishmentResult = null;
+      if (item && Number(item.current_quantity) < Number(item.par_level)) {
+        try {
+          replenishmentResult = await procurementRunner.startReplenishment(
+            event.workspaceId,
+            event.sku,
+            `surface_${event.surface}`
+          );
+        } catch (err: any) {
+          return res.status(400).json({ error: err.message });
+        }
+      }
+      return res.json({
+        status: "processed",
+        eventType: event.eventType,
+        effectiveRole: authMeta.effectiveRole,
+        bindingStatus: authMeta.bindingStatus,
+        observedQuantity: event.observedQuantity,
+        parLevel: item ? Number(item.par_level) : undefined,
+        replenishmentTriggered: Boolean(replenishmentResult),
+        replenishmentResult,
+      });
+    }
+
+    if (event.eventType === "SURFACE_OWNER_APPROVAL_DECISION") {
+      if (event.decision === "approve") {
+        try {
+          const result = await procurementRunner.approveAndSubmit(event.approvalId, surfaceActor, event.workspaceId);
           return res.json({
             status: "processed",
             eventType: event.eventType,
             effectiveRole: authMeta.effectiveRole,
             bindingStatus: authMeta.bindingStatus,
-            decision: "reject",
-            approvalId: event.approvalId,
+            decision: "approve",
+            result,
           });
+        } catch (err: any) {
+          return sendApprovalError(res, err);
         }
-      }
-
-      if (event.eventType === "SURFACE_AGENT_PAUSE_TOGGLE") {
-        await query(
-          `UPDATE workspaces
-           SET updated_at = NOW()
-           WHERE id = $1;`,
-          [event.workspaceId]
-        );
+      } else {
+        try {
+          await procurementRunner.declineApproval(
+            event.approvalId,
+            "rejected",
+            surfaceActor,
+            event.workspaceId,
+            event.reason || "Rejected by owner via surface card"
+          );
+        } catch (err: any) {
+          return sendApprovalError(res, err);
+        }
         return res.json({
           status: "processed",
           eventType: event.eventType,
           effectiveRole: authMeta.effectiveRole,
           bindingStatus: authMeta.bindingStatus,
-          workspaceId: event.workspaceId,
-          paused: event.paused,
+          decision: "reject",
+          approvalId: event.approvalId,
         });
       }
     }
 
-    // 2. Standard external webhooks with HMAC signature verification
-    const sigHeader = (req.headers["x-bind-signature"] as string) || "";
-    const timeHeader = Number(req.headers["x-bind-timestamp"] || 0);
-
-    const rawBody = JSON.stringify(req.body);
-    const verified = webhookReceiver.verifySignature(rawBody, sigHeader, timeHeader);
-
-    if (!verified && process.env.NODE_ENV !== "test") {
-      return res.status(401).json({ error: "Invalid signature or expired timestamp" });
+    if (event.eventType === "SURFACE_AGENT_PAUSE_TOGGLE") {
+      const stored = await setAgentsPaused(event.workspaceId, event.paused, { type: "owner", id: surfaceActor }, "surface");
+      return res.json({
+        status: "processed",
+        eventType: event.eventType,
+        effectiveRole: authMeta.effectiveRole,
+        bindingStatus: authMeta.bindingStatus,
+        workspaceId: event.workspaceId,
+        paused: stored,
+      });
     }
 
-    const { provider, eventId, payload } = req.body;
-    const result = await webhookReceiver.processEvent({
-      provider: provider || "external",
-      eventId: eventId || `evt_${Date.now()}`,
-      timestamp: timeHeader || Math.floor(Date.now() / 1000),
-      payload: payload || req.body,
-    });
+    return res.status(400).json({ error: "Unsupported surface event" });
+  }
 
-    res.json(result);
-  });
+  async function handleStandardWebhook(req: Request, res: Response) {
+    // (1) Authentication before any field is read. No secret configured: 503, nothing processed.
+    if (!webhookSecret) {
+      return res.status(503).json(WEBHOOK_NOT_CONFIGURED);
+    }
+    if (!requestSignatureValid(req, webhookSecret)) {
+      return res.status(401).json(WEBHOOK_UNAUTHORIZED);
+    }
+
+    // (2) The fields. No fallback id is invented, so a missing one can never be processed twice by accident.
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const { provider, eventId, payload } = body;
+    const isText = (value: unknown): value is string =>
+      typeof value === "string" && value.trim().length > 0 && value.length <= 200;
+    if (!isText(provider) || !isText(eventId)) {
+      return res.status(400).json({ error: "provider and eventId are required" });
+    }
+
+    const timestamp = Number(req.headers["x-bind-timestamp"]);
+    const { retryable, ...outcome } = await receiver.processEvent({
+      provider,
+      eventId,
+      timestamp,
+      payload: (payload ?? body) as Record<string, any>,
+    });
+    // A storage failure is retryable (503). The stored reason is generic, never the database's own text.
+    res.status(retryable ? 503 : 200).json(outcome);
+  }
 
   // Default SPA route (supports /, /app, /app/workflows/:workflowId)
   app.get("*", (_req: Request, res: Response) => {

@@ -80,6 +80,14 @@ export class ProcurementWorkflowRunner {
     sku: string,
     triggerSource: string = "inventory_monitor"
   ): Promise<{ workflowId: string; state: WorkflowState; orderId?: string; approvalId?: string }> {
+    // 0a. The owner's pause switch (ADR 0022). A paused workspace starts no workflow and asks no supplier for a quote.
+    const pauseRes = await query(`SELECT agents_paused FROM workspaces WHERE id = $1;`, [workspaceId]);
+    if (pauseRes.rows[0]?.agents_paused === true) {
+      throw new Error(
+        "[AGENTS_PAUSED] The owner has paused the agents for this workspace. Resume them before starting a replenishment."
+      );
+    }
+
     // 0. Idempotency Gate on Entry: check if an active non-terminal workflow already exists
     const activeWfRes = await query(
       `SELECT id, state, context_data FROM workflows

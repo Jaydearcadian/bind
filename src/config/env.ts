@@ -5,6 +5,14 @@ import { z } from "zod";
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
+/** An optional secret: unset or empty is undefined; otherwise at least 32 characters. The value is never logged. */
+function optionalSecret(name: string) {
+  return z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().min(32, `${name} must be at least 32 characters when set`).optional()
+  );
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(3000),
@@ -29,6 +37,10 @@ const envSchema = z.object({
     .string()
     .regex(/^bnd_[A-Za-z0-9_-]{43}$/, "must be a Bind token: 'bnd_' followed by 43 base64url characters")
     .optional(),
+  // Webhook signing (ADR 0022). No defaults in source. Unset: the routes that need a secret answer 503 and process
+  // nothing. An empty value counts as unset. When set, at least 32 characters.
+  BIND_MASTER_SECRET: optionalSecret("BIND_MASTER_SECRET"),
+  BIND_WEBHOOK_SECRET: optionalSecret("BIND_WEBHOOK_SECRET"),
   ALLOW_NO_CONTRACTS: z.string().optional().default("1"),
   PARALLEL_API_KEY: z.string().optional(),
   NEBIUS_API_KEY: z.string().optional(),
