@@ -74,23 +74,35 @@ Each is pinned by a named test in the task that owns the code (Tasks 1, 3, 4, 6,
 - [ ] **Step 4: Run** the new file and the full integration suite. Expected: PASS.
 - [ ] **Step 5: Commit** `fix(reconcile): settle and restock exactly once per order`.
 
-### Task 1b: One settlement path for reconcile and studio confirmation
+### Task 1b: One settlement path, and no invented documents
 
-Task 1 made `fulfillAndReconcile` exactly-once. The studio document-confirm route (`confirmStagedDocument` in `src/studio/documentsAndAccounting.ts`) reaches a second, separate settlement path with the same double-pay and double-restock bug (recorded in `docs/decisions/0008-reconcile-exactly-once.md`).
+Task 1 made `fulfillAndReconcile` exactly-once. The studio document-confirm route (`confirmStagedDocument`, `src/studio/documentsAndAccounting.ts` lines ~392-586) has a second, separate settlement path with three defects:
+
+1. No claim: confirming twice, or confirming while the runner reconciles, pays and restocks twice.
+2. It invents the missing document. A bill alone triggers a made-up delivery receipt ("Standard receipt paired for 3-way match check"); a receipt alone triggers a made-up bill copied from the purchase order. The match then passes and the supplier is paid. This breaks the rule "no invoice settles without a verified fulfilment receipt" (`docs/BIND_MISSION_AND_ARCHITECTURE.md`, law 2) and fabricates records.
+3. It does not record a failed match the same way as the runner path.
 
 **Files:**
-- Modify: `src/studio/documentsAndAccounting.ts`, `src/workflows/procurement.ts`
-- Test: `tests/integration/studio-settle-once.test.ts`
+- Create: `src/workflows/settlement.ts`, `src/accounting/journal.ts`, `tests/integration/studio-settle-once.test.ts`, `docs/decisions/NNNN-no-invented-documents.md`
+- Modify: `src/workflows/procurement.ts`, `src/studio/documentsAndAccounting.ts`, `tests/integration/studio-flows.test.ts` (Flow D only), `tests/e2e/dashboard.spec.ts` (Flow D only)
 
 **Interfaces:**
-- Consumes: the claim, payee lookup and result shape from Task 1.
-- Produces: one shared function `settleMatchedOrder(orderId: string, matchedBy: "runner" | "studio"): Promise<ReconcileResult>` (name and home are the implementer's call; there must be exactly one place that claims an order, calls the settlement adapter, restocks, and posts the journal entry). Both entry points call it.
+- Produces in `src/workflows/settlement.ts`:
+  - `export interface ReconcileResult` (moved from `procurement.ts`; keep the existing fields and add optional `varianceCents?: string`, `discrepancyReason?: string`, `pending?: "AWAITING_DELIVERY_RECEIPT" | "AWAITING_SUPPLIER_BILL"`). `procurement.ts` re-exports it.
+  - `export type EvidenceLoader = (order: any) => Promise<{ receipt: { receiptId: string; receivedQuantity: number }; bill: { billId: string; billNumber: string; vendorId: string; billedQuantity: number; billedUnitPriceCents: bigint; billedTotalCents: bigint } } | { pending: "AWAITING_DELIVERY_RECEIPT" | "AWAITING_SUPPLIER_BILL" }>`
+  - `export class OrderSettlementService { constructor(deps: { settlementFor: (mode: string) => SettlementAdapter }); settle(orderId: string, loadEvidence: EvidenceLoader): Promise<ReconcileResult> }`. `settle` contains the single claim (`confirmed` to `settling`), loser handling, evidence evaluation, match upsert, release on non-match, payment, tx hash persistence, finalising transaction, workflow transition, audit entry and journal entry that now live in `procurement.ts` (`fulfillAndReconcile`, `storedReconcileResult`, `settleClaimedOrder`). Move them; do not copy them.
+- Produces in `src/accounting/journal.ts`: `recordIdempotentJournalEntry` moved out of the studio file (same signature), re-exported from the studio file so existing imports keep working. This avoids a circular import.
+- `ProcurementWorkflowRunner.fulfillAndReconcile(orderId)` keeps its signature and calls `this.settlement.settle(orderId, loader)` where the loader reads stored receipt/bill rows (latest first) and otherwise generates them from the supplier adapter, exactly as today.
+- `confirmStagedDocument` calls `new OrderSettlementService(...).settle(order.id, loader)` where the loader reads ONLY stored, owner-confirmed rows. If the receipt is missing it returns `{ pending: "AWAITING_DELIVERY_RECEIPT" }`; if the bill is missing, `{ pending: "AWAITING_SUPPLIER_BILL" }`. It never inserts a synthetic receipt or bill.
+- Non-MATCHED outcomes: `settle` writes the audit entry `accounting.three_way_match_failed` (policy decision DENY, evidence with orderId, matchStatus, varianceCents, discrepancyReason) before the match row can be overwritten. The studio path's existing audit insert is removed in favour of this one.
+- HTTP response of `POST /api/workspaces/:id/documents/:docId/confirm` keeps its current keys (`docId, docType, status, orderId, matchStatus, reconciled, varianceCents, discrepancyReason, txHash, journalEntry`) and adds `pending` when a counterpart is missing (`matchStatus: "UNMATCHED"`, `reconciled: false`).
 
-- [ ] **Step 1: Failing tests:** `confirming a matching bill twice pays and restocks once`; `confirming through the studio and then reconciling through the runner pays once, in either order`; `concurrent studio confirm and runner reconcile on one order settle once`; `a bad bill then a good bill leaves the earlier discrepancy visible in the audit log or archive and settles once`; `a studio confirmation of an order in settling returns RECONCILE_IN_PROGRESS`.
-- [ ] **Step 2: Run.** Expected: FAIL.
-- [ ] **Step 3: Implement** by extracting the Task 1 claim-settle-finalise block into the shared function and deleting the studio path's own settlement code. Run `npm run map:functions` and confirm `getSettlementAdapter` has a single production call site chain.
-- [ ] **Step 4: Run** the full suite.
-- [ ] **Step 5: Commit** `fix(studio): one exactly-once settlement path for reconcile and document confirmation`.
+- [ ] **Step 1: Failing tests** in `studio-settle-once.test.ts`: `confirming a matching receipt and bill twice pays and restocks once`; `a bill alone never settles and returns pending AWAITING_DELIVERY_RECEIPT with no receipt row created`; `a receipt alone never settles and returns pending AWAITING_SUPPLIER_BILL with no bill row created`; `studio confirmation then runner reconcile pays once, and runner then studio pays once`; `concurrent studio confirm and runner reconcile on one order settle once`; `a PRICE_DISCREPANCY bill leaves an accounting.three_way_match_failed audit row, and a later matching bill settles once`; `a studio confirmation of an order in settling returns RECONCILE_IN_PROGRESS`.
+- [ ] **Step 2: Run** `npx vitest run tests/integration/studio-settle-once.test.ts`. Expected: FAIL.
+- [ ] **Step 3: Implement** by moving code, then deleting the studio path's own claim-less settlement block and both synthetic-document blocks.
+- [ ] **Step 4: Update the two existing Flow D tests** (`studio-flows.test.ts` Flow D, `dashboard.spec.ts` Flow D) so they first extract and confirm a `delivery_receipt` document (12 units) before the bad bill and the good bill. The assertions on `PRICE_DISCREPANCY`, `MATCHED`, the ledger and the CSV stay. Put the reason in the commit message: the old tests passed only because the code invented the receipt. Add a short ADR.
+- [ ] **Step 5: Run** the full suite plus `npm run test:e2e` (see the browser note in Global Constraints). Run `npm run map:functions` and confirm `getSettlementAdapter` is reached from one settlement call chain.
+- [ ] **Step 6: Commit** `fix(settlement): one exactly-once settlement path; never invent a receipt or bill`.
 
 ### Task 2: Pay the verified supplier, not a hard-coded address
 
