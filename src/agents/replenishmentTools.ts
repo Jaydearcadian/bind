@@ -7,6 +7,7 @@ import { notificationEmitter } from "../adapters/web2/notifications.js";
 import { CANONICAL_ARC_LOCK } from "./antiDriftWriter.js";
 import { generateVerifiableDecisionRecord } from "./bindTemplateAgent.js";
 import { evaluateWithJevSystemOne } from "../domain/jevScorer.js";
+import { spendStatusesSql } from "../orders/statuses.js";
 
 export interface ReplenishmentToolsContext {
   workspaceId: string;
@@ -36,7 +37,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
          FROM orders
          WHERE workspace_id = $1
            AND created_at >= CURRENT_DATE
-           AND status IN ('submitted', 'confirmed', 'settling', 'payment_hold', 'reconciled');`,
+           AND status IN (${spendStatusesSql()});`,
         [workspaceId]
       );
       const dailySpentCents = BigInt(spendRes.rows[0].daily_spent_cents || 0);
@@ -268,7 +269,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
          FROM orders
          WHERE workspace_id = $1
            AND created_at >= CURRENT_DATE
-           AND status IN ('submitted', 'confirmed', 'settling', 'payment_hold', 'reconciled');`,
+           AND status IN (${spendStatusesSql()});`,
         [workspaceId]
       );
       const dailySpentCents = BigInt(spendRes.rows[0]?.daily_spent_cents || 0);
@@ -420,7 +421,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
          FROM orders
          WHERE workspace_id = $1
            AND created_at >= CURRENT_DATE
-           AND status IN ('submitted', 'confirmed', 'settling', 'payment_hold', 'reconciled');`,
+           AND status IN (${spendStatusesSql()});`,
         [workspaceId]
       );
       const dailySpentCents = BigInt(spendRes.rows[0].daily_spent_cents || 0);

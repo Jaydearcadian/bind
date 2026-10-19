@@ -7,6 +7,7 @@ import { query } from "../db/client.js";
 import { provisionWorkspace, listTemplates } from "../templates/registry.js";
 import { ProcurementWorkflowRunner } from "../workflows/procurement.js";
 import { ApprovalDecisionError } from "../workflows/engine.js";
+import { SettlementOrderError } from "../workflows/settlement.js";
 import { WorkflowCrashRecoveryRunner } from "../workflows/recovery.js";
 import { webhookReceiver } from "../adapters/web2/webhook-receiver.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
@@ -311,6 +312,22 @@ export function createApp(): express.Express {
       const result = await procurementRunner.fulfillAndReconcile(id);
       res.json(result);
     } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Confirm a payment that was sent but not yet confirmed (settlement_submitted)
+  app.post("/api/orders/:id/confirm-settlement", async (req: Request, res: Response) => {
+    const { id } = req.params;
+    try {
+      const result = await procurementRunner.confirmSettlement(id);
+      res.json(result);
+    } catch (err: any) {
+      if (err instanceof SettlementOrderError) {
+        const status = err.code === "ORDER_NOT_FOUND" ? 404 : 409;
+        res.status(status).json({ error: err.message, code: err.code });
+        return;
+      }
       res.status(400).json({ error: err.message });
     }
   });

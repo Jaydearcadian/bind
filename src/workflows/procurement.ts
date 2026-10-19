@@ -406,10 +406,18 @@ export class ProcurementWorkflowRunner {
    * present, otherwise generated from the supplier adapter.
    */
   async fulfillAndReconcile(orderId: string): Promise<ReconcileResult> {
-    const { status, reconciled, txHash, alreadyReconciled, hold } = await this.settlement.settle(orderId, (order) =>
+    const { status, reconciled, txHash, alreadyReconciled, hold, pending } = await this.settlement.settle(orderId, (order) =>
       this.storedOrGeneratedEvidence(order)
     );
-    return { status, reconciled, txHash, alreadyReconciled, hold };
+    return { status, reconciled, txHash, alreadyReconciled, hold, pending };
+  }
+
+  /**
+   * Finishes a payment that was sent but not confirmed (`settlement_submitted`). Pays nothing: it asks the
+   * adapter for the outcome and finishes the order only when that outcome is `confirmed`.
+   */
+  async confirmSettlement(orderId: string): Promise<ReconcileResult> {
+    return this.settlement.confirmSettlement(orderId);
   }
 
   private async storedOrGeneratedEvidence(order: any): Promise<ReceiptAndBill> {

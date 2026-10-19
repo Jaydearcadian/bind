@@ -1,26 +1,34 @@
+import { encodePacked, keccak256 } from "viem";
 import { query, withTransaction } from "../db/client.js";
 import { WorkflowEngine } from "./engine.js";
 import { WorkflowState } from "./types.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
-import type { SettlementAdapter } from "../adapters/settlement/types.js";
+import type { SettlementAdapter, TransferResult } from "../adapters/settlement/types.js";
+import { SettlementRejectedError } from "../adapters/settlement/errors.js";
 import { evaluateThreeWayMatch, MatchStatus } from "../accounting/three-way-match.js";
 import { recordIdempotentJournalEntry } from "../accounting/journal.js";
 import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
 
 /**
- * Why an order is not paid. RECONCILE_IN_PROGRESS means another caller holds the claim.
- * The three payment codes mean the order is held in `payment_hold`: the match passed, but
- * no payee or payer is verified, so nothing is paid or restocked until the record is fixed.
+ * Why an order is not paid or not yet final. RECONCILE_IN_PROGRESS means another caller holds the claim.
+ * The three payment codes mean the order is held in `payment_hold`: the match passed, but no payee or payer
+ * is verified, so nothing is paid or restocked until the record is fixed. SETTLEMENT_REJECTED and
+ * SETTLEMENT_FAILED also end in `payment_hold`: the adapter refused the payment, or the transfer reverted.
  */
 export type ReconcileHold =
   | "RECONCILE_IN_PROGRESS"
   | "SUPPLIER_NOT_VERIFIED"
   | "SUPPLIER_PAYMENT_ADDRESS_MISSING"
-  | "WORKSPACE_SETTLEMENT_ADDRESS_MISSING";
+  | "WORKSPACE_SETTLEMENT_ADDRESS_MISSING"
+  | "SETTLEMENT_REJECTED"
+  | "SETTLEMENT_FAILED";
 
-/** The statuses an order can hold before a settlement claim; the claim restores the one it replaced. */
+/** The statuses a settlement claim can take the order from; the claim restores the one it replaced. */
 type ClaimableStatus = "confirmed" | "payment_hold";
+
+/** Every status a release can restore: a payment claim, or a confirmation claim. */
+type RestorableStatus = ClaimableStatus | "settlement_submitted";
 
 export interface ReconcileResult {
   status: MatchStatus;
@@ -30,7 +38,25 @@ export interface ReconcileResult {
   hold?: ReconcileHold;
   varianceCents?: string;
   discrepancyReason?: string;
-  pending?: "AWAITING_DELIVERY_RECEIPT" | "AWAITING_SUPPLIER_BILL";
+  pending?: "AWAITING_DELIVERY_RECEIPT" | "AWAITING_SUPPLIER_BILL" | "AWAITING_SETTLEMENT_CONFIRMATION";
+}
+
+/**
+ * A confirmation request the order cannot satisfy. ORDER_NOT_FOUND: there is no such order.
+ * ORDER_NOT_AWAITING_CONFIRMATION: the order is neither awaiting confirmation nor already reconciled.
+ */
+export class SettlementOrderError extends Error {
+  readonly code: "ORDER_NOT_FOUND" | "ORDER_NOT_AWAITING_CONFIRMATION";
+
+  constructor(code: "ORDER_NOT_FOUND" | "ORDER_NOT_AWAITING_CONFIRMATION", orderId: string) {
+    super(
+      code === "ORDER_NOT_FOUND"
+        ? `Order '${orderId}' not found.`
+        : `Order '${orderId}' is not awaiting settlement confirmation.`
+    );
+    this.name = "SettlementOrderError";
+    this.code = code;
+  }
 }
 
 /**
@@ -53,9 +79,25 @@ export type EvidenceLoader = (order: any) => Promise<
 >;
 
 /**
- * The only place an order is settled: claim, 3-way match, payment, restock, workflow
- * transition, audit and journal. Every caller (the procurement runner and the studio
- * document route) goes through `settle`, so an order is paid and restocked at most once.
+ * What the adapter has said about a transfer. `unconfirmed` covers a `submitted` result and a confirm call
+ * that threw: the payment may already exist on chain, so it is never read as a failure.
+ */
+type TransferOutcome =
+  | { kind: "confirmed"; timestamp: Date }
+  | { kind: "failed"; failureCode?: string }
+  | { kind: "unconfirmed" };
+
+function outcomeOf(result: TransferResult): TransferOutcome {
+  if (result.status === "confirmed") return { kind: "confirmed", timestamp: result.timestamp };
+  if (result.status === "failed") return { kind: "failed", failureCode: result.failureCode };
+  return { kind: "unconfirmed" };
+}
+
+/**
+ * The only place an order is settled: claim, 3-way match, payment, confirmation, restock, workflow
+ * transition, audit and journal. Every caller (the procurement runner and the studio document route) goes
+ * through `settle`, and a transfer that was sent but not confirmed is finished through `confirmSettlement`.
+ * An order is paid and restocked at most once.
  */
 export class OrderSettlementService {
   private workflowEngine = new WorkflowEngine();
@@ -71,7 +113,8 @@ export class OrderSettlementService {
    * cannot pay the supplier or restock twice. If the settlement adapter fails before a
    * result is stored, or the result is not MATCHED, the claim is released to the status it
    * replaced (`confirmed` or `payment_hold`) and the call can be retried. Nothing has been
-   * restocked or journaled at that point.
+   * restocked or journaled at that point. A transfer that was sent but not confirmed leaves the order
+   * `settlement_submitted` until `confirmSettlement` resolves it.
    */
   async settle(orderId: string, loadEvidence: EvidenceLoader): Promise<ReconcileResult> {
     // The claim is attempted at most twice. A caller can lose the claim to a holder that then
@@ -107,6 +150,11 @@ export class OrderSettlementService {
         // yet" value, so a hold never claims MATCHED on its own.
         return this.inProgressResult(current.id);
       }
+      if (current.status === "settlement_submitted") {
+        // The transfer was sent and its outcome is not yet confirmed. Settling again could send a
+        // second transfer, so report the stored hash and wait for confirmSettlement.
+        return this.awaitingResult(current.id, current.tx_hash);
+      }
       if (current.status === "confirmed" || current.status === "payment_hold") {
         // Both are claimable. A holder can release to `confirmed` (evidence pending, or a match
         // that is not MATCHED) or park the order in `payment_hold`. Retry once; if the order is
@@ -141,8 +189,52 @@ export class OrderSettlementService {
     }
   }
 
+  /**
+   * Finishes a transfer that was sent but not confirmed. The order is claimed with one atomic update from
+   * `settlement_submitted`, the adapter is asked for the outcome once, and the order is finished only on
+   * `confirmed`. Nothing is paid here. A `submitted` outcome restores `settlement_submitted`; a `failed`
+   * outcome moves the order to `payment_hold` with SETTLEMENT_FAILED.
+   */
+  async confirmSettlement(orderId: string): Promise<ReconcileResult> {
+    const claimRes = await query(
+      `WITH prev AS (SELECT status FROM orders WHERE id = $1 FOR UPDATE)
+       UPDATE orders o SET status = 'settling', updated_at = NOW() FROM prev
+       WHERE o.id = $1 AND o.status = 'settlement_submitted'
+       RETURNING o.*, prev.status AS prev_status;`,
+      [orderId]
+    );
+    if (claimRes.rows.length > 0) {
+      const order = claimRes.rows[0];
+      try {
+        return await this.confirmClaimedOrder(order);
+      } catch (err) {
+        // Nothing was paid by this call, so the order goes back to waiting for a confirmation.
+        try {
+          await this.releaseClaim(order.id, "settlement_submitted");
+        } catch (releaseErr) {
+          console.error(`Could not release confirmation claim on order '${order.id}':`, releaseErr);
+        }
+        throw err;
+      }
+    }
+
+    // The claim was not taken. Report what the order holds now, without claiming it.
+    const current = await this.orderOrThrow(orderId);
+    if (current.status === "reconciled") {
+      return this.storedReconcileResult(current);
+    }
+    if (current.status === "settling") {
+      return this.inProgressResult(orderId);
+    }
+    if (current.status === "settlement_submitted") {
+      // Only reachable when a holder restored the order between the claim and this read.
+      return this.awaitingResult(orderId, current.tx_hash);
+    }
+    throw new SettlementOrderError("ORDER_NOT_AWAITING_CONFIRMATION", orderId);
+  }
+
   /** Puts a claimed order back to the status it had before the claim. */
-  private async releaseClaim(orderId: string, status: ClaimableStatus): Promise<void> {
+  private async releaseClaim(orderId: string, status: RestorableStatus): Promise<void> {
     await query(
       `UPDATE orders SET status = $2, updated_at = NOW() WHERE id = $1 AND status = 'settling';`,
       [orderId, status]
@@ -167,6 +259,200 @@ export class OrderSettlementService {
       txHash: order.tx_hash ?? undefined,
       alreadyReconciled: true,
     };
+  }
+
+  /**
+   * The result for an order whose transfer was sent but not confirmed. A transfer is only sent after a
+   * MATCHED result, so the stored match is the one that paid.
+   */
+  private async awaitingResult(orderId: string, txHash: string | null): Promise<ReconcileResult> {
+    const matchRes = await query(`SELECT match_status FROM three_way_matches WHERE order_id = $1;`, [orderId]);
+    return {
+      status: (matchRes.rows[0]?.match_status as MatchStatus) ?? MatchStatus.MATCHED,
+      reconciled: false,
+      txHash: txHash ?? undefined,
+      pending: "AWAITING_SETTLEMENT_CONFIRMATION",
+    };
+  }
+
+  private async orderOrThrow(orderId: string): Promise<any> {
+    const res = await query(`SELECT * FROM orders WHERE id = $1;`, [orderId]);
+    if (res.rows.length === 0) {
+      throw new SettlementOrderError("ORDER_NOT_FOUND", orderId);
+    }
+    return res.rows[0];
+  }
+
+  /**
+   * Moves a claimed order to `payment_hold` and writes the denial audit row. Nothing was paid on this path,
+   * so the hold can be claimed again later.
+   */
+  private async holdClaim(order: any, action: string, evidence: Record<string, unknown>): Promise<void> {
+    await query(
+      `UPDATE orders SET status = 'payment_hold', updated_at = NOW() WHERE id = $1 AND status = 'settling';`,
+      [order.id]
+    );
+    await this.workflowEngine.recordAudit(
+      order.workspace_id,
+      null,
+      "system",
+      "settlement_engine",
+      EffectClass.COMMERCIAL_COMMITMENT,
+      action,
+      PolicyDecision.DENY,
+      evidence
+    );
+  }
+
+  /** One confirm call. A call that throws leaves the outcome unknown; it is never read as a failure. */
+  private async confirmOnce(adapter: SettlementAdapter, txHash: string): Promise<TransferOutcome> {
+    try {
+      return outcomeOf(await adapter.confirm(txHash));
+    } catch (err) {
+      // The error can carry transport detail, so only its type is logged.
+      console.warn(`Settlement outcome for ${txHash} is unknown (${err instanceof Error ? err.name : "unknown error"}).`);
+      return { kind: "unconfirmed" };
+    }
+  }
+
+  /** Finishes a claimed order whose transfer was sent earlier: confirms it, then pays or holds or releases. */
+  private async confirmClaimedOrder(order: any): Promise<ReconcileResult> {
+    if (!order.tx_hash) {
+      throw new Error(`Order '${order.id}' is settlement_submitted without a transaction hash.`);
+    }
+    const wsRes = await query(`SELECT * FROM workspaces WHERE id = $1;`, [order.workspace_id]);
+    const workspace = wsRes.rows[0];
+    if (!workspace) {
+      throw new Error(`Workspace '${order.workspace_id}' not found.`);
+    }
+    const adapter = this.settlementFor(workspace.settlement_mode);
+    const outcome = await this.confirmOnce(adapter, order.tx_hash);
+
+    if (outcome.kind === "failed") {
+      await this.holdClaim(order, "settlement.failed", {
+        orderId: order.id,
+        hold: "SETTLEMENT_FAILED",
+        txHash: order.tx_hash,
+        failureCode: outcome.failureCode,
+      });
+      return { status: await this.matchStatusOf(order.id), reconciled: false, txHash: order.tx_hash, hold: "SETTLEMENT_FAILED" };
+    }
+    if (outcome.kind === "unconfirmed") {
+      await this.releaseClaim(order.id, "settlement_submitted");
+      return this.awaitingResult(order.id, order.tx_hash);
+    }
+
+    // The latest stored receipt and bill are the ones this payment is finished against, as on the settle path.
+    const receiptRes = await query(
+      `SELECT received_quantity FROM delivery_receipts WHERE order_id = $1 ORDER BY received_at DESC, id DESC LIMIT 1;`,
+      [order.id]
+    );
+    if (receiptRes.rows.length === 0) {
+      throw new Error(`Order '${order.id}' has no stored delivery receipt to restock from.`);
+    }
+    const billRes = await query(
+      `SELECT billed_total_cents FROM supplier_bills WHERE order_id = $1 ORDER BY received_at DESC, id DESC LIMIT 1;`,
+      [order.id]
+    );
+    if (billRes.rows.length === 0) {
+      throw new Error(`Order '${order.id}' has no stored supplier bill to record the payment against.`);
+    }
+    await this.finaliseConfirmedPayment(order, {
+      txHash: order.tx_hash,
+      settledAt: outcome.timestamp,
+      receivedQuantity: Number(receiptRes.rows[0].received_quantity),
+      payableAmountCents: BigInt(billRes.rows[0].billed_total_cents),
+      mode: adapter.mode,
+    });
+    return { status: await this.matchStatusOf(order.id), reconciled: true, txHash: order.tx_hash };
+  }
+
+  private async matchStatusOf(orderId: string): Promise<MatchStatus> {
+    const matchRes = await query(`SELECT match_status FROM three_way_matches WHERE order_id = $1;`, [orderId]);
+    return (matchRes.rows[0]?.match_status as MatchStatus) ?? MatchStatus.MATCHED;
+  }
+
+  /**
+   * The finalising step for a confirmed payment, shared by `settle` and `confirmSettlement`: records the
+   * payment and the restock in one transaction, only while this caller holds the claim; writes the
+   * anti-drift record; moves the workflow to RECONCILED; audits; and journals. The Arc label is used only
+   * for the Arc adapter; every other adapter is labelled as a local simulation.
+   */
+  private async finaliseConfirmedPayment(
+    order: any,
+    payment: {
+      txHash: string;
+      settledAt: Date;
+      receivedQuantity: number;
+      payableAmountCents: bigint;
+      mode: "local" | "arc-testnet";
+    }
+  ): Promise<void> {
+    // Record the payment and restock in one transaction, and only if this call still
+    // holds the claim, so restock cannot happen twice.
+    const finalized = await withTransaction(async (client) => {
+      const upd = await client.query(
+        `UPDATE orders SET status = 'reconciled', tx_hash = $1, updated_at = NOW()
+         WHERE id = $2 AND status = 'settling'
+         RETURNING id;`,
+        [payment.txHash, order.id]
+      );
+      if (upd.rows.length === 0) return false;
+      await client.query(
+        `UPDATE inventory_items
+         SET current_quantity = current_quantity + $1, updated_at = NOW()
+         WHERE workspace_id = $2 AND sku = $3;`,
+        [payment.receivedQuantity, order.workspace_id, order.item_sku]
+      );
+      return true;
+    });
+    if (!finalized) {
+      throw new Error(`Order '${order.id}' lost its settlement claim after payment ${payment.txHash}.`);
+    }
+
+    // Find associated workflow and transition to RECONCILED
+    const wfRes = await query(`SELECT id FROM workflows WHERE context_data->>'orderId' = $1;`, [order.id]);
+    if (wfRes.rows.length > 0) {
+      const activeWf = await this.workflowEngine.getWorkflow(wfRes.rows[0].id);
+      if (activeWf?.contextData?.decisionRecord) {
+        try {
+          await writeWorkflowAntiDriftFiles(activeWf.contextData.decisionRecord, {
+            settlementTxHash: payment.txHash,
+            paymentStatusOverride: payment.mode === "arc-testnet" ? "SETTLED_ON_ARC_TESTNET" : "SETTLED_LOCAL_SIMULATION",
+          });
+        } catch {
+          // Continue if file write fails in testing
+        }
+      }
+
+      await this.workflowEngine.transition(wfRes.rows[0].id, {
+        fromState: WorkflowState.CONFIRMED,
+        toState: WorkflowState.RECONCILED,
+        patchContext: { txHash: payment.txHash, settledAt: payment.settledAt },
+      });
+
+      await this.workflowEngine.recordAudit(
+        order.workspace_id,
+        wfRes.rows[0].id,
+        "system",
+        "settlement_engine",
+        EffectClass.COMMERCIAL_COMMITMENT,
+        "settlement.reconcile_and_pay",
+        PolicyDecision.ALLOW,
+        { txHash: payment.txHash, payableAmountCents: payment.payableAmountCents.toString() },
+        payment.txHash
+      );
+    }
+
+    await recordIdempotentJournalEntry({
+      workspaceId: order.workspace_id,
+      orderId: order.id,
+      orderNumber: order.order_number,
+      itemName: order.item_name,
+      supplierName: order.supplier_name,
+      amountCents: payment.payableAmountCents,
+      txHash: payment.txHash,
+    });
   }
 
   private async settleClaimedOrder(
@@ -283,116 +569,90 @@ export class OrderSettlementService {
     }
     if (hold) {
       // Keep the match row (already written above) and hold the claim as payment_hold.
-      await query(
-        `UPDATE orders SET status = 'payment_hold', updated_at = NOW() WHERE id = $1 AND status = 'settling';`,
-        [order.id]
-      );
+      await this.holdClaim(order, "settlement.payment_hold", { orderId: order.id, hold });
+      return { status: MatchStatus.MATCHED, reconciled: false, hold };
+    }
+
+    // Execute Settlement payment. The match hash binds the transfer to this order, receipt and bill.
+    const settlementAdapter = this.settlementFor(workspace.settlement_mode);
+    const matchHash = keccak256(encodePacked(["string", "string", "string"], [order.id, receipt.receiptId, bill.billId]));
+
+    let transfer: TransferResult;
+    try {
+      transfer = await settlementAdapter.transferUSDC({
+        fromAddress: workspace.settlement_address,
+        toAddress: supplier.payment_address,
+        amountCents: matchResult.payableAmountCents,
+        currency: "USDC",
+        orderId: order.id,
+        idempotencyKey: `idem_pay_${order.id}`,
+        matchHash,
+      });
+    } catch (err) {
+      if (!(err instanceof SettlementRejectedError)) throw err;
+      // The contract or the request refused the payment, so no transfer was made.
+      await this.holdClaim(order, "settlement.rejected", { orderId: order.id, code: err.code });
+      return { status: MatchStatus.MATCHED, reconciled: false, hold: "SETTLEMENT_REJECTED" };
+    }
+    progress.paid = true;
+
+    // Make the transfer durable on the claimed row before anything else, so a failure from here on
+    // leaves the order `settling` with the hash recorded.
+    await query(`UPDATE orders SET tx_hash = $1, updated_at = NOW() WHERE id = $2 AND status = 'settling';`, [
+      transfer.txHash,
+      order.id,
+    ]);
+
+    let outcome = outcomeOf(transfer);
+    if (outcome.kind === "unconfirmed") {
+      outcome = await this.confirmOnce(settlementAdapter, transfer.txHash);
+    }
+
+    if (outcome.kind === "failed") {
+      await this.holdClaim(order, "settlement.failed", {
+        orderId: order.id,
+        hold: "SETTLEMENT_FAILED",
+        txHash: transfer.txHash,
+        failureCode: outcome.failureCode,
+      });
+      return { status: matchResult.status, reconciled: false, txHash: transfer.txHash, hold: "SETTLEMENT_FAILED" };
+    }
+
+    if (outcome.kind === "unconfirmed") {
+      // The transfer may exist on chain. Keep the hash, wait for confirmSettlement, and do not restock,
+      // journal or touch the workflow.
+      await this.releaseClaim(order.id, "settlement_submitted");
       await this.workflowEngine.recordAudit(
         order.workspace_id,
         null,
         "system",
         "settlement_engine",
         EffectClass.COMMERCIAL_COMMITMENT,
-        "settlement.payment_hold",
-        PolicyDecision.DENY,
-        { orderId: order.id, hold }
-      );
-      return { status: MatchStatus.MATCHED, reconciled: false, hold };
-    }
-
-    // Execute Settlement payment
-    const settlementAdapter = this.settlementFor(workspace.settlement_mode);
-
-    const transferRes = await settlementAdapter.transferUSDC({
-      fromAddress: workspace.settlement_address,
-      toAddress: supplier.payment_address,
-      amountCents: matchResult.payableAmountCents,
-      currency: "USDC",
-      orderId: order.id,
-      idempotencyKey: `idem_pay_${order.id}`,
-    });
-    progress.paid = true;
-
-    // Make the payment durable on the claimed row before the finalising step, so a
-    // failure from here on leaves `settling` with the tx hash recorded.
-    await query(`UPDATE orders SET tx_hash = $1, updated_at = NOW() WHERE id = $2 AND status = 'settling';`, [
-      transferRes.txHash,
-      order.id,
-    ]);
-
-    // Record the payment and restock in one transaction, and only if this call still
-    // holds the claim, so restock cannot happen twice.
-    const finalized = await withTransaction(async (client) => {
-      const upd = await client.query(
-        `UPDATE orders SET status = 'reconciled', tx_hash = $1, updated_at = NOW()
-         WHERE id = $2 AND status = 'settling'
-         RETURNING id;`,
-        [transferRes.txHash, order.id]
-      );
-      if (upd.rows.length === 0) return false;
-      await client.query(
-        `UPDATE inventory_items
-         SET current_quantity = current_quantity + $1, updated_at = NOW()
-         WHERE workspace_id = $2 AND sku = $3;`,
-        [receipt.receivedQuantity, order.workspace_id, order.item_sku]
-      );
-      return true;
-    });
-    if (!finalized) {
-      throw new Error(`Order '${order.id}' lost its settlement claim after payment ${transferRes.txHash}.`);
-    }
-
-    // Find associated workflow and transition to RECONCILED
-    const wfRes = await query(
-      `SELECT id FROM workflows WHERE context_data->>'orderId' = $1;`,
-      [order.id]
-    );
-    if (wfRes.rows.length > 0) {
-      const activeWf = await this.workflowEngine.getWorkflow(wfRes.rows[0].id);
-      if (activeWf?.contextData?.decisionRecord) {
-        try {
-          await writeWorkflowAntiDriftFiles(activeWf.contextData.decisionRecord, {
-            settlementTxHash: transferRes.txHash,
-            paymentStatusOverride: "SETTLED_ON_ARC_TESTNET",
-          });
-        } catch {
-          // Continue if file write fails in testing
-        }
-      }
-
-      await this.workflowEngine.transition(wfRes.rows[0].id, {
-        fromState: WorkflowState.CONFIRMED,
-        toState: WorkflowState.RECONCILED,
-        patchContext: { txHash: transferRes.txHash, settledAt: transferRes.timestamp },
-      });
-
-      await this.workflowEngine.recordAudit(
-        order.workspace_id,
-        wfRes.rows[0].id,
-        "system",
-        "settlement_engine",
-        EffectClass.COMMERCIAL_COMMITMENT,
-        "settlement.reconcile_and_pay",
+        "settlement.submitted",
         PolicyDecision.ALLOW,
-        { txHash: transferRes.txHash, payableAmountCents: matchResult.payableAmountCents.toString() },
-        transferRes.txHash
+        { orderId: order.id, txHash: transfer.txHash },
+        transfer.txHash
       );
+      return {
+        status: matchResult.status,
+        reconciled: false,
+        txHash: transfer.txHash,
+        pending: "AWAITING_SETTLEMENT_CONFIRMATION",
+      };
     }
 
-    await recordIdempotentJournalEntry({
-      workspaceId: order.workspace_id,
-      orderId: order.id,
-      orderNumber: order.order_number,
-      itemName: order.item_name,
-      supplierName: order.supplier_name,
-      amountCents: matchResult.payableAmountCents,
-      txHash: transferRes.txHash,
+    await this.finaliseConfirmedPayment(order, {
+      txHash: transfer.txHash,
+      settledAt: outcome.timestamp,
+      receivedQuantity: receipt.receivedQuantity,
+      payableAmountCents: matchResult.payableAmountCents,
+      mode: settlementAdapter.mode,
     });
 
     return {
       status: matchResult.status,
       reconciled: true,
-      txHash: transferRes.txHash,
+      txHash: transfer.txHash,
     };
   }
 }
