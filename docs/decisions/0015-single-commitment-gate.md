@@ -77,6 +77,6 @@ approved. A role limit of 0 was treated as "no limit", and a missing `agent_role
 - A quote or price change, a supplier that was un-verified, a quote that expired, or a daily limit used up
   between the request and the owner's approval now stops the order.
 - Known gaps, not closed here:
-  - Race, parked for Task 5: the re-check and the order write are not in one transaction. Two concurrent
-    commitments can both pass the daily check before either writes an order. Task 5 adds an advisory lock around
-    the spend check and the order insert.
+  - Race, closed in Task 5b (ADR 0018): the order row is written as `submitted` under a per-workspace advisory lock,
+    before the supplier call, and the gate runs under the same lock. Two concurrent commitments cannot both pass the
+    daily check.

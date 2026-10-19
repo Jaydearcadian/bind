@@ -29,7 +29,7 @@ function specFor(name: string, overrides: Partial<EffectSpec> = {}): EffectSpec 
     workspaceId: wsA,
     workflowId: `wf_effects_${run}`,
     effectClass: EffectClass.COMMERCIAL_COMMITMENT,
-    operation: "supplier.submit_order",
+    operation: "orders.submit",
     idempotencyKey: keyFor(name),
     request: { quoteId: `quote_${name}`, quantity: 10, totalPriceCents: 24500n },
     ...overrides,

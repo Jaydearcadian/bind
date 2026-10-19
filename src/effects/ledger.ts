@@ -1,9 +1,9 @@
 import crypto from "crypto";
-import pg from "pg";
 import { query } from "../db/client.js";
 import { config } from "../config/env.js";
+import { acquireAdvisoryLock, type AdvisoryLock } from "../db/advisory-lock.js";
 import { redactSecrets } from "../adapters/settlement/errors.js";
-import { EffectClass } from "../policy/effect-classifier.js";
+import { EffectClass, classifyOperation } from "../policy/effect-classifier.js";
 import { encodeResult, decodeResult, requestHash } from "./serialize.js";
 import { takeEffectFault } from "./faults.js";
 
@@ -101,12 +101,6 @@ interface StoredEffect {
   resultJson: string | null;
 }
 
-interface KeyLock {
-  release(): Promise<void>;
-}
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 function newEffectId(): string {
   return `eff_${crypto.randomUUID()}`;
 }
@@ -117,6 +111,18 @@ function validateSpec(spec: EffectSpec): void {
   if (!spec.idempotencyKey) throw new TypeError("An effect requires an idempotencyKey");
   if (!Object.values(EffectClass).includes(spec.effectClass)) {
     throw new TypeError(`Unknown effect class '${String(spec.effectClass)}'`);
+  }
+  // The operation must be declared in the classification map, and the caller must declare the class the map gives it.
+  let mapped: EffectClass;
+  try {
+    mapped = classifyOperation(spec.operation);
+  } catch {
+    throw new TypeError(`Operation '${spec.operation}' is not in the effect classification map`);
+  }
+  if (mapped !== spec.effectClass) {
+    throw new TypeError(
+      `Operation '${spec.operation}' is classified '${mapped}', not '${String(spec.effectClass)}'`
+    );
   }
 }
 
@@ -162,44 +168,6 @@ async function loadByKey(key: string): Promise<StoredEffect | null> {
     attempts: row.attempts,
     resultJson: row.result_json,
   };
-}
-
-const TRY_LOCK_SQL = `SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS acquired;`;
-const UNLOCK_SQL = `SELECT pg_advisory_unlock(hashtextextended($1, 0));`;
-
-/**
- * Takes the session advisory lock for an idempotency key. A dedicated connection holds it, so it is not
- * taken from the shared pool for the length of an external call. Returns null if the lock is still held after
- * LOCK_WAIT_MS. Waiters poll with short-lived connections and never hold a connection while they sleep.
- */
-async function acquireKeyLock(key: string): Promise<KeyLock | null> {
-  const deadline = Date.now() + LOCK_WAIT_MS;
-  let delay = 2;
-  for (;;) {
-    const client = new pg.Client({ connectionString: config.DATABASE_URL });
-    await client.connect();
-    let acquired = false;
-    try {
-      const res = await client.query(TRY_LOCK_SQL, [key]);
-      acquired = res.rows[0]?.acquired === true;
-    } catch (err) {
-      await client.end().catch(() => undefined);
-      throw err;
-    }
-    if (acquired) {
-      return {
-        release: async () => {
-          await client.query(UNLOCK_SQL, [key]).catch(() => undefined);
-          // Ending the session also drops the lock if the unlock did not reach the server.
-          await client.end().catch(() => undefined);
-        },
-      };
-    }
-    await client.end().catch(() => undefined);
-    if (Date.now() >= deadline) return null;
-    await sleep(delay);
-    delay = Math.min(delay * 2, 50);
-  }
 }
 
 async function markCompleted<T>(effectId: string, result: T, externalRef: string | undefined): Promise<void> {
@@ -323,7 +291,7 @@ export async function runEffect<T>(
   // Hash first: a request that cannot be hashed is rejected before anything is written or called.
   const hash = requestHash(spec.request);
 
-  const lock = await acquireKeyLock(spec.idempotencyKey);
+  const lock: AdvisoryLock | null = await acquireAdvisoryLock(spec.idempotencyKey, LOCK_WAIT_MS);
   if (!lock) return reportBusy<T>(spec, hash);
   try {
     return await runLocked(spec, hash, fn, opts);

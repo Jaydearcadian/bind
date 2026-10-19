@@ -3,10 +3,17 @@ import { WorkflowState } from "./types.js";
 import { query } from "../db/client.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
-import { authorizeCommitment, describeCommitmentDecision } from "../policy/commitment-gate.js";
+import { authorizeCommitment, describeCommitmentDecision, type CommitmentDecision } from "../policy/commitment-gate.js";
 import { getSupplierAdapter } from "../adapters/suppliers/index.js";
 import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.js";
-import type { SupplierAdapter } from "../adapters/suppliers/types.js";
+import type { OrderRequest, OrderResponse, QuoteResponse, SupplierAdapter } from "../adapters/suppliers/types.js";
+import { EffectInDoubtError, runEffect } from "../effects/ledger.js";
+import {
+  PROCUREMENT_ACTOR_ROLE,
+  loadStoredQuote,
+  orderNumberFor,
+  reserveOrder,
+} from "../orders/reservation.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import type { SettlementAdapter } from "../adapters/settlement/types.js";
 import { generateIdempotencyKey } from "../utils/idempotency.js";
@@ -24,6 +31,30 @@ export type { ReconcileResult } from "./settlement.js";
 
 /** Actor recorded when the approval-time re-check rejects an approval. */
 const POLICY_RECHECK_ACTOR = "system:policy-recheck";
+/** Actor recorded when the order reservation or crash recovery refuses a commitment. */
+const RESERVATION_ACTOR = "system:order-reservation";
+
+/**
+ * Result of submitting or resuming an order. CONFIRMED and FAILED are final. SUBMITTED with inDoubt means the supplier
+ * may or may not have accepted the order: the order and the workflow stay submitted and nothing is resent.
+ */
+export type OrderSubmissionResult =
+  | { workflowId: string; state: WorkflowState.CONFIRMED; orderId: string }
+  | { workflowId: string; state: WorkflowState.FAILED; orderId?: string }
+  | { workflowId: string; state: WorkflowState.SUBMITTED; orderId: string; inDoubt: true; effectId: string };
+
+/** Fields of a quote or proposal that the commitment gate checks. Read from the workflow context. */
+function commitmentClaims(workflowId: string, workspaceId: string, proposal: any) {
+  return {
+    workspaceId,
+    workflowId,
+    actorRole: PROCUREMENT_ACTOR_ROLE,
+    supplierId: String(proposal?.supplierId ?? ""),
+    quoteId: String(proposal?.quoteId ?? ""),
+    quantity: Number(proposal?.quantity),
+    totalPriceCents: BigInt(proposal?.totalPriceCents ?? 0),
+  };
+}
 
 type ReceiptAndBill = Exclude<Awaited<ReturnType<EvidenceLoader>>, { pending: unknown }>;
 
@@ -133,34 +164,14 @@ export class ProcurementWorkflowRunner {
         );
       }
     }
-    const supplierAdapter = this.supplierFor(supplierId);
-
-    const quoteRes = await supplierAdapter.requestQuote({
+    const quoteRes = await this.requestQuote({
       workspaceId,
+      workflowId,
       sku,
       quantity: reorderQty,
       rfqId: `rfq_${workflowId}`,
       supplierId,
     });
-
-    // Record quote in DB with 24h validity
-    const validUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await query(
-      `INSERT INTO quotes (id, workspace_id, rfq_id, supplier_id, supplier_name, item_sku, quantity, unit_price_cents, total_price_cents, currency, valid_until, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'USDC', $10, NOW());`,
-      [
-        quoteRes.quoteId,
-        workspaceId,
-        quoteRes.rfqId,
-        quoteRes.supplierId,
-        quoteRes.supplierName,
-        quoteRes.sku,
-        quoteRes.quantity,
-        quoteRes.unitPriceCents,
-        quoteRes.totalPriceCents,
-        validUntil,
-      ]
-    );
 
     // 5. Transition to QUOTE_RECEIVED
     await this.workflowEngine.transition(workflowId, {
@@ -282,8 +293,7 @@ export class ProcurementWorkflowRunner {
     }
 
     if (updatedWf.state === WorkflowState.AUTHORIZED) {
-      const activeQuote = updatedWf.contextData?.replenishmentProposal || quoteRes;
-      return this.executeOrderSubmission(workflowId, workspaceId, activeQuote, item.name);
+      return this.resumeOrderSubmission(workflowId);
     }
 
     return { workflowId, state: updatedWf.state };
@@ -342,11 +352,7 @@ export class ProcurementWorkflowRunner {
 
     const { workflowId } = await this.workflowEngine.resolveApproval(approvalId, "approved", decidedBy);
 
-    const wf = await this.workflowEngine.getWorkflow(workflowId);
-    const quoteRes = wf!.contextData.replenishmentProposal || wf!.contextData.quote;
-    const itemName = wf!.contextData.itemName || quoteRes.sku;
-
-    return this.executeOrderSubmission(workflowId, approval.workspace_id, quoteRes, itemName);
+    return this.resumeOrderSubmission(workflowId);
   }
 
   /**
@@ -371,63 +377,224 @@ export class ProcurementWorkflowRunner {
   }
 
   /**
-   * Submits an authorized order to the supplier adapter.
+   * Asks a supplier for a quote through the effects ledger. A quote creates no liability, so a repeated request with the
+   * same rfq id is safe: the stored quote is replayed and the supplier is not asked again. The quote row is written
+   * once, keyed by the quote id, so a replay does not add a second row.
    */
-  private async executeOrderSubmission(
-    workflowId: string,
-    workspaceId: string,
-    quote: any,
-    itemName: string
-  ): Promise<{ workflowId: string; state: WorkflowState; orderId: string }> {
-    await this.workflowEngine.transition(workflowId, {
-      fromState: WorkflowState.AUTHORIZED,
-      toState: WorkflowState.SUBMITTED,
-    });
-
-    const orderId = `ord_${workflowId}`;
-    const orderNumber = `PO-${Date.now().toString().slice(-6)}`;
-    const idempotencyKey = `idem_ord_${orderId}`;
-
-    const supplierAdapter = this.supplierFor(quote.supplierId);
-    const orderRes = await supplierAdapter.submitOrder({
-      workspaceId,
-      orderId,
-      orderNumber,
-      supplierId: quote.supplierId,
-      sku: quote.sku,
-      quantity: quote.quantity,
-      unitPriceCents: BigInt(quote.unitPriceCents),
-      totalPriceCents: BigInt(quote.totalPriceCents),
-      idempotencyKey,
-    });
-
-    // Record Order in DB
-    await query(
-      `INSERT INTO orders (id, workspace_id, order_number, supplier_id, supplier_name, item_sku, item_name, quantity, unit_price_cents, total_price_cents, currency, status, idempotency_key, external_order_ref, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'USDC', 'confirmed', $11, $12, NOW(), NOW());`,
-      [
-        orderId,
-        workspaceId,
-        orderNumber,
-        quote.supplierId,
-        quote.supplierName,
-        quote.sku,
-        itemName,
-        quote.quantity,
-        quote.unitPriceCents,
-        quote.totalPriceCents,
-        idempotencyKey,
-        orderRes.externalOrderRef,
-      ]
+  async requestQuote(input: {
+    workspaceId: string;
+    workflowId?: string;
+    supplierId: string;
+    sku: string;
+    quantity: number;
+    rfqId: string;
+  }): Promise<QuoteResponse> {
+    const supplierAdapter = this.supplierFor(input.supplierId);
+    const { result: quoteRes } = await runEffect(
+      {
+        workspaceId: input.workspaceId,
+        workflowId: input.workflowId,
+        effectClass: EffectClass.EXTERNAL_REQUEST,
+        operation: "suppliers.request_quote",
+        idempotencyKey: `${input.workspaceId}:quote:${input.rfqId}`,
+        request: { sku: input.sku, quantity: input.quantity, supplierId: input.supplierId, rfqId: input.rfqId },
+        externalDedupes: true,
+      },
+      () =>
+        supplierAdapter.requestQuote({
+          workspaceId: input.workspaceId,
+          sku: input.sku,
+          quantity: input.quantity,
+          rfqId: input.rfqId,
+          supplierId: input.supplierId,
+        })
     );
 
-    // Transition to CONFIRMED
+    // Record the quote with 24h validity. A replayed quote carries the same id, so the row is written once.
+    const validUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await query(
+      `INSERT INTO quotes (id, workspace_id, rfq_id, supplier_id, supplier_name, item_sku, quantity, unit_price_cents, total_price_cents, currency, valid_until, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'USDC', $10, NOW())
+       ON CONFLICT (id) DO NOTHING;`,
+      [
+        quoteRes.quoteId,
+        input.workspaceId,
+        quoteRes.rfqId,
+        quoteRes.supplierId,
+        quoteRes.supplierName,
+        quoteRes.sku,
+        quoteRes.quantity,
+        quoteRes.unitPriceCents,
+        quoteRes.totalPriceCents,
+        validUntil,
+      ]
+    );
+    return quoteRes;
+  }
+
+  /**
+   * Submits an authorized order, or resumes a submitted one after a crash. The order id is derived from the workflow, so
+   * a resume finds the workflow's own order and never another one. Steps:
+   * 1. authorized -> submitted (any other state, other than submitted, is refused).
+   * 2. Reserve spend: the order row is written as submitted under the spend lock, after the commitment gate decides.
+   * 3. Submit through the effects ledger, at most once per key. The result is reconciled with the supplier when it can
+   *    look up orders. An unknown outcome is reported in doubt and is never resent.
+   */
+  async resumeOrderSubmission(workflowId: string): Promise<OrderSubmissionResult> {
+    const wf = await this.workflowEngine.getWorkflow(workflowId);
+    if (!wf) throw new Error(`Workflow '${workflowId}' not found.`);
+    if (wf.state !== WorkflowState.AUTHORIZED && wf.state !== WorkflowState.SUBMITTED) {
+      throw new Error(
+        `Workflow '${workflowId}' is '${wf.state}'; only an authorized or submitted workflow can be submitted.`
+      );
+    }
+    const workspaceId = wf.workspaceId;
+    const proposal = wf.contextData.replenishmentProposal || wf.contextData.quote || {};
+    const itemName: string = wf.contextData.itemName || String(proposal.sku ?? "");
+
+    if (wf.state === WorkflowState.AUTHORIZED) {
+      await this.workflowEngine.transition(workflowId, {
+        fromState: WorkflowState.AUTHORIZED,
+        toState: WorkflowState.SUBMITTED,
+      });
+    }
+
+    const orderId = `ord_${workflowId}`;
+    const idempotencyKey = `idem_ord_${orderId}`;
+
+    let order = await this.loadOwnOrder(orderId, workspaceId);
+    if (!order) {
+      const stored = await loadStoredQuote(workspaceId, String(proposal.quoteId ?? ""));
+      if (!stored) {
+        // Nothing to reserve against. The gate denies it (QUOTE_NOT_FOUND), so no order is written.
+        const decision = await authorizeCommitment(commitmentClaims(workflowId, workspaceId, proposal));
+        return this.failReservation(workflowId, workspaceId, decision);
+      }
+      const reservation = await reserveOrder({
+        workspaceId,
+        workflowId,
+        orderId,
+        quote: stored,
+        itemName: itemName || stored.sku,
+        idempotencyKey,
+        orderNumber: orderNumberFor(orderId),
+      });
+      if (!reservation.reserved) return this.failReservation(workflowId, workspaceId, reservation.decision);
+      order = await this.loadOwnOrder(orderId, workspaceId);
+      if (!order) throw new Error(`Order '${orderId}' is missing after its reservation.`);
+    }
+
+    if (order.status === "cancelled") {
+      // The supplier rejected this order earlier, and the workflow was left submitted by a crash. Finish the failure.
+      await this.workflowEngine.transition(workflowId, {
+        fromState: WorkflowState.SUBMITTED,
+        toState: WorkflowState.FAILED,
+        errorMessage: "The supplier rejected this order. Its reservation was released.",
+      });
+      return { workflowId, state: WorkflowState.FAILED, orderId };
+    }
+
+    if (!order.supplier_id) throw new Error(`Order '${orderId}' has no supplier on record.`);
+    const supplierAdapter = this.supplierFor(order.supplier_id);
+    const request: OrderRequest = {
+      workspaceId,
+      orderId,
+      orderNumber: order.order_number,
+      supplierId: order.supplier_id,
+      sku: order.item_sku,
+      quantity: Number(order.quantity),
+      unitPriceCents: BigInt(order.unit_price_cents),
+      totalPriceCents: BigInt(order.total_price_cents),
+      idempotencyKey,
+    };
+    const lookupOrder = supplierAdapter.lookupOrder?.bind(supplierAdapter);
+
+    let orderRes: OrderResponse;
+    try {
+      ({ result: orderRes } = await runEffect<OrderResponse>(
+        {
+          workspaceId,
+          workflowId,
+          effectClass: EffectClass.COMMERCIAL_COMMITMENT,
+          operation: "orders.submit",
+          idempotencyKey: `${workspaceId}:order:${orderId}`,
+          request: {
+            orderId,
+            supplierId: request.supplierId,
+            sku: request.sku,
+            quantity: request.quantity,
+            unitPriceCents: request.unitPriceCents,
+            totalPriceCents: request.totalPriceCents,
+            orderNumber: request.orderNumber,
+            idempotencyKey,
+          },
+        },
+        () => supplierAdapter.submitOrder(request),
+        {
+          reconcile: lookupOrder
+            ? async () => {
+                const found = await lookupOrder({ workspaceId, orderId, idempotencyKey });
+                return found
+                  ? { found: true, result: found, externalRef: found.externalOrderRef }
+                  : { found: false };
+              }
+            : undefined,
+          externalRef: (r) => r.externalOrderRef,
+        }
+      ));
+    } catch (err) {
+      if (err instanceof EffectInDoubtError) {
+        // The money may already be committed. Keep the order and the workflow submitted, and never resend.
+        await this.workflowEngine.recordAudit(
+          workspaceId,
+          workflowId,
+          "system",
+          "system:order-submission",
+          EffectClass.COMMERCIAL_COMMITMENT,
+          "orders.submit.in_doubt",
+          PolicyDecision.ALLOW,
+          { orderId, orderNumber: request.orderNumber, effectId: err.effectId, effectStatus: err.status, attempts: err.attempts }
+        );
+        return { workflowId, state: WorkflowState.SUBMITTED, orderId, inDoubt: true, effectId: err.effectId };
+      }
+      // Any other error: the ledger has recorded the call as failed. The outcome is unknown, so nothing is cancelled.
+      throw err;
+    }
+
+    if (orderRes.status === "rejected") {
+      // The supplier refused the order: release the reservation so the budget is free again, then fail the workflow.
+      await query(
+        `UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND workspace_id = $2 AND status = 'submitted';`,
+        [orderId, workspaceId]
+      );
+      await this.workflowEngine.transition(workflowId, {
+        fromState: WorkflowState.SUBMITTED,
+        toState: WorkflowState.FAILED,
+        errorMessage: `The supplier rejected order ${request.orderNumber}. The reservation was released.`,
+      });
+      await this.workflowEngine.recordAudit(
+        workspaceId,
+        workflowId,
+        "agent",
+        "procurement_agent",
+        EffectClass.COMMERCIAL_COMMITMENT,
+        "orders.submit",
+        PolicyDecision.DENY,
+        { orderId, orderNumber: request.orderNumber, externalOrderRef: orderRes.externalOrderRef, status: "rejected" }
+      );
+      return { workflowId, state: WorkflowState.FAILED, orderId };
+    }
+
+    await query(
+      `UPDATE orders SET status = 'confirmed', external_order_ref = $3, updated_at = NOW()
+       WHERE id = $1 AND workspace_id = $2 AND status = 'submitted';`,
+      [orderId, workspaceId, orderRes.externalOrderRef]
+    );
     await this.workflowEngine.transition(workflowId, {
       fromState: WorkflowState.SUBMITTED,
       toState: WorkflowState.CONFIRMED,
-      patchContext: { orderId, orderNumber, externalOrderRef: orderRes.externalOrderRef },
+      patchContext: { orderId, orderNumber: request.orderNumber, externalOrderRef: orderRes.externalOrderRef },
     });
-
     await this.workflowEngine.recordAudit(
       workspaceId,
       workflowId,
@@ -436,10 +603,47 @@ export class ProcurementWorkflowRunner {
       EffectClass.COMMERCIAL_COMMITMENT,
       "orders.submit",
       PolicyDecision.ALLOW,
-      { orderId, orderNumber, externalOrderRef: orderRes.externalOrderRef }
+      { orderId, orderNumber: request.orderNumber, externalOrderRef: orderRes.externalOrderRef }
     );
-
     return { workflowId, state: WorkflowState.CONFIRMED, orderId };
+  }
+
+  /** The workflow's own order, in its workspace only. */
+  private async loadOwnOrder(orderId: string, workspaceId: string): Promise<any | null> {
+    const res = await query(
+      `SELECT id, status, order_number, supplier_id, item_sku, quantity, unit_price_cents, total_price_cents
+       FROM orders WHERE id = $1 AND workspace_id = $2;`,
+      [orderId, workspaceId]
+    );
+    return res.rows[0] ?? null;
+  }
+
+  /** A refused reservation fails the workflow with the reason codes, and writes no order and calls no supplier. */
+  private async failReservation(
+    workflowId: string,
+    workspaceId: string,
+    decision: CommitmentDecision
+  ): Promise<OrderSubmissionResult> {
+    if (decision.decision !== PolicyDecision.DENY) {
+      throw new Error(`A reservation can only be refused on a denial, not '${decision.decision}'.`);
+    }
+    const reason = describeCommitmentDecision(decision);
+    await this.workflowEngine.transition(workflowId, {
+      fromState: WorkflowState.SUBMITTED,
+      toState: WorkflowState.FAILED,
+      errorMessage: reason,
+    });
+    await this.workflowEngine.recordAudit(
+      workspaceId,
+      workflowId,
+      "system",
+      RESERVATION_ACTOR,
+      EffectClass.COMMERCIAL_COMMITMENT,
+      "commitment.recheck",
+      PolicyDecision.DENY,
+      { reasonCodes: decision.reasonCodes, reason, ...decision.evidence }
+    );
+    return { workflowId, state: WorkflowState.FAILED };
   }
 
   /**

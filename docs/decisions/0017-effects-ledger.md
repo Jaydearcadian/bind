@@ -1,7 +1,7 @@
 # ADR 0017: Durable ledger for external effects
 
 ## Status
-Accepted (2026-10-19). Module and tests only. Call sites are wired in Task 5b.
+Accepted (2026-10-19). Module and tests in Task 5a. Order and quote call sites are wired in Task 5b (ADR 0018).
 
 ## Context
 External effects (supplier quote and order, settlement transfer, owner notification) were not recorded durably
