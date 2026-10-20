@@ -363,6 +363,53 @@ CREATE TABLE IF NOT EXISTS workspace_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_workspace_tokens_ws ON workspace_tokens(workspace_id) WHERE revoked_at IS NULL;
 
+-- People (ADR 0051). An account is one person's sign-in identity: the Privy user id and nothing else about them is required.
+-- Authorization stays here: a membership says which workspaces an account belongs to and in what role.
+CREATE TABLE IF NOT EXISTS accounts (
+  id VARCHAR(64) PRIMARY KEY,
+  privy_user_id TEXT NOT NULL UNIQUE,
+  display_name TEXT CHECK (display_name IS NULL OR char_length(display_name) BETWEEN 1 AND 80),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS workspace_memberships (
+  account_id VARCHAR(64) NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('owner','staff')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  removed_at TIMESTAMPTZ,
+  PRIMARY KEY (account_id, workspace_id)
+);
+CREATE INDEX IF NOT EXISTS idx_memberships_ws ON workspace_memberships(workspace_id) WHERE removed_at IS NULL;
+
+-- Short-lived sessions for a signed-in account, scoped to one workspace. Only the SHA-256 hash of the token is stored.
+CREATE TABLE IF NOT EXISTS account_sessions (
+  id VARCHAR(64) PRIMARY KEY,
+  account_id VARCHAR(64) NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_account ON account_sessions(account_id);
+
+-- Single-use, expiring staff invitations. Only the hash of the code is stored; the code is shown once to the owner.
+CREATE TABLE IF NOT EXISTS workspace_invites (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL UNIQUE,
+  role TEXT NOT NULL CHECK (role IN ('staff')),
+  label TEXT NOT NULL CHECK (char_length(label) BETWEEN 1 AND 80),
+  created_by TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  used_by_account VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_invites_ws ON workspace_invites(workspace_id);
+
 -- Connector credentials (src/credentials, ADR 0024). The secret is stored only as AES-256-GCM ciphertext under a key the
 -- database does not hold. A revoked row keeps its id and status and loses every secret-bearing column.
 CREATE TABLE IF NOT EXISTS connector_credentials (

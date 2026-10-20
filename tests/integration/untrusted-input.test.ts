@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import { testPrivyVerifier } from "../helpers/privy.js";
 import { createApp } from "../../src/server/app.js";
 import { ROUTES } from "../../src/api/registry.js";
 import { query, closePool } from "../../src/db/client.js";
@@ -108,7 +109,7 @@ function expectNoPollution() {
 // ---------------------------------------------------------------------------------------------------------------------
 
 describe("Untrusted input: hostile requests, responses and arguments (Task 11)", () => {
-  const app = createApp();
+  const app = createApp({ accounts: { verifier: testPrivyVerifier } });
   let server: Server;
   let baseUrl = "";
   let wsA: { id: string; owner: { id: string; token: string }; staff: { id: string; token: string } };
@@ -213,7 +214,7 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
       ];
       // Routes that ignore their body and succeed with one. Recovery is an owner action with no inputs, and the rotate
       // route is owner-only and changes the secret of wsA only (no other test signs for wsA).
-      const bodyIgnored = new Set(["POST /api/workspaces/:id/recover", "POST /api/workspaces/:id/webhook-secret/rotate"]);
+      const bodyIgnored = new Set(["POST /api/workspaces/:id/recover", "POST /api/workspaces/:id/webhook-secret/rotate", "POST /api/auth/sign-out"]);
       const pathHostile = ["%00", "a".repeat(5000), "%27%20OR%201%3D1%20--", '%22quoted%22'];
 
       // A long-lived route (its registry 200 is text/event-stream, ADR 0035) gets no query variants here: a valid request

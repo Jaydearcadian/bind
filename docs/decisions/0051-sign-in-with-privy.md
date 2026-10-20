@@ -1,6 +1,6 @@
 # 0051: Sign-in with Privy, on top of workspace tokens
 
-Status: Accepted as a direction (2026-10-20). Nothing is built.
+Status: Accepted (2026-10-20). The backend account layer is built (ADR 0052); no UI uses it yet.
 
 ## Context
 Sign-in today is a workspace token (ADR 0021). That is right for the SDK, MCP and agents, and wrong for a business owner. The owner chose Privy, with Google and wallet sign-in, for people.

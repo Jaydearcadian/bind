@@ -28,6 +28,8 @@ const ACCESS_TEXT: Record<AccessLevel, string> = {
   owner: "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
   "owner-any":
     "Access: a workspace token of an owner. The service checks that the approval or order belongs to the caller's workspace; another workspace's id is answered as not found.",
+  account:
+    "Access: an account. Send a Privy access token (from signing in with Google or a wallet) as Authorization: Bearer. A workspace token is refused with 401. The route answers 503 when sign-in is not configured.",
   "metrics-token":
     "Access: not a workspace token. Send the operator's metrics token as Authorization: Bearer. A workspace token is refused with 401. The route is disabled (404) when no metrics token is configured.",
   "signed-webhook":

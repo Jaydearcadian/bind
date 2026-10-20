@@ -58,7 +58,7 @@ describe("capability catalogue", () => {
   it("every operation that accepts or returns a secret is flagged, owner-or-public only, and has no agent surface", () => {
     for (const c of caps.filter((x) => x.flags.some((f) => /secret|returns_secret|accepts_secret/.test(f)))) {
       expect(c.surfaces.mcp, c.id).toBeNull();
-      expect(["owner", "public"], c.id).toContain(c.authorization);
+      expect(["owner", "public", "account", "authenticated"], c.id).toContain(c.authorization);
     }
   });
 

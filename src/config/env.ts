@@ -58,6 +58,15 @@ const envSchema = z.object({
     .string()
     .regex(/^bnd_[A-Za-z0-9_-]{43}$/, "must be a Bind token: 'bnd_' followed by 43 base64url characters")
     .optional(),
+  // Sign-in with Privy (ADR 0051). Both unset: the account routes answer 503 and nothing else changes. The verification key is the
+  // app's public key (PEM) from the Privy dashboard; it is not a secret, but it is configuration, never source.
+  PRIVY_APP_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(128).optional()),
+  PRIVY_VERIFICATION_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(4096).optional()),
+  // How long an account session lasts, in minutes (ADR 0051). Default 60.
+  BIND_SESSION_MINUTES: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.coerce.number().int().min(5).max(1440).optional()
+  ),
   // Webhook signing (ADR 0022). No defaults in source. Unset: the routes that need a secret answer 503 and process
   // nothing. An empty value counts as unset. When set, at least 32 characters.
   BIND_MASTER_SECRET: optionalSecret("BIND_MASTER_SECRET"),

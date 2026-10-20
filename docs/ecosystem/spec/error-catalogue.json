@@ -241,6 +241,46 @@
       "retryable": false,
       "existing": false,
       "note": ""
+    },
+    {
+      "code": "INVITE_UNUSABLE",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "People and invitations (ADR 0051)."
+    },
+    {
+      "code": "INVITE_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "People and invitations (ADR 0051)."
+    },
+    {
+      "code": "MEMBER_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "People and invitations (ADR 0051)."
+    },
+    {
+      "code": "ALREADY_MEMBER",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "People and invitations (ADR 0051)."
+    },
+    {
+      "code": "LAST_OWNER",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "People and invitations (ADR 0051)."
     }
   ]
 }

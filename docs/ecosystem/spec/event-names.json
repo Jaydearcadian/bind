@@ -399,6 +399,41 @@
       "object": "document",
       "visibility": "member",
       "renamed": true
+    },
+    {
+      "type": "auth.member_joined",
+      "name": "member.joined",
+      "object": "member",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "auth.member_removed",
+      "name": "member.removed",
+      "object": "member",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "auth.member_role_changed",
+      "name": "member.role_changed",
+      "object": "member",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "auth.invite_created",
+      "name": "invite.created",
+      "object": "invite",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "auth.invite_revoked",
+      "name": "invite.revoked",
+      "object": "invite",
+      "visibility": "owner",
+      "renamed": true
     }
   ]
 }

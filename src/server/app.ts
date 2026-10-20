@@ -8,6 +8,22 @@ import { query } from "../db/client.js";
 import { acquireAdvisoryLock } from "../db/advisory-lock.js";
 import { config } from "../config/env.js";
 import { issueToken, listTokens, revokeToken, TokenError, type WorkspaceRole } from "../auth/tokens.js";
+import { createPrivyVerifier, type PrivyVerifier } from "../accounts/privy.js";
+import { accountAuthenticated } from "../auth/middleware.js";
+import { createSession, revokeSession } from "../accounts/sessions.js";
+import {
+  AccountError,
+  acceptInvite,
+  createAccountWorkspace,
+  createInvite,
+  listAccountWorkspaces,
+  listInvites,
+  listMembers,
+  removeMember,
+  revokeInvite,
+  setMemberRole,
+  upsertAccount,
+} from "../accounts/service.js";
 import { authenticated, workspaceMember, workspaceOwner, anyWorkspaceOwner } from "../auth/middleware.js";
 import { provisionWorkspace, listTemplates } from "../templates/registry.js";
 import { AgentsPausedError, ProcurementWorkflowRunner } from "../workflows/procurement.js";
@@ -89,6 +105,9 @@ import {
   ApprovalDecisionBodySchema,
   CancelWorkflowBodySchema,
   CreateWorkspaceBodySchema,
+  InviteAcceptBodySchema,
+  MemberRoleBodySchema,
+  SessionCreateBodySchema,
   CustomerOrderBodySchema,
   FeedbackBodySchema,
   FeedbackSummaryQuerySchema,
@@ -219,6 +238,19 @@ function decidedByOf(label: string): string {
 }
 
 /** Sends a token-operation failure with its status. */
+function sendAccountError(res: Response, err: unknown) {
+  if (err instanceof AccountError) {
+    const status =
+      err.code === "INVALID_INPUT"
+        ? 400
+        : err.code === "INVITE_UNUSABLE" || err.code === "INVITE_NOT_FOUND" || err.code === "MEMBER_NOT_FOUND"
+          ? 404
+          : 409;
+    return res.status(status).json({ error: err.message, code: err.code });
+  }
+  return res.status(500).json({ error: "Account operation failed" });
+}
+
 function sendTokenError(res: Response, err: unknown) {
   if (err instanceof TokenError) {
     const status = err.code === "TOKEN_NOT_FOUND" ? 404 : err.code === "LAST_OWNER_TOKEN" ? 409 : 400;
@@ -306,6 +338,11 @@ export interface CreateAppOptions {
    * Tests shorten the intervals and lower the caps.
    */
   events?: EventsOptions;
+  /**
+   * Sign-in with Privy (ADR 0051). `verifier: null` disables it (the account routes answer 503); omitted means the verifier built
+   * from PRIVY_APP_ID and PRIVY_VERIFICATION_KEY, or none when they are unset. Tests pass a verifier keyed with a generated key.
+   */
+  accounts?: { verifier?: PrivyVerifier | null; sessionMinutes?: number };
 }
 
 const WEBHOOK_UNAUTHORIZED = { error: "Invalid signature or expired timestamp" };
@@ -350,6 +387,16 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   const procurementRunner = new ProcurementWorkflowRunner();
   const recoveryRunner = new WorkflowCrashRecoveryRunner();
   const corsOrigins = options.corsOrigins ?? parseCorsOrigins(config.BIND_CORS_ORIGINS);
+  // Sign-in with Privy (ADR 0051): a bad key stops startup, an unset one leaves the account routes at 503.
+  const privyVerifier: PrivyVerifier | null =
+    options.accounts?.verifier !== undefined
+      ? options.accounts.verifier
+      : config.PRIVY_APP_ID && config.PRIVY_VERIFICATION_KEY
+        ? createPrivyVerifier({ appId: config.PRIVY_APP_ID, verificationKeyPem: config.PRIVY_VERIFICATION_KEY })
+        : null;
+  app.locals.privyVerifier = privyVerifier;
+  const sessionMinutes = options.accounts?.sessionMinutes ?? config.BIND_SESSION_MINUTES ?? 60;
+
   const masterSecret =
     options.secrets?.masterSecret !== undefined ? (options.secrets.masterSecret ?? undefined) : config.BIND_MASTER_SECRET;
   const webhookSecret =
@@ -1185,6 +1232,99 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       res.json(report);
     } catch (err: any) {
       res.status(500).json({ error: publicErrorMessage(err) });
+    }
+  });
+
+
+  // People (ADR 0051). Privy proves who a person is; these routes decide what that person may do in Bind.
+  app.post("/api/auth/session", ...accountAuthenticated, async (req: Request, res: Response) => {
+    const parsed = SessionCreateBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "workspaceId is required." });
+    try {
+      const account = parsed.data.displayName ? await upsertAccount(req.account!.privyUserId, parsed.data.displayName) : req.account!;
+      const issued = await createSession(account.id, parsed.data.workspaceId, sessionMinutes);
+      if (!issued) return res.status(404).json({ error: "Workspace not found" });
+      res.setHeader("Cache-Control", "no-store");
+      res.status(201).json({ sessionToken: issued.token, expiresAt: issued.expiresAt.toISOString(), workspaceId: issued.workspaceId, role: issued.role });
+    } catch (err) {
+      sendAccountError(res, err);
+    }
+  });
+
+  app.post("/api/auth/sign-out", ...authenticated, async (req: Request, res: Response) => {
+    const actor = req.actor!;
+    // A workspace token is not a session: there is nothing to end, and it keeps working. The answer says so.
+    const ended = actor.tokenId.startsWith("ses_") ? await revokeSession(actor.tokenId) : false;
+    res.json({ signedOut: ended });
+  });
+
+  app.get("/api/account/workspaces", ...accountAuthenticated, async (req: Request, res: Response) => {
+    res.json(await listAccountWorkspaces(req.account!.id));
+  });
+
+  app.post("/api/account/workspaces", ...accountAuthenticated, async (req: Request, res: Response) => {
+    const parsed = CreateWorkspaceBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "id, name, and templateId are required" });
+    const { id, name, templateId } = parsed.data;
+    try {
+      const created = await createAccountWorkspace(req.account!.id, id, name, templateId);
+      if (!created) return res.status(409).json({ error: "Workspace id is not available" });
+      res.status(201).json({ id, name, role: "owner" });
+    } catch (err) {
+      res.status(500).json({ error: publicErrorMessage(err) });
+    }
+  });
+
+  app.post("/api/account/invites/accept", ...accountAuthenticated, async (req: Request, res: Response) => {
+    const parsed = InviteAcceptBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "code is required." });
+    try {
+      res.json(await acceptInvite(req.account!.id, parsed.data.code));
+    } catch (err) {
+      sendAccountError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/invites", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      const made = await createInvite(req.params.id, req.body?.label, req.actor!.label, req.body?.expiresInHours);
+      res.setHeader("Cache-Control", "no-store");
+      res.status(201).json({ id: made.id, code: made.code, label: made.label, role: "staff", expiresAt: made.expiresAt.toISOString() });
+    } catch (err) {
+      sendAccountError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/invites", ...workspaceOwner, async (req: Request, res: Response) => {
+    res.json(jsonSafe(await listInvites(req.params.id)));
+  });
+
+  app.delete("/api/workspaces/:id/invites/:inviteId", ...workspaceOwner, async (req: Request, res: Response) => {
+    const revoked = await revokeInvite(req.params.id, req.params.inviteId, req.actor!.label);
+    if (!revoked) return res.status(404).json({ error: "Invitation not found, already used or already revoked.", code: "INVITE_NOT_FOUND" });
+    res.json({ id: req.params.inviteId, revoked: true });
+  });
+
+  app.get("/api/workspaces/:id/members", ...workspaceOwner, async (req: Request, res: Response) => {
+    res.json(jsonSafe(await listMembers(req.params.id)));
+  });
+
+  app.put("/api/workspaces/:id/members/:accountId", ...workspaceOwner, async (req: Request, res: Response) => {
+    const parsed = MemberRoleBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "role must be 'owner' or 'staff'." });
+    try {
+      res.json(jsonSafe(await setMemberRole(req.params.id, req.params.accountId, parsed.data.role, req.actor!.label)));
+    } catch (err) {
+      sendAccountError(res, err);
+    }
+  });
+
+  app.delete("/api/workspaces/:id/members/:accountId", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      await removeMember(req.params.id, req.params.accountId, req.actor!.label);
+      res.json({ accountId: req.params.accountId, removed: true });
+    } catch (err) {
+      sendAccountError(res, err);
     }
   });
 

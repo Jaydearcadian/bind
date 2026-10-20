@@ -93,6 +93,404 @@
   },
   "openapi": "3.0.3",
   "paths": {
+    "/api/account/invites/accept": {
+      "post": {
+        "description": "Access: an account. Send a Privy access token (from signing in with Google or a wallet) as Authorization: Bearer. A workspace token is refused with 401. The route answers 503 when sign-in is not configured.",
+        "operationId": "acceptInvite",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "code": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "owner",
+                        "staff"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "role"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The workspace joined."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The invitation cannot be used (unknown, used, revoked or expired: one answer)."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The account already belongs to the workspace (ALREADY_MEMBER)."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body too large (over 256 kB)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Sign-in is not configured on this server (no Privy app), or the account store is unavailable."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Join a workspace as staff with a single-use invitation code.",
+        "tags": [
+          "People"
+        ],
+        "x-bind-access": "account"
+      }
+    },
+    "/api/account/workspaces": {
+      "get": {
+        "description": "Access: an account. Send a Privy access token (from signing in with Google or a wallet) as Authorization: Bearer. A workspace token is refused with 401. The route answers 503 when sign-in is not configured.",
+        "operationId": "listAccountWorkspaces",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "enum": [
+                          "owner",
+                          "staff"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "role"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Workspaces."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Sign-in is not configured on this server (no Privy app), or the account store is unavailable."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The workspaces the signed-in account belongs to, with its role in each.",
+        "tags": [
+          "People"
+        ],
+        "x-bind-access": "account"
+      },
+      "post": {
+        "description": "Access: an account. Send a Privy access token (from signing in with Google or a wallet) as Authorization: Bearer. A workspace token is refused with 401. The route answers 503 when sign-in is not configured.",
+        "operationId": "createAccountWorkspace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "templateId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "templateId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "owner"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "role"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The new workspace."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The workspace id is not available."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body too large (over 256 kB)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Sign-in is not configured on this server (no Privy app), or the account store is unavailable."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a workspace from a template and become its owner.",
+        "tags": [
+          "People"
+        ],
+        "x-bind-access": "account"
+      }
+    },
     "/api/approvals/{id}/approve": {
       "post": {
         "description": "Access: a workspace token of an owner. The service checks that the approval or order belongs to the caller's workspace; another workspace's id is answered as not found.",
@@ -937,6 +1335,243 @@
           "Approvals"
         ],
         "x-bind-access": "owner-any"
+      }
+    },
+    "/api/auth/session": {
+      "post": {
+        "description": "Access: an account. Send a Privy access token (from signing in with Google or a wallet) as Authorization: Bearer. A workspace token is refused with 401. The route answers 503 when sign-in is not configured.",
+        "operationId": "createSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "displayName": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "workspaceId": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "workspaceId"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "owner",
+                        "staff"
+                      ],
+                      "type": "string"
+                    },
+                    "sessionToken": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sessionToken",
+                    "expiresAt",
+                    "workspaceId",
+                    "role"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The session token. Send it as a bearer token like a workspace token."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Workspace not found or the account is not a member (the same answer for both)."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body too large (over 256 kB)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Sign-in is not configured on this server (no Privy app), or the account store is unavailable."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Sign in: swap a Privy access token for a short-lived session in one workspace the account belongs to.",
+        "tags": [
+          "People"
+        ],
+        "x-bind-access": "account"
+      }
+    },
+    "/api/auth/sign-out": {
+      "post": {
+        "description": "Access: any valid workspace token. The answer is scoped to the caller's own workspace.",
+        "operationId": "signOut",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "signedOut": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "signedOut"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "signedOut is true when an account session was ended, and false for a workspace token, which is not a session and keeps working."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "End the account session this request used.",
+        "tags": [
+          "People"
+        ],
+        "x-bind-access": "authenticated"
       }
     },
     "/api/openapi.json": {
@@ -9147,6 +9782,461 @@
         "x-bind-access": "member"
       }
     },
+    "/api/workspaces/{id}/invites": {
+      "get": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "listInvites",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "createdBy": {
+                        "type": "string"
+                      },
+                      "expiresAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "revokedAt": {
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "role": {
+                        "enum": [
+                          "staff"
+                        ],
+                        "type": "string"
+                      },
+                      "usedAt": {
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "role",
+                      "label",
+                      "createdBy",
+                      "expiresAt",
+                      "usedAt",
+                      "revokedAt"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Invitation summaries."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Owner role required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The workspace's invitations. Never a code.",
+        "tags": [
+          "People"
+        ],
+        "x-bind-access": "owner"
+      },
+      "post": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "createInvite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "expiresInHours": {
+                    "maximum": 336,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "label": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "label"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "staff"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "code",
+                    "label",
+                    "role",
+                    "expiresAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The invitation. Share the code now: it cannot be shown again."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Owner role required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body too large (over 256 kB)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create a single-use staff invitation. The code is returned once and never stored.",
+        "tags": [
+          "People"
+        ],
+        "x-bind-access": "owner"
+      }
+    },
+    "/api/workspaces/{id}/invites/{inviteId}": {
+      "delete": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "revokeInvite",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "inviteId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "revoked": {
+                      "enum": [
+                        true
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "revoked"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The invitation is revoked."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Owner role required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Invitation not found, already used or already revoked."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Revoke an invitation that has not been used.",
+        "tags": [
+          "People"
+        ],
+        "x-bind-access": "owner"
+      }
+    },
     "/api/workspaces/{id}/kitchen-capacity": {
       "get": {
         "description": "Access: a workspace token of the owner or a staff member of the workspace in the path.",
@@ -9469,6 +10559,470 @@
         "summary": "Replace the kitchen capacity slots.",
         "tags": [
           "Customer orders"
+        ],
+        "x-bind-access": "owner"
+      }
+    },
+    "/api/workspaces/{id}/members": {
+      "get": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "listMembers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "accountId": {
+                        "type": "string"
+                      },
+                      "displayName": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "joinedAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "role": {
+                        "enum": [
+                          "owner",
+                          "staff"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "accountId",
+                      "displayName",
+                      "role",
+                      "joinedAt"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Members."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Owner role required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The people who belong to this workspace, with their roles.",
+        "tags": [
+          "People"
+        ],
+        "x-bind-access": "owner"
+      }
+    },
+    "/api/workspaces/{id}/members/{accountId}": {
+      "delete": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "removeMember",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "accountId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "removed": {
+                      "enum": [
+                        true
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "accountId",
+                    "removed"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The member is removed."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Owner role required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Member not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The last owner cannot be removed (LAST_OWNER)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Remove a member and end their sessions. The last owner cannot be removed.",
+        "tags": [
+          "People"
+        ],
+        "x-bind-access": "owner"
+      },
+      "put": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "setMemberRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "accountId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "role": {
+                    "enum": [
+                      "owner",
+                      "staff"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "role"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "joinedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "owner",
+                        "staff"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "accountId",
+                    "displayName",
+                    "role",
+                    "joinedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The member with the new role."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Owner role required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Member not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The last owner cannot be demoted (LAST_OWNER)."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body too large (over 256 kB)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Change a member's role. The last owner cannot be demoted.",
+        "tags": [
+          "People"
         ],
         "x-bind-access": "owner"
       }

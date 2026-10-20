@@ -1,5 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { resolveToken, type Actor, type WorkspaceRole } from "./tokens.js";
+import { upsertAccount, type Account } from "../accounts/service.js";
+import type { PrivyVerifier } from "../accounts/privy.js";
 import { responseMeta } from "../server/response-meta.js";
 import { idempotency } from "../server/idempotency.js";
 import { tokenRateLimit } from "../security/rate-limit-middleware.js";
@@ -10,6 +12,8 @@ declare global {
     interface Request {
       /** Set by `authenticate` when the bearer token is valid. Never set from the body or the query. */
       actor?: Actor;
+      /** Set by `authenticateAccount` when a Privy access token is valid (ADR 0051). */
+      account?: Account;
     }
   }
 }
@@ -90,3 +94,36 @@ export const workspaceOwner: RequestHandler[] = [authenticate, tokenRateLimit, s
 export const anyWorkspaceOwner: RequestHandler[] = [authenticate, tokenRateLimit, requireRole("owner"), responseMeta, idempotency];
 /** Any valid token. The route itself scopes the answer to the caller's workspace. */
 export const authenticated: RequestHandler[] = [authenticate, tokenRateLimit];
+
+/**
+ * Requires a valid Privy access token (ADR 0051). The verifier is the app's (`app.locals.privyVerifier`); when none is configured the
+ * route answers 503 and nothing else is affected. A missing, malformed, expired or wrongly signed token gets the same 401 body as a
+ * bad workspace token. The account is created on first sign-in.
+ */
+export async function authenticateAccount(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const verifier = req.app.locals.privyVerifier as PrivyVerifier | null | undefined;
+  if (!verifier) {
+    res.status(503).json({ error: "Sign-in is not configured" });
+    return;
+  }
+  const raw = bearerToken(req);
+  if (raw === null) {
+    res.status(401).json(UNAUTHENTICATED);
+    return;
+  }
+  try {
+    const identity = await verifier.verify(raw);
+    if (!identity) {
+      res.status(401).json(UNAUTHENTICATED);
+      return;
+    }
+    req.account = await upsertAccount(identity.userId);
+  } catch {
+    res.status(503).json({ error: "Authentication unavailable" });
+    return;
+  }
+  next();
+}
+
+/** A signed-in account. The per-IP limits in createApp apply; there is no token to count against yet. */
+export const accountAuthenticated: RequestHandler[] = [authenticateAccount];

@@ -32,7 +32,20 @@ import {
   CustomerOrderSchema,
   DocumentConfirmSchema,
   DocumentDraftSchema,
+  AccountWorkspaceCreatedSchema,
+  AccountWorkspaceSchema,
   ErrorBody,
+  InviteAcceptBodySchema,
+  InviteCreateBodySchema,
+  InviteIssuedSchema,
+  InviteRevokedSchema,
+  InviteSummarySchema,
+  MemberRemovedSchema,
+  MemberRoleBodySchema,
+  MemberSchema,
+  SessionCreateBodySchema,
+  SessionIssuedSchema,
+  SignedOutSchema,
   EventPollQuerySchema,
   EventPollSchema,
   EventStreamQuerySchema,
@@ -94,6 +107,7 @@ export type AccessLevel =
   | "member"
   | "owner"
   | "owner-any"
+  | "account"
   | "metrics-token"
   | "signed-webhook";
 
@@ -142,6 +156,9 @@ function withGenericErrors(entry: Omit<RouteSpec, "responses"> & { responses: Re
   }
   if (entry.access !== "public") {
     generic[401] = err("Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused).");
+  }
+  if (entry.access === "account") {
+    generic[503] = err("Sign-in is not configured on this server (no Privy app), or the account store is unavailable.");
   }
   if (entry.access === "owner" || entry.access === "owner-any") {
     generic[403] = err("Owner role required.");
@@ -932,6 +949,165 @@ export const ROUTES: RouteSpec[] = [
     summary: "Recover interrupted workflows of this workspace. In-doubt submissions are reported, never resent.",
     responses: { 200: ok("What was recovered and what is in doubt.", RecoveryReportSchema) },
     contractTested: true,
+  }),
+
+  // -------------------------------------------------------------------------------------------------------------------
+  // People: sign-in, invitations and members (ADR 0051)
+  // -------------------------------------------------------------------------------------------------------------------
+  withGenericErrors({
+    operationId: "createSession",
+    method: "post",
+    path: "/api/auth/session",
+    access: "account",
+    tags: ["People"],
+    summary: "Sign in: swap a Privy access token for a short-lived session in one workspace the account belongs to.",
+    body: SessionCreateBodySchema,
+    responses: {
+      201: ok("The session token. Send it as a bearer token like a workspace token.", SessionIssuedSchema),
+      404: err("Workspace not found or the account is not a member (the same answer for both)."),
+    },
+    contractTested: false,
+    notTestedReason: "Covered by tests/integration/accounts.test.ts, which signs requests with a real ES256 key and checks each answer against this schema.",
+  }),
+  withGenericErrors({
+    operationId: "signOut",
+    method: "post",
+    path: "/api/auth/sign-out",
+    access: "authenticated",
+    tags: ["People"],
+    summary: "End the account session this request used.",
+    responses: {
+      200: ok("signedOut is true when an account session was ended, and false for a workspace token, which is not a session and keeps working.", SignedOutSchema),
+    },
+    contractTested: false,
+    notTestedReason: "Covered by tests/integration/accounts.test.ts, which signs requests with a real ES256 key and checks each answer against this schema.",
+  }),
+  withGenericErrors({
+    operationId: "listAccountWorkspaces",
+    method: "get",
+    path: "/api/account/workspaces",
+    access: "account",
+    tags: ["People"],
+    summary: "The workspaces the signed-in account belongs to, with its role in each.",
+    responses: {
+      200: ok("Workspaces.", list(AccountWorkspaceSchema)),
+    },
+    contractTested: false,
+    notTestedReason: "Covered by tests/integration/accounts.test.ts, which signs requests with a real ES256 key and checks each answer against this schema.",
+  }),
+  withGenericErrors({
+    operationId: "createAccountWorkspace",
+    method: "post",
+    path: "/api/account/workspaces",
+    access: "account",
+    tags: ["People"],
+    summary: "Create a workspace from a template and become its owner.",
+    body: CreateWorkspaceBodySchema,
+    responses: {
+      201: ok("The new workspace.", AccountWorkspaceCreatedSchema),
+      409: err("The workspace id is not available."),
+    },
+    contractTested: false,
+    notTestedReason: "Covered by tests/integration/accounts.test.ts, which signs requests with a real ES256 key and checks each answer against this schema.",
+  }),
+  withGenericErrors({
+    operationId: "acceptInvite",
+    method: "post",
+    path: "/api/account/invites/accept",
+    access: "account",
+    tags: ["People"],
+    summary: "Join a workspace as staff with a single-use invitation code.",
+    body: InviteAcceptBodySchema,
+    responses: {
+      200: ok("The workspace joined.", AccountWorkspaceSchema),
+      404: err("The invitation cannot be used (unknown, used, revoked or expired: one answer)."),
+      409: err("The account already belongs to the workspace (ALREADY_MEMBER)."),
+    },
+    contractTested: false,
+    notTestedReason: "Covered by tests/integration/accounts.test.ts, which signs requests with a real ES256 key and checks each answer against this schema.",
+  }),
+  withGenericErrors({
+    operationId: "createInvite",
+    method: "post",
+    path: "/api/workspaces/:id/invites",
+    access: "owner",
+    tags: ["People"],
+    summary: "Create a single-use staff invitation. The code is returned once and never stored.",
+    body: InviteCreateBodySchema,
+    sampleBody: { label: "contract-sample-<<run>>" },
+    responses: {
+      201: ok("The invitation. Share the code now: it cannot be shown again.", InviteIssuedSchema),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "listInvites",
+    method: "get",
+    path: "/api/workspaces/:id/invites",
+    access: "owner",
+    tags: ["People"],
+    summary: "The workspace's invitations. Never a code.",
+    responses: {
+      200: ok("Invitation summaries.", list(InviteSummarySchema)),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "revokeInvite",
+    method: "delete",
+    path: "/api/workspaces/:id/invites/:inviteId",
+    access: "owner",
+    tags: ["People"],
+    summary: "Revoke an invitation that has not been used.",
+    responses: {
+      200: ok("The invitation is revoked.", InviteRevokedSchema),
+      404: err("Invitation not found, already used or already revoked."),
+    },
+    contractTested: false,
+    notTestedReason: "Covered by tests/integration/accounts.test.ts, which signs requests with a real ES256 key and checks each answer against this schema.",
+  }),
+  withGenericErrors({
+    operationId: "listMembers",
+    method: "get",
+    path: "/api/workspaces/:id/members",
+    access: "owner",
+    tags: ["People"],
+    summary: "The people who belong to this workspace, with their roles.",
+    responses: {
+      200: ok("Members.", list(MemberSchema)),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "setMemberRole",
+    method: "put",
+    path: "/api/workspaces/:id/members/:accountId",
+    access: "owner",
+    tags: ["People"],
+    summary: "Change a member's role. The last owner cannot be demoted.",
+    body: MemberRoleBodySchema,
+    responses: {
+      200: ok("The member with the new role.", MemberSchema),
+      404: err("Member not found."),
+      409: err("The last owner cannot be demoted (LAST_OWNER)."),
+    },
+    contractTested: false,
+    notTestedReason: "Covered by tests/integration/accounts.test.ts, which signs requests with a real ES256 key and checks each answer against this schema.",
+  }),
+  withGenericErrors({
+    operationId: "removeMember",
+    method: "delete",
+    path: "/api/workspaces/:id/members/:accountId",
+    access: "owner",
+    tags: ["People"],
+    summary: "Remove a member and end their sessions. The last owner cannot be removed.",
+    responses: {
+      200: ok("The member is removed.", MemberRemovedSchema),
+      404: err("Member not found."),
+      409: err("The last owner cannot be removed (LAST_OWNER)."),
+    },
+    contractTested: false,
+    notTestedReason: "Covered by tests/integration/accounts.test.ts, which signs requests with a real ES256 key and checks each answer against this schema.",
   }),
 
   // -------------------------------------------------------------------------------------------------------------------

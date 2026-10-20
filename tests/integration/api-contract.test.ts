@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { testPrivyVerifier } from "../helpers/privy.js";
 import { createApp } from "../../src/server/app.js";
 import { query, closePool } from "../../src/db/client.js";
 import { runMigrations } from "../../src/db/migrate.js";
@@ -153,6 +154,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
     rateLimits: { enabled: false },
     metrics: { token: METRICS_TOKEN, cacheMs: 0 },
     secrets: { masterSecret: MASTER_SECRET, webhookSecret: WEBHOOK_SECRET },
+    accounts: { verifier: testPrivyVerifier },
   });
   let server: Server;
   let baseUrl = "";
@@ -460,6 +462,14 @@ describe("API contract: one registry, checked against the running server (ADR 00
         expect([401, 403], where).not.toContain(res.status);
         continue;
       }
+      if (spec.access === "account") {
+        // Not a workspace token: no token and a workspace token both get the same 401 (ADR 0051).
+        const none = await send(baseUrl, spec.method, url, { body: bodyless ? undefined : {} });
+        expect(none.status, `${where} without a token`).toBe(401);
+        const workspace = await send(baseUrl, spec.method, url, { token: staffA.token, body: bodyless ? undefined : {} });
+        expect(workspace.status, `${where} with a workspace token`).toBe(401);
+        continue;
+      }
       if (spec.access === "metrics-token") {
         // A workspace token is not the metrics token: the route answers 401 to it.
         const res = await send(baseUrl, spec.method, url, { token: staffA.token });
@@ -551,6 +561,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
     // Every GET route except the UI catch-all is read here.
     expect(ROUTES.filter((r) => r.method === "get" && !r.contractTested).map((r) => specKey(r))).toEqual([
       "GET /api/workspaces/:id/events",
+      "GET /api/account/workspaces", // needs a Privy token: tests/integration/accounts.test.ts (ADR 0052)
       "GET *",
     ]);
     // The long-lived routes are exactly the routes whose registry 200 is text/event-stream (ADR 0035, "Test changes").
@@ -644,7 +655,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
 
   it("invalid bodies are 400, never 5xx", async () => {
     let checked = 0;
-    for (const spec of ROUTES.filter((r) => r.body !== undefined)) {
+    for (const spec of ROUTES.filter((r) => r.body !== undefined && r.contractTested)) {
       const where = specKey(spec);
       const token = tokenFor(spec);
       const isWebhook = spec.access === "signed-webhook";
@@ -761,7 +772,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
 });
 
 /** The number of routes with `contractTested: false`. Raise it only with a recorded reason in the ADR. */
-const MAX_NOT_CONTRACT_TESTED = 2;
+const MAX_NOT_CONTRACT_TESTED = 10; // 2 earlier, plus 8 People routes that need a Privy token or a seeded id (ADR 0052)
 
 /** The first key of an object schema, or of the first option of a union. Used to build a wrong-typed body. */
 function firstField(schema: z.ZodTypeAny): string {

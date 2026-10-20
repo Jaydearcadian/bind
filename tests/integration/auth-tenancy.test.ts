@@ -80,6 +80,19 @@ const ANY_ROLE_ROUTES: Array<[string, string]> = [
   ["GET", "/api/workspaces/:id/menu-proposals"],
   ["GET", "/api/workspaces/:id/menu"],
   ["GET", "/api/workspaces/:id/needs-attention"],
+  // Ends the account session the request used; a workspace token is told signedOut: false and keeps working.
+  ["POST", "/api/auth/sign-out"],
+];
+
+/**
+ * Routes that take a Privy access token, not a workspace token (ADR 0051). Without a configured Privy app they answer 503 and
+ * touch nothing; with one, a missing or workspace token is 401 (tests/integration/accounts.test.ts).
+ */
+const ACCOUNT_ROUTES: Array<[string, string]> = [
+  ["POST", "/api/auth/session"],
+  ["GET", "/api/account/workspaces"],
+  ["POST", "/api/account/workspaces"],
+  ["POST", "/api/account/invites/accept"],
 ];
 
 /** Owner of the workspace in the path, or of the approval or order whose workspace the service checks. */
@@ -92,6 +105,13 @@ const OWNER_ROUTES: Array<[string, string]> = [
   ["POST", "/api/workspaces/:id/recover"],
   ["POST", "/api/workspaces/:id/tokens"],
   ["GET", "/api/workspaces/:id/tokens"],
+  // People (ADR 0051): invitations and members are owner routes.
+  ["POST", "/api/workspaces/:id/invites"],
+  ["GET", "/api/workspaces/:id/invites"],
+  ["DELETE", "/api/workspaces/:id/invites/:inviteId"],
+  ["GET", "/api/workspaces/:id/members"],
+  ["PUT", "/api/workspaces/:id/members/:accountId"],
+  ["DELETE", "/api/workspaces/:id/members/:accountId"],
   ["DELETE", "/api/workspaces/:id/tokens/:tokenId"],
   ["PUT", "/api/workspaces/:id/agents-paused"],
   ["POST", "/api/workspaces/:id/customer-orders/:orderId/accept"],
@@ -268,7 +288,7 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
     const registered = routesOf(createApp());
     const key = (method: string, p: string) => `${method} ${p}`;
     const registeredKeys = new Set(registered.map((r) => key(r.method, r.path)));
-    const listedKeys = new Set([...PUBLIC_ROUTES, ...PROTECTED_ROUTES].map(([m, p]) => key(m, p)));
+    const listedKeys = new Set([...PUBLIC_ROUTES, ...PROTECTED_ROUTES, ...ACCOUNT_ROUTES].map(([m, p]) => key(m, p)));
 
     const unlisted = [...registeredKeys].filter((k) => !listedKeys.has(k));
     const absent = [...listedKeys].filter((k) => !registeredKeys.has(k));

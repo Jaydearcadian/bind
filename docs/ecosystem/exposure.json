@@ -703,6 +703,122 @@
    "stability": "preview",
    "flags": [],
    "note": "No live verifier exists yet, so a connector is never reported verified."
+  },
+  {
+   "operationId": "createSession",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "returns_secret_once:sessionToken"
+   ],
+   "note": "Signs a person in with a Privy token. The session lasts one hour by default and is shown once."
+  },
+  {
+   "operationId": "signOut",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Ends the account session the request used."
+  },
+  {
+   "operationId": "listAccountWorkspaces",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "The workspaces this account belongs to."
+  },
+  {
+   "operationId": "createAccountWorkspace",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Creates a workspace and makes the account its owner. No owner token is issued."
+  },
+  {
+   "operationId": "acceptInvite",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Joins a workspace as staff with a single-use code."
+  },
+  {
+   "operationId": "createInvite",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "returns_secret_once:code"
+   ],
+   "note": "A single-use staff invitation. The code is shown once and only its hash is stored."
+  },
+  {
+   "operationId": "listInvites",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "credential_metadata"
+   ],
+   "note": ""
+  },
+  {
+   "operationId": "revokeInvite",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listMembers",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "setMemberRole",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "The last owner cannot be demoted."
+  },
+  {
+   "operationId": "removeMember",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Ends the person's sessions at once. The last owner cannot be removed."
   }
  ]
 }

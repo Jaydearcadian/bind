@@ -883,3 +883,55 @@ export const OpenApiDocumentSchema = z
     components: z.object({ securitySchemes: z.record(z.unknown()) }).passthrough(),
   })
   .passthrough();
+
+// ---------------------------------------------------------------------------------------------------------------------
+// People: accounts, sessions, invitations and members (ADR 0051)
+// ---------------------------------------------------------------------------------------------------------------------
+
+export const SessionCreateBodySchema = z.object({
+  workspaceId: z.string().min(1).max(64),
+  displayName: z.string().min(1).max(80).optional(),
+});
+
+export const SessionIssuedSchema = z
+  .object({ sessionToken: z.string(), expiresAt: IsoDateTime, workspaceId: z.string(), role: Role })
+  .passthrough();
+
+export const SignedOutSchema = z.object({ signedOut: z.boolean() }).passthrough();
+
+export const AccountWorkspaceSchema = z.object({ id: z.string(), name: z.string(), role: Role }).passthrough();
+
+export const AccountWorkspaceCreatedSchema = z.object({ id: z.string(), name: z.string(), role: z.literal("owner") }).passthrough();
+
+export const InviteCreateBodySchema = z.object({
+  label: z.string().min(1).max(80),
+  expiresInHours: z.number().int().min(1).max(336).optional(),
+});
+
+export const InviteIssuedSchema = z
+  .object({ id: z.string(), code: z.string(), label: z.string(), role: z.literal("staff"), expiresAt: IsoDateTime })
+  .passthrough();
+
+export const InviteSummarySchema = z
+  .object({
+    id: z.string(),
+    role: z.literal("staff"),
+    label: z.string(),
+    createdBy: z.string(),
+    expiresAt: IsoDateTime,
+    usedAt: IsoDateTime.nullable(),
+    revokedAt: IsoDateTime.nullable(),
+  })
+  .passthrough();
+
+export const InviteAcceptBodySchema = z.object({ code: z.string().min(1).max(128) });
+
+export const MemberSchema = z
+  .object({ accountId: z.string(), displayName: z.string().nullable(), role: Role, joinedAt: IsoDateTime })
+  .passthrough();
+
+export const MemberRoleBodySchema = z.object({ role: Role });
+
+export const MemberRemovedSchema = z.object({ accountId: z.string(), removed: z.literal(true) }).passthrough();
+
+export const InviteRevokedSchema = z.object({ id: z.string(), revoked: z.literal(true) }).passthrough();

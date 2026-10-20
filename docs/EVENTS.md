@@ -118,6 +118,7 @@ from the plan.
 | Type | Recorded when | Source |
 |---|---|---|
 | `auth.token_issued`, `auth.token_revoked` | an owner issues or revokes a workspace token | `src/auth/tokens.ts` |
+| `auth.member_joined`, `auth.member_removed`, `auth.member_role_changed`, `auth.invite_created`, `auth.invite_revoked` | a person joins, leaves or changes role, or an invitation is created or revoked | `src/accounts/service.ts` |
 | `auth.webhook_secret_viewed`, `auth.webhook_secret_rotated` | the webhook secret is read or rotated | `src/studio/workspaceControls.ts` |
 | `workspace.agents_paused_changed` | the agents are paused or resumed | `src/studio/workspaceControls.ts` |
 | `workspace.onboard_configured` | a workspace is onboarded | `src/studio/onboarding.ts` |

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import { query, withTransaction } from "../db/client.js";
 import { newId } from "../utils/ids.js";
+import { isSessionToken, resolveSession } from "../accounts/sessions.js";
 
 /**
  * Per-workspace access tokens (ADR 0021). A token is `bnd_` followed by 32 random bytes in base64url. Only its
@@ -126,9 +127,11 @@ export async function issueToken(
 
 /**
  * Resolves a bearer token to its actor. A malformed token is refused without a database lookup. A revoked or
- * unknown token resolves to null, and the caller cannot tell the two apart.
+ * unknown token resolves to null, and the caller cannot tell the two apart. A `bns_` token is an account session
+ * (ADR 0051) and is resolved by the account service; the actor it yields is the same shape.
  */
 export async function resolveToken(raw: string): Promise<Actor | null> {
+  if (isSessionToken(raw)) return resolveSession(raw);
   if (!isWellFormedToken(raw)) return null;
   const res = await query(
     `SELECT id, workspace_id, role, label FROM workspace_tokens
@@ -162,6 +165,11 @@ export async function revokeToken(
        FOR UPDATE;`,
       [workspaceId]
     );
+    // An owner who signed in as a person (ADR 0051) is an owner credential too.
+    const ownerMembers = await client.query(
+      `SELECT account_id FROM workspace_memberships WHERE workspace_id = $1 AND role = 'owner' AND removed_at IS NULL FOR UPDATE;`,
+      [workspaceId]
+    );
     const target = await client.query(
       `SELECT id, role, label FROM workspace_tokens
        WHERE id = $1 AND workspace_id = $2 AND revoked_at IS NULL
@@ -172,7 +180,7 @@ export async function revokeToken(
     if (!row) {
       throw new TokenError("TOKEN_NOT_FOUND", "Token not found.");
     }
-    const isLastOwner = row.role === "owner" && owners.rows.length <= 1;
+    const isLastOwner = row.role === "owner" && owners.rows.length + ownerMembers.rows.length <= 1;
     if (isLastOwner) {
       throw new TokenError("LAST_OWNER_TOKEN", "The last active owner token of a workspace cannot be revoked.");
     }

@@ -2,18 +2,18 @@
   "version": 1,
   "source": "docs/openapi.json + docs/ecosystem/exposure.json + sdk/src/client.ts + mcp/src/tools.ts. Generated: do not edit by hand.",
   "counts": {
-    "operations": 67,
+    "operations": 78,
     "mcpTools": 17,
-    "exposure:public_api": 57,
+    "exposure:public_api": 68,
     "exposure:internal_service": 6,
     "exposure:protocol_primitive": 4,
     "effect:owner_decision": 10,
+    "effect:owner_configuration": 13,
     "effect:commercial_commitment": 4,
     "effect:operational": 3,
-    "effect:owner_configuration": 8,
+    "effect:credential": 10,
     "effect:data_entry": 2,
-    "effect:read": 30,
-    "effect:credential": 7,
+    "effect:read": 33,
     "effect:external_request": 3
   },
   "capabilities": [
@@ -33,6 +33,30 @@
       "note": "Owner accepts a held customer order. This is a promise to a customer, so it cannot be silently undone.",
       "idempotency": {
         "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "acceptInvite",
+      "method": "POST",
+      "route": "/api/account/invites/accept",
+      "summary": "Join a workspace as staff with a single-use invitation code.",
+      "tag": "People",
+      "authorization": "account",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Joins a workspace as staff with a single-use code.",
+      "idempotency": {
+        "clientKey": false,
         "natural": "not documented"
       },
       "surfaces": {
@@ -212,6 +236,30 @@
       }
     },
     {
+      "id": "createAccountWorkspace",
+      "method": "POST",
+      "route": "/api/account/workspaces",
+      "summary": "Create a workspace from a template and become its owner.",
+      "tag": "People",
+      "authorization": "account",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Creates a workspace and makes the account its owner. No owner token is issued.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
       "id": "createCustomerOrder",
       "method": "POST",
       "route": "/api/workspaces/{id}/customer-orders",
@@ -233,6 +281,58 @@
         "api": true,
         "sdk": "convenience",
         "mcp": "create_customer_order"
+      }
+    },
+    {
+      "id": "createInvite",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/invites",
+      "summary": "Create a single-use staff invitation. The code is returned once and never stored.",
+      "tag": "People",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "returns_secret_once:code"
+      ],
+      "note": "A single-use staff invitation. The code is shown once and only its hash is stored.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "createSession",
+      "method": "POST",
+      "route": "/api/auth/session",
+      "summary": "Sign in: swap a Privy access token for a short-lived session in one workspace the account belongs to.",
+      "tag": "People",
+      "authorization": "account",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "returns_secret_once:sessionToken"
+      ],
+      "note": "Signs a person in with a Privy token. The session lasts one hour by default and is shown once.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
       }
     },
     {
@@ -651,6 +751,30 @@
       }
     },
     {
+      "id": "listAccountWorkspaces",
+      "method": "GET",
+      "route": "/api/account/workspaces",
+      "summary": "The workspaces the signed-in account belongs to, with its role in each.",
+      "tag": "People",
+      "authorization": "account",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "The workspaces this account belongs to.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
       "id": "listApprovals",
       "method": "GET",
       "route": "/api/workspaces/{id}/approvals",
@@ -821,12 +945,62 @@
       }
     },
     {
+      "id": "listInvites",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/invites",
+      "summary": "The workspace's invitations. Never a code.",
+      "tag": "People",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "credential_metadata"
+      ],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
       "id": "listKitchenCapacity",
       "method": "GET",
       "route": "/api/workspaces/{id}/kitchen-capacity",
       "summary": "Kitchen capacity slots, with the units used and left in each.",
       "tag": "Customer orders",
       "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listMembers",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/members",
+      "summary": "The people who belong to this workspace, with their roles.",
+      "tag": "People",
+      "authorization": "owner",
       "exposure": "public_api",
       "effect": "read",
       "irreversible": false,
@@ -1286,6 +1460,30 @@
       }
     },
     {
+      "id": "removeMember",
+      "method": "DELETE",
+      "route": "/api/workspaces/{id}/members/{accountId}",
+      "summary": "Remove a member and end their sessions. The last owner cannot be removed.",
+      "tag": "People",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Ends the person's sessions at once. The last owner cannot be removed.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
       "id": "replenish",
       "method": "POST",
       "route": "/api/workspaces/{id}/replenish",
@@ -1349,6 +1547,30 @@
       "note": "Removes a stored credential. The secret is destroyed; reconnecting needs the secret again.",
       "idempotency": {
         "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "revokeInvite",
+      "method": "DELETE",
+      "route": "/api/workspaces/{id}/invites/{inviteId}",
+      "summary": "Revoke an invitation that has not been used.",
+      "tag": "People",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
         "natural": "not documented"
       },
       "surfaces": {
@@ -1471,6 +1693,54 @@
       "stability": "stable",
       "flags": [],
       "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "setMemberRole",
+      "method": "PUT",
+      "route": "/api/workspaces/{id}/members/{accountId}",
+      "summary": "Change a member's role. The last owner cannot be demoted.",
+      "tag": "People",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "The last owner cannot be demoted.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "signOut",
+      "method": "POST",
+      "route": "/api/auth/sign-out",
+      "summary": "End the account session this request used.",
+      "tag": "People",
+      "authorization": "authenticated",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Ends the account session the request used.",
       "idempotency": {
         "clientKey": false,
         "natural": "not documented"

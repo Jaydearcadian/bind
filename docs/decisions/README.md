@@ -64,4 +64,5 @@ a live system: `docs/RELEASE_EVIDENCE.md` is the place for that.
 | [0048](0048-error-body-v2.md) | Error body v2 is live | Accepted | Every error gains code, category, retryable and requestId, added in one place. Existing text and status are unchanged. |
 | [0049](0049-client-idempotency-keys.md) | Client idempotency keys | Accepted | `Idempotency-Key` on 18 write operations, scoped by workspace, token and key, with replay for 24 hours. |
 | [0050](0050-response-meta.md) | `_meta` on command responses | Accepted | Outcome status, state, next actions for the caller's role and warnings, on the 18 command operations. Additive. |
-| [0051](0051-sign-in-with-privy.md) | Sign-in with Privy, on top of workspace tokens | Accepted (direction) | Google and wallet sign-in for people; workspace tokens stay for machines. Privy proves identity only. Not built. |
+| [0051](0051-sign-in-with-privy.md) | Sign-in with Privy, on top of workspace tokens | Accepted | Google and wallet sign-in for people; workspace tokens stay for machines. Privy proves identity only. Backend built in ADR 0052. |
+| [0052](0052-account-layer.md) | The account layer: accounts, sessions, invitations, members | Accepted | Privy token in, short-lived workspace-scoped session out; role read per request; single-use invitations; last-owner protection. Backend only. |
