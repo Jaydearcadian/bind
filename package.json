@@ -20,6 +20,7 @@
     "db:migrate:dev": "tsx src/db/migrate.ts",
     "map:functions": "tsx scripts/map-functions.ts",
     "api:spec": "tsx scripts/generate-openapi.ts",
+    "capabilities:generate": "tsx scripts/generate-capabilities.ts",
     "sdk:generate": "tsx scripts/generate-sdk.ts",
     "sdk:build": "tsc -p sdk/tsconfig.json && cp sdk/src/generated/api.d.ts sdk/dist/generated/api.d.ts",
     "mcp:build": "tsc -p mcp/tsconfig.json",

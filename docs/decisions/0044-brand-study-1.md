@@ -1,7 +1,7 @@
 # ADR 0044: Brand study 1, "the handoff" (assets only; the UI is not touched)
 
 ## Status
-Proposed (2026-10-20). Needs the owner's acceptance. Supersedes ADR 0043 (an earlier draft, now withdrawn and removed from `docs/brand/`).
+Superseded by ADR 0045 (2026-10-20): the owner chose the bead ring. It was Proposed and never accepted as the direction. Needs the owner's acceptance. Supersedes ADR 0043 (an earlier draft, now withdrawn and removed from `docs/brand/`).
 
 ## Context
 The owner asked for a genuinely unique brand for Bind, a connectivity layer that brings agents into a business so the owner and staff can focus on the work, and not a security or governance product. `src/ui/` must not be edited (ADR 0016). Root `DESIGN.md` and `BRAND_DIRECTION.md` predate this study and describe a different direction; they are untouched and not used here.
