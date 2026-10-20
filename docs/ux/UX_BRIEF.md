@@ -57,6 +57,13 @@ Status: draft. No UI has been built. `src/ui/` stays untouched (ADR 0016). This 
 - Confirm step is tiered by amount: one deliberate tap for small items, press and hold over the owner's approval threshold, typing the amount for the largest. Settings may tighten it, never loosen it below one deliberate tap.
 - Activity: a timeline by day with filters, and "Follow this" on any item opening its full history.
 
+## Team, Connections and Business data (decided)
+- Team: a card per agent (renamable name, one-line role, what it can do, per-tool switches, tap for detail). Limits are per workspace today (daily limit and approval threshold), so "Your team's limits" sits at the top as sentences with sliders plus Cautious, Balanced and Trusting presets that fill both numbers. The authority view is a plain list with the full matrix behind "See everything".
+- Pause: always in the header, with one confirm. While paused the app's accent changes to a calm held state. Per-agent pause and per-agent budgets are not offered until the API has them.
+- Connections: grouped by kind (tools and services, suppliers, messaging apps, other agents) with a health strip on top ("1 needs attention"). Adding is pick, guide, test, save; the page says the key is stored on the server and never shown again; Test runs a verifier where one exists and says so where none does. No catalogue of logos until connections exist.
+- Connection status words: Simulated, Added not verified, Verified live, Needs attention, Revoked. "Verified live" appears only when a verifier succeeded.
+- Business data: tabs named by the template (kitchen: Stock, Orders, Customers, Menu) plus a global search, with shared table, detail and empty-state design.
+
 ## Suggested, awaiting a yes
 - Headline "Connect once. Get back to work." with a specific subline ("Bind connects your tools to agents that can actually use them, and you decide what they are allowed to do.").
 - Main button: "Try a demo workspace" (simulated, labelled, throwaway, capped lifetime), secondary "Start your own workspace".
