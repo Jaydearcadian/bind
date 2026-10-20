@@ -121,6 +121,8 @@ hold the effects alone, so that test shows the effects are safe, not that the lo
 - **Pre-existing, not touched.** `npm run dev` (`tsx watch src/index.ts`) and `npx tsx src/index.ts` fail on HEAD at
   `src/accounting/three-way-match.ts`, which re-exports the type `DeliveryReceiptDoc` as a value. `tsc` elides it and the
   build works, so `npm start` on `dist/` is fine. This is outside this task. The worker was smoke-tested on `dist/index.js`.
+  Note (2026-10-20, Task 14): this no longer reproduces. `npx tsx src/index.ts` starts, migrates, listens, and shuts down on SIGTERM
+  (`docs/RELEASE_EVIDENCE.md` section 4). `npm run dev` itself, in watch mode, was not run.
 - **Advisory lock keys** are a 64-bit hash of the key (ADR 0017). A collision only causes a skipped step, never a wrong result.
 
 ## Consequences

@@ -45,7 +45,7 @@ variable.
 | `BIND_RATE_LIMITS` | No | Limits are on (off in `NODE_ENV=test`) | Only `off` is accepted. For **local development only** (ADR 0033). |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn` or `error` (ADR 0032). Any other value stops startup. |
 | `BIND_SETTLEMENT_ADDRESS` | For `arc-testnet` settlement | Arc settlement refuses, naming this variable | The settlement contract address (ADR 0013). |
-| `ARC_RPC_URL` | For `arc-testnet` settlement | Falls back to `RPC_URL` | RPC endpoint of the Arc chain. The example in `.env.local.example` puts an access token in the URL path, so treat the whole URL as a secret. |
+| `ARC_RPC_URL` | For `arc-testnet` settlement | Falls back to `RPC_URL` | RPC endpoint of the Arc chain. Treat the whole URL as a secret: a provider URL often carries its access token in the path. `.env.local.example` shows only the placeholder `<ARC_RPC_TOKEN>`. |
 | `ARC_SIGNER_PRIVATE_KEY` | For `arc-testnet` settlement | Arc settlement refuses, naming this variable | The single signer for every settlement transfer (ADR 0013). A secret. |
 | `ARC_CHAIN_ID` | No | `5042002` (Arc testnet) | Explorer links are built only for this chain (ADR 0013). |
 | `BIND_SETTLEMENT_DEPLOY_BLOCK` | No | `0` | First block scanned when looking up an earlier settlement (ADR 0013, ADR 0019). |
