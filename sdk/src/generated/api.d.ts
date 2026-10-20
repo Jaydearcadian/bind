@@ -1202,7 +1202,10 @@ export interface operations {
     approveApproval: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -1305,7 +1308,10 @@ export interface operations {
     rejectApproval: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -1424,7 +1430,10 @@ export interface operations {
     revokeApproval: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -2848,7 +2857,10 @@ export interface operations {
     upsertAgentRole: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -2974,7 +2986,10 @@ export interface operations {
     setAgentsPaused: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -3486,7 +3501,10 @@ export interface operations {
     revokeConnector: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
                 connectorId: string;
@@ -3787,7 +3805,10 @@ export interface operations {
     createCustomerOrder: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -4045,7 +4066,10 @@ export interface operations {
     acceptCustomerOrder: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
                 orderId: string;
@@ -4155,7 +4179,10 @@ export interface operations {
     cancelCustomerOrder: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
                 orderId: string;
@@ -4272,7 +4299,10 @@ export interface operations {
     fulfilCustomerOrder: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
                 orderId: string;
@@ -4607,7 +4637,10 @@ export interface operations {
     confirmDocument: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
                 docId: string;
@@ -6262,7 +6295,10 @@ export interface operations {
     publishMenuProposal: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
                 proposalId: string;
@@ -6726,7 +6762,10 @@ export interface operations {
     updatePolicy: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -6955,7 +6994,10 @@ export interface operations {
     replenish: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -7145,7 +7187,10 @@ export interface operations {
     upsertSupplier: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -7713,7 +7758,10 @@ export interface operations {
     revokeToken: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
                 tokenId: string;
@@ -7907,7 +7955,10 @@ export interface operations {
     rotateWebhookSecret: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -8090,7 +8141,10 @@ export interface operations {
     cancelWorkflow: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
                 workflowId: string;

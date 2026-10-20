@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { IDEMPOTENT_ROUTES } from "../../src/server/idempotency.js";
 import { buildCatalogue, serialiseCatalogue, EFFECTS, EXPOSURES } from "../../scripts/generate-capabilities.js";
 
 /**
@@ -61,10 +62,17 @@ describe("capability catalogue", () => {
     }
   });
 
-  it("no capability claims a client idempotency key, because the contract has none", () => {
-    for (const c of caps) expect(c.idempotency.clientKey).toBe(false);
-    const spec = fs.readFileSync(path.join(ROOT, "docs", "openapi.json"), "utf8");
-    expect(spec.toLowerCase()).not.toContain("idempotency-key");
+  it("a capability claims a client idempotency key exactly when the server takes one, and the contract says so", () => {
+    const keyed = caps.filter((c) => c.idempotency.clientKey).map((c) => `${c.method} ${c.route.replace(/\{(\w+)\}/g, ":$1")}`).sort();
+    expect(keyed).toEqual([...IDEMPOTENT_ROUTES].sort());
+    const spec = JSON.parse(fs.readFileSync(path.join(ROOT, "docs", "openapi.json"), "utf8")) as {
+      paths: Record<string, Record<string, { parameters?: { name: string }[] }>>;
+    };
+    let withHeader = 0;
+    for (const methods of Object.values(spec.paths)) {
+      for (const op of Object.values(methods)) if (op.parameters?.some((p) => p.name === "Idempotency-Key")) withHeader++;
+    }
+    expect(withHeader).toBe(IDEMPOTENT_ROUTES.size);
   });
 
   it("every irreversible or economic operation says what it is in a note", () => {

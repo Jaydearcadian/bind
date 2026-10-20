@@ -15,6 +15,8 @@ Every change here is **additive** under ADR 0034 section 3: objects are open, na
 
 ## 2. Idempotency (S1)
 
+> **Built (stage 3, ADR 0049).** The header, the table `api_idempotency`, replay, conflict, in-progress, stale-lock takeover, 24-hour retention and the SDK `idempotencyKey` option exist and are tested. Not built yet: the `IDEMPOTENCY_KEY_MISSING` warning (it needs `_meta`, stage 6).
+
 **Today:** no client idempotency key. Repeats are safe only by natural keys: `externalRef` on customer orders, feedback duplicate detection, and a repeated replenishment that returned the same workflow while it awaited approval (ADR 0042). The effects ledger already makes external effects at-most-once (ADR 0017); this section protects the API boundary, so a client can retry a command after a timeout without learning whether it ran.
 
 **Proposed**

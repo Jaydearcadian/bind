@@ -8,6 +8,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
 import { ROUTES, type AccessLevel, type ResponseSpec, type RouteSpec } from "./registry.js";
 import { ErrorBody } from "./schemas.js";
+import { IDEMPOTENT_ROUTES } from "../server/idempotency.js";
 
 /**
  * The version in `info.version`. It must equal the version in package.json: tests/unit/openapi.test.ts checks it. It is a
@@ -96,7 +97,17 @@ function operationOf(route: RouteSpec): Record<string, unknown> {
     required: true,
     schema: { type: "string" },
   }));
-  const parameters = [...pathParams, ...(route.query ? queryParameters(route.query) : [])];
+  const parameters: Record<string, unknown>[] = [...pathParams, ...(route.query ? queryParameters(route.query) : [])];
+  if (IDEMPOTENT_ROUTES.has(`${route.method.toUpperCase()} ${route.path}`)) {
+    parameters.push({
+      name: "Idempotency-Key",
+      in: "header",
+      required: false,
+      description:
+        "1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours.",
+      schema: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,128}$" },
+    });
+  }
   const operation: Record<string, unknown> = {
     operationId: route.operationId,
     summary: route.summary,

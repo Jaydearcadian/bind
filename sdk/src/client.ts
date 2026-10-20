@@ -55,6 +55,12 @@ export interface CallOptions<K extends OperationId> {
   query?: Section<K, "query">;
   body?: BodyOf<K>;
   signal?: AbortSignal;
+  /**
+   * Sent as Idempotency-Key (1 to 128 characters from A-Z a-z 0-9 . _ : -). With a key, a network failure is retried with the
+   * same key, which is safe: the server returns the first outcome instead of running the command twice. Without one, only reads
+   * are retried. Operations that take no key ignore it.
+   */
+  idempotencyKey?: string;
 }
 
 export interface BindClientOptions {
@@ -236,6 +242,10 @@ export class BindClient {
       headers["content-type"] = "application/json";
       payload = JSON.stringify(options.body);
     }
+    if (options.idempotencyKey !== undefined) {
+      if (!/^[A-Za-z0-9._:-]{1,128}$/.test(options.idempotencyKey)) throw new TypeError("idempotencyKey must be 1 to 128 characters from A-Z a-z 0-9 . _ : -");
+      headers["idempotency-key"] = options.idempotencyKey;
+    }
     const signal = options.signal;
     const exchange = await this.#run(route.method, url, headers, payload, signal);
     try {
@@ -393,6 +403,8 @@ export class BindClient {
   /** One request, with retries for the methods that may repeat. Returns the successful answer, not yet read. */
   async #run(method: string, url: string, headers: Record<string, string>, body: string | undefined, signal: AbortSignal | undefined): Promise<Exchange> {
     const retryable = method === "GET" || method === "HEAD";
+    // A command carrying a key may repeat after a network failure: the server replays the first outcome.
+    const repeatable = retryable || headers["idempotency-key"] !== undefined;
     let attempts = 0;
     let rateLimitRetried = false;
     for (;;) {
@@ -400,7 +412,7 @@ export class BindClient {
       try {
         exchange = await this.#exchange(method, url, headers, body, signal, false);
       } catch (err) {
-        if (retryable && err instanceof BindNetworkError && attempts < this.#maxRetries) {
+        if (repeatable && err instanceof BindNetworkError && attempts < this.#maxRetries) {
           attempts += 1;
           await this.#pause(this.#backoff(attempts), signal);
           continue;

@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { TOOLS } from "../mcp/src/tools.js";
+import { IDEMPOTENT_ROUTES } from "../src/server/idempotency.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -59,7 +60,7 @@ export interface Capability {
   stability: string;
   flags: string[];
   note: string;
-  idempotency: { clientKey: false; natural: string };
+  idempotency: { clientKey: boolean; natural: string };
   surfaces: { api: true; sdk: "convenience" | "generic"; mcp: string | null };
 }
 
@@ -102,7 +103,7 @@ export function buildCatalogue(): { version: number; source: string; counts: Rec
         stability: e.stability,
         flags: e.flags,
         note: e.note,
-        idempotency: { clientKey: false, natural: NATURAL_IDEMPOTENCY[id] ?? "not documented" },
+        idempotency: { clientKey: IDEMPOTENT_ROUTES.has(`${String(method).toUpperCase()} ${String(route).replace(/\{(\w+)\}/g, ":$1")}`), natural: NATURAL_IDEMPOTENCY[id] ?? "not documented" },
         surfaces: { api: true, sdk: convenience.has(id) ? "convenience" : "generic", mcp: toolByOperation.get(id) ?? null },
       });
     }

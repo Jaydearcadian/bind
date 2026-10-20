@@ -207,7 +207,7 @@
       "httpStatus": 400,
       "category": "validation",
       "retryable": false,
-      "existing": false,
+      "existing": true,
       "note": ""
     },
     {
@@ -215,7 +215,7 @@
       "httpStatus": 422,
       "category": "validation",
       "retryable": false,
-      "existing": false,
+      "existing": true,
       "note": "The same key was sent with a different request."
     },
     {
@@ -223,7 +223,7 @@
       "httpStatus": 409,
       "category": "conflict",
       "retryable": true,
-      "existing": false,
+      "existing": true,
       "note": "The first request with this key has not finished. Retry after retryAfterSeconds."
     },
     {

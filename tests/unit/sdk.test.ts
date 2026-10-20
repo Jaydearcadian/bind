@@ -326,3 +326,28 @@ describe("typed client: packaging boundary", () => {
     expect(typeof neverCalled).toBe("function");
   });
 });
+
+describe("typed client: idempotency key", () => {
+  it("sends the key as a header, refuses a malformed one, and repeats a keyed command after a network failure", async () => {
+    const { waits, sleep } = recordingSleep();
+    const m = mockFetch((_url, _init, index) => {
+      if (index === 0) throw new TypeError("fetch failed");
+      return json(200, { paused: true });
+    });
+    const client = new BindClient({ baseUrl: BASE, token: TOKEN, fetch: m.fetch, sleep, maxRetries: 2 } as ConstructorParameters<typeof BindClient>[0]);
+    await client.call("setAgentsPaused", { params: { id: WS }, body: { paused: true }, idempotencyKey: "k-1" });
+    expect(m.calls.length).toBe(2);
+    for (const c of m.calls) expect(c.init.headers?.["idempotency-key"]).toBe("k-1");
+    expect(waits.length).toBe(1);
+    await expect(client.call("setAgentsPaused", { params: { id: WS }, body: { paused: true }, idempotencyKey: "bad key" })).rejects.toThrow(TypeError);
+  });
+
+  it("does not repeat a command without a key after a network failure", async () => {
+    const m = mockFetch(() => {
+      throw new TypeError("fetch failed");
+    });
+    const client = new BindClient({ baseUrl: BASE, token: TOKEN, fetch: m.fetch, maxRetries: 2 });
+    await expect(client.call("setAgentsPaused", { params: { id: WS }, body: { paused: true } })).rejects.toBeInstanceOf(BindNetworkError);
+    expect(m.calls.length).toBe(1);
+  });
+});

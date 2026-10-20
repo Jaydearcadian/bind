@@ -32,7 +32,7 @@
       "flags": [],
       "note": "Owner accepts a held customer order. This is a promise to a customer, so it cannot be silently undone.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -56,7 +56,7 @@
       "flags": [],
       "note": "Authority action. Never exposed to agents.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -104,7 +104,7 @@
       "flags": [],
       "note": "Cancelling an accepted order is a commitment.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -152,7 +152,7 @@
       "flags": [],
       "note": "Owner cancels a workflow.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -176,7 +176,7 @@
       "flags": [],
       "note": "Owner confirmation commits a quote or links a receipt or bill.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -226,7 +226,7 @@
       "flags": [],
       "note": "Records and may promise a customer order. Repeating externalRef returns the earlier decision.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "Repeating the same externalRef returns the earlier decision (replayed)."
       },
       "surfaces": {
@@ -301,7 +301,7 @@
       "flags": [],
       "note": "Marks an order fulfilled and consumes reserved stock. Not exposed to agents.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -1152,7 +1152,7 @@
       "flags": [],
       "note": "Owner makes a menu change live for customers. Reversing it needs a new proposal.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -1252,7 +1252,7 @@
       "flags": [],
       "note": "Authority action. Never exposed to agents.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -1297,12 +1297,10 @@
       "irreversible": false,
       "economic": true,
       "stability": "stable",
-      "flags": [
-        "no_client_idempotency_key"
-      ],
+      "flags": [],
       "note": "Starts replenishment. Policy decides whether an order is placed, held for approval, or refused.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "A repeat while the workflow is awaiting approval returned the same workflow (observed in the model-driven MCP check, ADR 0042). Other states are not documented."
       },
       "surfaces": {
@@ -1326,7 +1324,7 @@
       "flags": [],
       "note": "Authority action. Never exposed to agents.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -1350,7 +1348,7 @@
       "flags": [],
       "note": "Removes a stored credential. The secret is destroyed; reconnecting needs the secret again.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -1374,7 +1372,7 @@
       "flags": [],
       "note": "A revoked token stops working at once and cannot be restored; issue a new one.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -1400,7 +1398,7 @@
       ],
       "note": "Invalidates the previous secret. Senders must switch to the new one; the new secret is returned once.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -1424,7 +1422,7 @@
       "flags": [],
       "note": "The pause switch. Owner only; an agent must never reach it.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -1522,7 +1520,7 @@
       "flags": [],
       "note": "Changes limits that govern spending. Owner only.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -1548,7 +1546,7 @@
       ],
       "note": "Grants tools and limits to a role. Forbidden capabilities are rejected server side.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {
@@ -1600,7 +1598,7 @@
       ],
       "note": "Changes who can be paid.",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {

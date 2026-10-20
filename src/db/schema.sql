@@ -187,6 +187,22 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
     response_payload JSONB
 );
 
+-- Client idempotency keys for the API boundary (ADR 0049). Not the same as idempotency_keys above, which guards internal effects.
+CREATE TABLE IF NOT EXISTS api_idempotency (
+    workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    token_id VARCHAR(64) NOT NULL,
+    key TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('in_progress','done')),
+    status_code INTEGER,
+    response_body JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    locked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (workspace_id, token_id, key)
+);
+CREATE INDEX IF NOT EXISTS idx_api_idempotency_created ON api_idempotency(created_at);
+
 CREATE TABLE IF NOT EXISTS inbound_webhooks (
     id VARCHAR(64) PRIMARY KEY,
     provider TEXT NOT NULL, -- 'whatsapp', 'email', 'telegram', 'stripe', 'supplier'

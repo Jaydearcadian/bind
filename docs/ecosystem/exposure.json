@@ -549,9 +549,7 @@
    "irreversible": false,
    "economic": true,
    "stability": "stable",
-   "flags": [
-    "no_client_idempotency_key"
-   ],
+   "flags": [],
    "note": "Starts replenishment. Policy decides whether an order is placed, held for approval, or refused."
   },
   {
