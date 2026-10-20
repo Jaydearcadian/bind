@@ -2,7 +2,8 @@
  * Today (ADR 0059; docs/ux/UX_BRIEF.md, "Today and approvals"). What needs you, what is happening, and the approval panel
  * ("open, read, confirm"). Every item comes from the API. Nothing is shown as done before the server says so.
  */
-import { BindApiError, ago, clearKey, client, h, mark, money, newKey, shell, storedKey, toSignIn, toast, until } from "/app/core.js";
+import { BindApiError, ago, clearKey, client, h, mark, money, newKey, pauseControl, shell, showPaused, storedKey, toSignIn, toast, until } from "/app/core.js";
+import { sentence as say, tone } from "/app/words.js";
 
 const POLL_MS = 15000;
 const STALE_AFTER_FAILS = 2;
@@ -26,70 +27,6 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
-
-// ---- Plain language for events --------------------------------------------------------------------------------------
-
-function agentName(actor) {
-  if (!actor) return "Someone";
-  if (actor.type === "agent") return state.roles.get(actor.id) ?? "An agent";
-  if (actor.type === "owner") return actor.id || "An owner";
-  if (actor.type === "staff") return actor.id || "Staff";
-  if (actor.type === "system") return "Bind";
-  if (actor.type === "webhook") return "A connected app";
-  return actor.id || "Someone";
-}
-
-const SENTENCES = {
-  "order.submitted": (e) => `sent order ${e.data.orderNumber ?? ""} to the supplier`.trim(),
-  "order.submission_in_doubt": () => "sent an order, but the supplier's answer is unclear. It will not be sent twice",
-  "inventory.low_stock_detected": (e) => `noticed ${e.data.sku ?? "an item"} is running low`,
-  "replenishment.proposed": (e) => `proposed a reorder${e.data.sku ? ` of ${e.data.sku}` : ""}`,
-  "commitment.evaluated": (e) => (e.decision === "REQUIRE_APPROVAL" ? "checked a purchase against your limits: it needs your approval" : e.decision === "DENY" ? "checked a purchase against your limits: refused" : "checked a purchase against your limits: within them"),
-  "commitment.rechecked": () => "checked the purchase against your limits again",
-  "approval.approved": () => "approved a purchase",
-  "approval.rejected": () => "rejected a purchase",
-  "approval.revoked": () => "withdrew an approval",
-  "workflow.cancelled": () => "cancelled a piece of work",
-  "workspace.agents_pause_changed": (e) => (e.data.state === "paused" || e.data.paused === true ? "paused all agents" : "resumed all agents"),
-  "token.issued": () => "created an access key",
-  "token.revoked": () => "revoked an access key",
-  "settlement.submitted": () => "sent a payment. Waiting for it to settle",
-  "settlement.held_for_pause": () => "held a payment because agents are paused",
-  "accounting.three_way_match_failed": () => "found an invoice that doesn't match the order",
-  "customer_order.accepted": () => "accepted a customer order",
-  "customer_order.held": () => "held a customer order for your decision",
-  "customer_order.declined": () => "declined a customer order",
-  "customer_order.fulfilled": () => "marked a customer order fulfilled",
-  "customer_order.cancelled": () => "cancelled a customer order",
-  "feedback.ingested": () => "received new feedback",
-  "menu.proposed": () => "suggested a menu change",
-  "menu.published": () => "published a menu change",
-  "document.staged": () => "read a document and drafted an entry for you to confirm",
-  "document.quote_confirmed": () => "confirmed a quote from a document",
-  "member.joined": () => "a new person joined the workspace",
-  "invite.created": () => "created an invitation",
-  "notification.skipped_no_recipient": () => "had a notice to send but no one to send it to",
-  "notification.failed": () => "couldn't deliver a notice",
-};
-
-function sentence(e) {
-  const verb = SENTENCES[e.name];
-  const who = agentName(e.actor);
-  if (verb) {
-    const v = verb(e);
-    // A few sentences already name their subject.
-    return /^a new person/.test(v) ? v.charAt(0).toUpperCase() + v.slice(1) : `${who} ${v}.`;
-  }
-  const [obj, act] = (e.name || e.type || "").split(".");
-  return `${who}: ${(obj || "").replace(/_/g, " ")} ${(act || "").replace(/_/g, " ")}.`;
-}
-
-function tone(e) {
-  if (e.decision === "DENY" || /failed|invalid|in_doubt/.test(e.name)) return "refused";
-  if (e.decision === "REQUIRE_APPROVAL" || /held/.test(e.name)) return "pending";
-  if (/approved|submitted|accepted|fulfilled|published|confirmed/.test(e.name)) return "approved";
-  return "idle";
-}
 
 // ---- Loading -------------------------------------------------------------------------------------------------------
 
@@ -206,7 +143,7 @@ function renderFeed() {
         "li",
         { class: "feed-item", "data-event": e.id },
         mark(tone(e)),
-        h("span", { class: "feed-text" }, sentence(e)),
+        h("span", { class: "feed-text" }, say(e, state.roles)),
         h("time", { class: "feed-time", datetime: e.at }, ago(e.at))
       )
     );
@@ -224,13 +161,7 @@ function renderFeed() {
 }
 
 function renderPause() {
-  const paused = !!state.ws?.agents_paused;
-  document.documentElement.toggleAttribute("data-paused", paused);
-  $("paused-banner").hidden = !paused;
-  const btn = $("pause-btn");
-  btn.hidden = state.me.role !== "owner";
-  btn.classList.toggle("is-paused", paused);
-  $("pause-label").textContent = paused ? "Resume agents" : "Pause all agents";
+  showPaused(!!state.ws?.agents_paused, state.me.role);
 }
 
 function renderStale() {
@@ -398,39 +329,6 @@ function holdToConfirm(btn, onConfirm) {
   btn.addEventListener("click", (e) => e.preventDefault());
 }
 
-// ---- Pause ----------------------------------------------------------------------------------------------------------
-
-function wirePause() {
-  const sheet = $("pause-sheet");
-  sheet.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => sheet.close()));
-  $("pause-btn").addEventListener("click", async () => {
-    if (!state.ws.agents_paused) {
-      sheet.showModal();
-      return;
-    }
-    await setPaused(false);
-  });
-  $("pause-confirm").addEventListener("click", async () => {
-    sheet.close();
-    await setPaused(true);
-  });
-}
-
-async function setPaused(paused) {
-  const btn = $("pause-btn");
-  btn.disabled = true;
-  try {
-    const res = await bind.call("setAgentsPaused", { params: { id: state.me.workspaceId }, body: { paused }, idempotencyKey: newKey() });
-    state.ws.agents_paused = res.paused; // the value read back from the server
-    renderPause();
-    toast(res.paused ? "All agents paused" : "Agents resumed");
-  } catch (err) {
-    toast(err instanceof BindApiError ? err.message : "Can't reach Bind. Nothing was changed.");
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 // ---- Refresh loop ---------------------------------------------------------------------------------------------------
 
 let inflight = null;
@@ -481,7 +379,7 @@ async function main() {
       window.location.replace("/app/sign-in");
     },
   });
-  wirePause();
+  pauseControl({ bind, me: state.me, isPaused: () => !!state.ws?.agents_paused, onChange: (p) => { state.ws.agents_paused = p; renderPause(); } });
   $("refresh-now").addEventListener("click", () => refresh(true));
   try {
     await Promise.all([loadAll(), loadEvents(true)]);

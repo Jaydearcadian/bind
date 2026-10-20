@@ -193,3 +193,43 @@ export function shell({ me, onSignOut }) {
   }
   document.getElementById("sign-out")?.addEventListener("click", onSignOut);
 }
+
+// ---- Pause (shared by every app page) --------------------------------------------------------------------------------
+
+/** Shows the paused state everywhere: the banner, the accent and the header button (owners only). */
+export function showPaused(paused, role) {
+  document.documentElement.toggleAttribute("data-paused", paused);
+  const banner = document.getElementById("paused-banner");
+  if (banner) banner.hidden = !paused;
+  const btn = document.getElementById("pause-btn");
+  if (!btn) return;
+  btn.hidden = role !== "owner";
+  btn.classList.toggle("is-paused", paused);
+  const label = document.getElementById("pause-label");
+  if (label) label.textContent = paused ? "Resume agents" : "Pause all agents";
+}
+
+/** Wires the header pause button: pausing asks once; resuming does not. The new state is the value the server read back. */
+export function pauseControl({ bind, me, isPaused, onChange }) {
+  const sheet = document.getElementById("pause-sheet");
+  const btn = document.getElementById("pause-btn");
+  if (!sheet || !btn) return;
+  sheet.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => sheet.close()));
+  const set = async (paused) => {
+    btn.disabled = true;
+    try {
+      const res = await bind.call("setAgentsPaused", { params: { id: me.workspaceId }, body: { paused }, idempotencyKey: newKey() });
+      onChange(res.paused);
+      toast(res.paused ? "All agents paused" : "Agents resumed");
+    } catch (err) {
+      toast(err instanceof BindApiError ? err.message : "Can't reach Bind. Nothing was changed.");
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  btn.addEventListener("click", () => (isPaused() ? set(false) : sheet.showModal()));
+  document.getElementById("pause-confirm")?.addEventListener("click", () => {
+    sheet.close();
+    set(true);
+  });
+}

@@ -181,3 +181,37 @@ test.describe("Today", () => {
     await expect(page).toHaveURL(/\/app\/sign-in$/);
   });
 });
+
+test.describe("Activity", () => {
+  test("a day-by-day timeline from real events, with filters, and Follow this showing a work item's whole story", async ({ page, request }) => {
+    const problems = watch(page);
+    const ws = await makeWorkspace(request);
+    await pendingApproval(request, ws);
+    await signIn(page, ws.owner);
+    await page.goto("/app/activity");
+    await expect(page.getByRole("heading", { level: 1, name: "Activity" })).toBeVisible();
+    const items = page.locator(".timeline-item");
+    await expect(items.first()).toBeVisible();
+    await expect(page.locator(".feed-day").first()).toHaveText("Today");
+    // The access key creation is an access event; the purchase filter hides it and shows the reorder.
+    await page.getByRole("button", { name: "Purchases" }).click();
+    await expect(page.getByRole("button", { name: "Purchases" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".timeline-item", { hasText: "access key" })).toHaveCount(0);
+    const reorder = page.locator(".timeline-item", { hasText: "proposed a reorder" }).first();
+    await expect(reorder).toBeVisible();
+    await reorder.getByRole("button", { name: "Follow this" }).click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet).toContainText("Its whole story");
+    await expect(sheet.locator(".fact", { hasText: "Now" })).toContainText("awaiting approval");
+    await expect(sheet.locator(".thread .feed-item").first()).toBeVisible();
+    expect(problems).toEqual([]);
+  });
+
+  test("staff do not get the team and access filter", async ({ page, request }) => {
+    const ws = await makeWorkspace(request);
+    await signIn(page, ws.staff);
+    await page.goto("/app/activity");
+    await expect(page.getByRole("button", { name: "Purchases" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Team and access" })).toHaveCount(0);
+  });
+});
