@@ -35,6 +35,16 @@ describe("_meta for command answers", () => {
     expect(staff.warnings?.map((w) => w.code)).toEqual(["OWNER_DECISION_NEEDED"]);
   });
 
+  it("names the workflow to read while work continues, and links the resources the answer names", () => {
+    const meta = buildMeta(REPLENISH, ctx("owner", { workflowId: "wf_1", orderId: "ord_1", approvalId: "appr_1", state: "submitted" }), REQ, true);
+    ok(meta);
+    expect(meta.processing?.poll).toBe("/api/workspaces/ws-1/workflows/wf_1");
+    expect(meta.links).toEqual({ workflow: "/api/workspaces/ws-1/workflows/wf_1", order: "/api/workspaces/ws-1/orders/ord_1", approval: "/api/workspaces/ws-1/approvals/appr_1" });
+    const order = buildMeta(ORDER, ctx("owner", { orderId: "co_1", status: "accepted" }), REQ, true);
+    expect(order.links).toEqual({ order: "/api/workspaces/ws-1/customer-orders/co_1" });
+    ok(order);
+  });
+
   it("a submitted order is accepted, not completed; only a confirmed or reconciled one is completed", () => {
     expect(buildMeta(REPLENISH, ctx("owner", { state: "submitted" }), REQ, true).status).toBe("accepted");
     expect(buildMeta(REPLENISH, ctx("owner", { state: "authorized" }), REQ, true).status).toBe("accepted");

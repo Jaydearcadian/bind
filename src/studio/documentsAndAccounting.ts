@@ -8,6 +8,7 @@ import type { EvidenceLoader } from "../workflows/settlement.js";
 import { JournalConflictError, recordIdempotentJournalEntry } from "../accounting/journal.js";
 import type { AuditActor } from "../auth/tokens.js";
 import { MAX_AMOUNT_CENTS, MAX_QUANTITY } from "../adapters/suppliers/validate.js";
+import { currentRequestId } from "../observability/request-context.js";
 export { recordIdempotentJournalEntry } from "../accounting/journal.js";
 
 export const ExtractDocumentInputSchema = z.object({
@@ -201,8 +202,8 @@ export async function extractDocumentDraft(
   );
 
   await query(
-    `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, $3, $4, 'read', 'document.extract_staged', 'ALLOW', $5::jsonb, NOW());`,
+    `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+     VALUES ($1, $2, $3, $4, 'read', 'document.extract_staged', 'ALLOW', $5::jsonb, NOW(), $6);`,
     [
       `audit_doc_ext_${randomUUID()}`,
       workspaceId,
@@ -215,6 +216,7 @@ export async function extractDocumentDraft(
         extractedData,
         warnings,
       }),
+      currentRequestId(),
     ]
   );
 
@@ -337,13 +339,14 @@ export async function confirmStagedDocument(
     );
 
     await query(
-      `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-       VALUES ($1, $2, 'owner', $3, 'commercial_commitment', 'document.confirm_quote', 'ALLOW', $4::jsonb, NOW());`,
+      `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+       VALUES ($1, $2, 'owner', $3, 'commercial_commitment', 'document.confirm_quote', 'ALLOW', $4::jsonb, NOW(), $5);`,
       [
         `audit_doc_q_${randomUUID()}`,
         workspaceId,
         overrides.decidedBy,
         JSON.stringify({ docId: doc.id, quoteId, sku, supplierId, unitPriceCents, totalPriceCents, provenance: "OWNER_CONFIRMED" }),
+        currentRequestId(),
       ]
     );
 

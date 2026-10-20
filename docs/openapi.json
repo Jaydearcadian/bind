@@ -583,6 +583,9 @@
                             "events": {
                               "type": "string"
                             },
+                            "poll": {
+                              "type": "string"
+                            },
                             "remaining": {
                               "items": {
                                 "type": "string"
@@ -862,6 +865,9 @@
                           "additionalProperties": true,
                           "properties": {
                             "events": {
+                              "type": "string"
+                            },
+                            "poll": {
                               "type": "string"
                             },
                             "remaining": {
@@ -1153,6 +1159,9 @@
                           "additionalProperties": true,
                           "properties": {
                             "events": {
+                              "type": "string"
+                            },
+                            "poll": {
                               "type": "string"
                             },
                             "remaining": {
@@ -4388,6 +4397,9 @@
                             "events": {
                               "type": "string"
                             },
+                            "poll": {
+                              "type": "string"
+                            },
                             "remaining": {
                               "items": {
                                 "type": "string"
@@ -4704,6 +4716,9 @@
                           "additionalProperties": true,
                           "properties": {
                             "events": {
+                              "type": "string"
+                            },
+                            "poll": {
                               "type": "string"
                             },
                             "remaining": {
@@ -5035,6 +5050,186 @@
           }
         ],
         "summary": "Approvals of the workspace. Pending ones past their expiry are expired first.",
+        "tags": [
+          "Approvals"
+        ],
+        "x-bind-access": "member"
+      }
+    },
+    "/api/workspaces/{id}/approvals/{approvalId}": {
+      "get": {
+        "description": "Access: a workspace token of the owner or a staff member of the workspace in the path.",
+        "operationId": "getApproval",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "approvalId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "action_requested": {
+                      "type": "string"
+                    },
+                    "amount_cents": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "created_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "decided_at": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "decided_by": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "entity_id": {
+                      "type": "string"
+                    },
+                    "entity_type": {
+                      "type": "string"
+                    },
+                    "expires_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "requester_role": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "workspace_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "workspace_id",
+                    "entity_type",
+                    "entity_id",
+                    "action_requested",
+                    "amount_cents",
+                    "currency",
+                    "requester_role",
+                    "status",
+                    "reason",
+                    "decided_by",
+                    "decided_at",
+                    "expires_at",
+                    "created_at"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The row, as the list returns it."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Approval not found in this workspace (APPROVAL_NOT_FOUND)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "One approval of this workspace.",
         "tags": [
           "Approvals"
         ],
@@ -5449,6 +5644,9 @@
                           "additionalProperties": true,
                           "properties": {
                             "events": {
+                              "type": "string"
+                            },
+                            "poll": {
                               "type": "string"
                             },
                             "remaining": {
@@ -6328,6 +6526,9 @@
                             "events": {
                               "type": "string"
                             },
+                            "poll": {
+                              "type": "string"
+                            },
                             "remaining": {
                               "items": {
                                 "type": "string"
@@ -6495,6 +6696,9 @@
                           "additionalProperties": true,
                           "properties": {
                             "events": {
+                              "type": "string"
+                            },
+                            "poll": {
                               "type": "string"
                             },
                             "remaining": {
@@ -7003,6 +7207,9 @@
                             "events": {
                               "type": "string"
                             },
+                            "poll": {
+                              "type": "string"
+                            },
                             "remaining": {
                               "items": {
                                 "type": "string"
@@ -7296,6 +7503,9 @@
                           "additionalProperties": true,
                           "properties": {
                             "events": {
+                              "type": "string"
+                            },
+                            "poll": {
                               "type": "string"
                             },
                             "remaining": {
@@ -7638,6 +7848,9 @@
                           "additionalProperties": true,
                           "properties": {
                             "events": {
+                              "type": "string"
+                            },
+                            "poll": {
                               "type": "string"
                             },
                             "remaining": {
@@ -8415,6 +8628,9 @@
                             "events": {
                               "type": "string"
                             },
+                            "poll": {
+                              "type": "string"
+                            },
                             "remaining": {
                               "items": {
                                 "type": "string"
@@ -8753,6 +8969,9 @@
                             "format": "date-time",
                             "type": "string"
                           },
+                          "correlationId": {
+                            "type": "string"
+                          },
                           "data": {
                             "additionalProperties": {},
                             "type": "object"
@@ -8767,17 +8986,49 @@
                             "pattern": "^\\d{1,19}\\.\\d{1,19}$",
                             "type": "string"
                           },
+                          "name": {
+                            "type": "string"
+                          },
+                          "object": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "id": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "type": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "id"
+                            ],
+                            "type": "object"
+                          },
+                          "schemaVersion": {
+                            "enum": [
+                              1
+                            ],
+                            "type": "number"
+                          },
                           "type": {
                             "type": "string"
                           },
                           "workflowId": {
+                            "type": "string"
+                          },
+                          "workspaceId": {
                             "type": "string"
                           }
                         },
                         "required": [
                           "id",
                           "type",
+                          "name",
+                          "schemaVersion",
                           "at",
+                          "workspaceId",
                           "effectClass",
                           "decision",
                           "actor",
@@ -12389,6 +12640,9 @@
                             "events": {
                               "type": "string"
                             },
+                            "poll": {
+                              "type": "string"
+                            },
                             "remaining": {
                               "items": {
                                 "type": "string"
@@ -13327,6 +13581,261 @@
         "x-bind-access": "member"
       }
     },
+    "/api/workspaces/{id}/orders/{orderId}": {
+      "get": {
+        "description": "Access: a workspace token of the owner or a staff member of the workspace in the path.",
+        "operationId": "getOrder",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "created_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "external_order_ref": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "idempotency_key": {
+                      "type": "string"
+                    },
+                    "item_name": {
+                      "type": "string"
+                    },
+                    "item_sku": {
+                      "type": "string"
+                    },
+                    "match_notes": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "match_status": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "matched_at": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "order_number": {
+                      "type": "string"
+                    },
+                    "quantity": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "settled_amount_cents": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ],
+                      "nullable": true
+                    },
+                    "settled_bill_id": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "settled_receipt_id": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "supplier_id": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "supplier_name": {
+                      "type": "string"
+                    },
+                    "total_price_cents": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "tx_hash": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "unit_price_cents": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "updated_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "variance_cents": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ],
+                      "nullable": true
+                    },
+                    "workspace_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "workspace_id",
+                    "order_number",
+                    "supplier_id",
+                    "supplier_name",
+                    "item_sku",
+                    "item_name",
+                    "quantity",
+                    "unit_price_cents",
+                    "total_price_cents",
+                    "currency",
+                    "status",
+                    "idempotency_key",
+                    "external_order_ref",
+                    "tx_hash",
+                    "created_at",
+                    "updated_at",
+                    "settled_amount_cents",
+                    "settled_receipt_id",
+                    "settled_bill_id",
+                    "match_status",
+                    "variance_cents",
+                    "match_notes",
+                    "matched_at"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The row, as the list returns it."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Order not found in this workspace (ORDER_NOT_FOUND)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "One supplier order of this workspace, with its latest three-way match.",
+        "tags": [
+          "Orders"
+        ],
+        "x-bind-access": "member"
+      }
+    },
     "/api/workspaces/{id}/policy": {
       "put": {
         "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
@@ -13447,6 +13956,9 @@
                           "additionalProperties": true,
                           "properties": {
                             "events": {
+                              "type": "string"
+                            },
+                            "poll": {
                               "type": "string"
                             },
                             "remaining": {
@@ -13955,6 +14467,9 @@
                             "events": {
                               "type": "string"
                             },
+                            "poll": {
+                              "type": "string"
+                            },
                             "remaining": {
                               "items": {
                                 "type": "string"
@@ -14422,6 +14937,9 @@
                           "additionalProperties": true,
                           "properties": {
                             "events": {
+                              "type": "string"
+                            },
+                            "poll": {
                               "type": "string"
                             },
                             "remaining": {
@@ -15442,6 +15960,9 @@
                             "events": {
                               "type": "string"
                             },
+                            "poll": {
+                              "type": "string"
+                            },
                             "remaining": {
                               "items": {
                                 "type": "string"
@@ -15828,6 +16349,9 @@
                             "events": {
                               "type": "string"
                             },
+                            "poll": {
+                              "type": "string"
+                            },
                             "remaining": {
                               "items": {
                                 "type": "string"
@@ -16128,6 +16652,161 @@
         "x-bind-access": "member"
       }
     },
+    "/api/workspaces/{id}/workflows/{workflowId}": {
+      "get": {
+        "description": "Access: a workspace token of the owner or a staff member of the workspace in the path.",
+        "operationId": "getWorkflow",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workflowId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "context_data": {
+                      "additionalProperties": {},
+                      "type": "object"
+                    },
+                    "created_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "error_message": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "idempotency_key": {
+                      "type": "string"
+                    },
+                    "retry_count": {
+                      "type": "integer"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "updated_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "workflow_type": {
+                      "type": "string"
+                    },
+                    "workspace_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "workspace_id",
+                    "workflow_type",
+                    "state",
+                    "context_data",
+                    "error_message",
+                    "retry_count",
+                    "idempotency_key",
+                    "created_at",
+                    "updated_at"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The row, as the list returns it."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Workflow not found in this workspace (WORKFLOW_NOT_FOUND). The same answer for another tenant's id."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "One workflow of this workspace.",
+        "tags": [
+          "Workflows"
+        ],
+        "x-bind-access": "member"
+      }
+    },
     "/api/workspaces/{id}/workflows/{workflowId}/cancel": {
       "post": {
         "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
@@ -16243,6 +16922,9 @@
                           "additionalProperties": true,
                           "properties": {
                             "events": {
+                              "type": "string"
+                            },
+                            "poll": {
                               "type": "string"
                             },
                             "remaining": {

@@ -378,6 +378,19 @@ export const ROUTES: RouteSpec[] = [
   // Approvals and settlement
   // -------------------------------------------------------------------------------------------------------------------
   withGenericErrors({
+    operationId: "getApproval",
+    method: "get",
+    path: "/api/workspaces/:id/approvals/:approvalId",
+    access: "member",
+    tags: ["Approvals"],
+    summary: "One approval of this workspace.",
+    responses: {
+      200: ok("The row, as the list returns it.", ApprovalSchema),
+      404: err("Approval not found in this workspace (APPROVAL_NOT_FOUND)."),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
     operationId: "listApprovals",
     method: "get",
     path: "/api/workspaces/:id/approvals",
@@ -713,6 +726,19 @@ export const ROUTES: RouteSpec[] = [
     contractTested: true,
   }),
   withGenericErrors({
+    operationId: "getWorkflow",
+    method: "get",
+    path: "/api/workspaces/:id/workflows/:workflowId",
+    access: "member",
+    tags: ["Workflows"],
+    summary: "One workflow of this workspace.",
+    responses: {
+      200: ok("The row, as the list returns it.", WorkflowSchema),
+      404: err("Workflow not found in this workspace (WORKFLOW_NOT_FOUND). The same answer for another tenant's id."),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
     operationId: "cancelWorkflow",
     method: "post",
     path: "/api/workspaces/:id/workflows/:workflowId/cancel",
@@ -735,6 +761,19 @@ export const ROUTES: RouteSpec[] = [
     tags: ["Workflows"],
     summary: "What the owner must decide: ids, codes and the next action. No customer, supplier or feedback text.",
     responses: { 200: ok("Items that need the owner.", NeedsAttentionSchema) },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "getOrder",
+    method: "get",
+    path: "/api/workspaces/:id/orders/:orderId",
+    access: "member",
+    tags: ["Orders"],
+    summary: "One supplier order of this workspace, with its latest three-way match.",
+    responses: {
+      200: ok("The row, as the list returns it.", OrderSchema),
+      404: err("Order not found in this workspace (ORDER_NOT_FOUND)."),
+    },
     contractTested: true,
   }),
   withGenericErrors({

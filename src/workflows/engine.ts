@@ -5,6 +5,7 @@ import { EffectClass } from "../policy/effect-classifier.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { newId } from "../utils/ids.js";
 import { redactDeep } from "../utils/redact.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 function safeJsonStringify(obj: any): string {
   return JSON.stringify(obj, (_key, value) =>
@@ -145,8 +146,8 @@ export class WorkflowEngine {
     // Redact any potential private keys or sensitive tokens before logging
     const sanitizedEvidence = redactDeep(evidence);
 
-    const sql = `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW());`;
+    const sql = `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at, request_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11);`;
     const params = [
       auditId,
       workspaceId,
@@ -158,6 +159,7 @@ export class WorkflowEngine {
       policyDecision,
       safeJsonStringify(sanitizedEvidence),
       txHash || null,
+      currentRequestId(),
     ];
     if (client) {
       await client.query(sql, params);

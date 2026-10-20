@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import { EVENT_CATALOGUE } from "../../src/api/event-catalogue.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -130,6 +131,11 @@ describe("event names", () => {
 
   it("covers every event type documented in docs/EVENTS.md, and nothing else", () => {
     expect(names.events.map((e) => e.type).sort()).toEqual([...documented].sort());
+  });
+
+  it("the table the server uses equals the specification's table", () => {
+    const fromSpec = Object.fromEntries(names.events.map((e) => [e.type, { name: e.name, object: e.object }]));
+    expect(EVENT_CATALOGUE).toEqual(fromSpec);
   });
 
   it("gives each event a unique name that fits the envelope's name pattern", () => {

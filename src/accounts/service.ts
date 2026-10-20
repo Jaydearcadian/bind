@@ -4,6 +4,7 @@ import { acquireAdvisoryLock } from "../db/advisory-lock.js";
 import { newId } from "../utils/ids.js";
 import { provisionWorkspace } from "../templates/registry.js";
 import type { WorkspaceRole } from "../auth/tokens.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 /**
  * Accounts, memberships and invitations (ADR 0051). Privy proves who a person is; everything here is what Bind decides:
@@ -51,9 +52,9 @@ interface Queryable {
 
 async function audit(client: Queryable, workspaceId: string, actor: { type: "owner" | "system"; id: string }, action: string, evidence: Record<string, unknown>): Promise<void> {
   await client.query(
-    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, NULL, $3, $4, 'commercial_commitment', $5, 'ALLOW', $6::jsonb, NOW());`,
-    [newId("audit"), workspaceId, actor.type, actor.id, action, JSON.stringify(evidence)]
+    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+     VALUES ($1, $2, NULL, $3, $4, 'commercial_commitment', $5, 'ALLOW', $6::jsonb, NOW(), $7);`,
+    [newId("audit"), workspaceId, actor.type, actor.id, action, JSON.stringify(evidence), currentRequestId()]
   );
 }
 

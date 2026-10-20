@@ -23,7 +23,7 @@ export interface ResponseMeta {
   requestId: string;
   status: MetaStatus;
   state?: string;
-  processing?: { remaining?: string[]; events?: string };
+  processing?: { remaining?: string[]; poll?: string; events?: string };
   nextActions?: MetaAction[];
   warnings?: { code: string; message: string }[];
   links?: Record<string, string>;
@@ -60,12 +60,31 @@ function workflowStatus(state: string | undefined): { status: MetaStatus; remain
   }
 }
 
+/** Links to the single-resource reads, for the ids the answer names. */
+function procurementLinks(ctx: Context): Record<string, string> | undefined {
+  const base = `/api/workspaces/${ctx.workspaceId}`;
+  const links: Record<string, string> = {};
+  const workflowId = str(ctx.body.workflowId);
+  const orderId = str(ctx.body.orderId);
+  const approvalId = str(ctx.body.approvalId);
+  if (workflowId) links.workflow = `${base}/workflows/${workflowId}`;
+  if (orderId) links.order = `${base}/orders/${orderId}`;
+  if (approvalId) links.approval = `${base}/approvals/${approvalId}`;
+  return Object.keys(links).length > 0 ? links : undefined;
+}
+
 function procurement(ctx: Context): Derived {
   const state = str(ctx.body.state);
   const { status, remaining } = workflowStatus(state);
   const approvalId = str(ctx.body.approvalId);
   const meta: Derived = { status, ...(state ? { state } : {}) };
-  if (remaining) meta.processing = { remaining, events: eventsPath(ctx.workspaceId) };
+  const links = procurementLinks(ctx);
+  if (links) meta.links = links;
+  if (remaining) {
+    meta.processing = { remaining, events: eventsPath(ctx.workspaceId) };
+    // Asynchronous work is observed by reading its workflow, never by guessing from a flag.
+    if (links?.workflow) meta.processing.poll = links.workflow;
+  }
   if (status === "held" && approvalId) {
     meta.nextActions = ownerOnly(ctx, [
       { id: "approve", label: "Approve the order", actor: "owner", method: "POST", href: `/api/approvals/${approvalId}/approve`, needsConfirmation: true },
@@ -82,6 +101,7 @@ function customerOrder(ctx: Context): Derived {
   const cancel: MetaAction = { id: "cancel", label: "Cancel the order", actor: ctx.role, method: "POST", href: `${base}/cancel`, needsConfirmation: true };
   const meta: Derived = { status: "completed", ...(state ? { state } : {}) };
   if (!orderId) return meta;
+  meta.links = { order: base };
   if (state === "needs_owner") {
     meta.status = "held";
     meta.nextActions =

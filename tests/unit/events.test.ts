@@ -28,6 +28,8 @@ function row(overrides: Partial<AuditRowForEvents> = {}): AuditRowForEvents {
     workflow_id: "wf_1",
     evidence: {},
     tx_hash: null,
+    workspace_id: "ws-1",
+    request_id: null,
     ...overrides,
   };
 }
@@ -132,16 +134,36 @@ describe("event envelope", () => {
     expect(envelope).toEqual({
       id: "100.7",
       type: "approval.approved",
+      name: "approval.approved",
+      schemaVersion: 1,
       at: "2026-10-20T10:00:00.000Z",
+      workspaceId: "ws-1",
       effectClass: "commercial_commitment",
       decision: "ALLOW",
       actor: { type: "owner", id: "owner:kitchen-owner" },
       workflowId: "wf_1",
+      object: { type: "approval", id: null },
       data: { orderId: "ord_9", txHash: "0xabc" },
     });
     const bare = mapAuditRow(row({ workflow_id: null, evidence: null }));
     expect(bare).not.toHaveProperty("workflowId");
     expect(bare.data).toEqual({});
+  });
+
+  it("names the event, says what it is about, and carries the request that caused it (ADR 0053)", () => {
+    const order = mapAuditRow(row({ action: "orders.submit", evidence: { orderId: "ord_1", supplierId: "sup_1" }, request_id: "9f2c1a6e-4b1d-4c7e" }));
+    expect(order).toMatchObject({ name: "order.submitted", schemaVersion: 1, workspaceId: "ws-1", object: { type: "order", id: "ord_1" }, correlationId: "9f2c1a6e-4b1d-4c7e" });
+    const approval = mapAuditRow(row({ evidence: { approvalId: "appr_3" } }));
+    expect(approval.object).toEqual({ type: "approval", id: "appr_3" });
+    const workflow = mapAuditRow(row({ action: "workflow.cancelled", workflow_id: "wf_7", evidence: {} }));
+    expect(workflow.object).toEqual({ type: "workflow", id: "wf_7" });
+    // No request id recorded, or one that is not safe to send: no correlationId.
+    expect(mapAuditRow(row({ request_id: null }))).not.toHaveProperty("correlationId");
+    expect(mapAuditRow(row({ request_id: "bad id with spaces" }))).not.toHaveProperty("correlationId");
+    // An action with no entry still has a name and no object.
+    const unknown = mapAuditRow(row({ action: "totally.unlisted_action" }));
+    expect(unknown.name).toBe("event.recorded");
+    expect(unknown).not.toHaveProperty("object");
   });
 
   it("a seeded secret inside a kept value is redacted", () => {

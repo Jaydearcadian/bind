@@ -75,17 +75,29 @@ A stream over a cap is answered `429 { "error": "Too many event streams", "code"
 {
   "id": "459940.3293",
   "type": "orders.submit",
+  "name": "order.submitted",
+  "schemaVersion": 1,
   "at": "2026-10-20T10:00:00.000Z",
+  "workspaceId": "ws-kitchen-1",
   "effectClass": "commercial_commitment",
   "decision": "ALLOW",
   "actor": { "type": "agent", "id": "procurement_agent" },
   "workflowId": "wf_...",
+  "object": { "type": "order", "id": "ord_..." },
+  "correlationId": "9f2c1a6e-4b1d-4c7e-8a55-3e0d2f7b1c10",
   "data": { "orderId": "ord_...", "supplierId": "sup_...", "status": "submitted" }
 }
 ```
 
 - `effectClass` is `read`, `external_request` or `commercial_commitment`. `decision` is the policy decision
   (`ALLOW`, `REQUIRE_APPROVAL`, `DENY`).
+- `type` is the audit action and does not change. `name` is its past-tense name (`orders.submit` is `order.submitted`); the
+  table is in `src/api/event-catalogue.ts` and `docs/ecosystem/spec/event-names.json`. An action with no entry is named
+  `event.recorded`. `schemaVersion` is `1` and changes only with a breaking change; ignore fields you do not know.
+- `workspaceId` is the workspace. `object` says what the event is about: its kind, and its id (null when the row carries none).
+  There is no object version: no table keeps one.
+- `correlationId` is the id of the request that caused the event (the `x-request-id` of that request), present only when the row
+  recorded one. Work no request started, such as the background worker, has none.
 - `workflowId` appears only when the row belongs to a workflow.
 - `data` holds only these evidence keys: ids (`*Id`, `*Ids`), `status`, `state`, `fromState`, `toState`, `hold`, `code`,
   `codes`, `reasonCodes`, `kind`, `decision`, `connectorId`, `txHash`, `orderNumber`, `attempts`, `effectId`, `units`,

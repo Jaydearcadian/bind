@@ -84,6 +84,8 @@ The workflow states are `draft`, `request_sent`, `quote_received`, `awaiting_app
 
 ## 5. Event envelope v1 (S4)
 
+> **Built (stage 4, ADR 0053).** `name`, `schemaVersion`, `workspaceId`, `object` and `correlationId` are sent on the stream and the poll. `audit_logs.request_id` records the request. Every event is checked against `event-envelope-v1.schema.json`.
+
 **Today** (`docs/EVENTS.md`): an event is an audit row after commit. `id` is the cursor `<txid>.<seq>`; `type` is the audit action string.
 
 **Proposed fields** (`event-envelope-v1.schema.json`), added to today's, none removed:

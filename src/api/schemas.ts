@@ -39,19 +39,13 @@ export const Decimal = z.union([z.string(), z.number()]);
 /** An ISO 8601 date-time, as `Date.toJSON` writes it. */
 export const IsoDateTime = z.string().datetime({ offset: true });
 
-/**
- * The body of every error response (error body v2, docs/ecosystem/RESPONSE_AND_EVENT_SPEC.md section 4). `error`, `code`,
- * `category`, `retryable` and `requestId` are always present; `retryAfterSeconds` accompanies a Retry-After header; `details`
- * and `recovery` appear where they help. Routes may add a documented field (`fields`, `state`, `nextAction`, `reasonCodes`).
- * The health and readiness failures have their own bodies and do not use this schema.
- */
 /** `_meta` on the answers of the command operations (ADR 0050; docs/ecosystem/spec/response-meta-v1.schema.json). */
 export const ResponseMetaSchema = z
   .object({
     requestId: z.string(),
     status: z.enum(["completed", "accepted", "held", "refused"]),
     state: z.string().optional(),
-    processing: z.object({ remaining: z.array(z.string()).optional(), events: z.string().optional() }).optional(),
+    processing: z.object({ remaining: z.array(z.string()).optional(), poll: z.string().optional(), events: z.string().optional() }).optional(),
     nextActions: z
       .array(
         z.object({
@@ -69,6 +63,12 @@ export const ResponseMetaSchema = z
   })
   .describe("Outcome of the request in one vocabulary, and what the caller's role may do next.");
 
+/**
+ * The body of every error response (error body v2, docs/ecosystem/RESPONSE_AND_EVENT_SPEC.md section 4). `error`, `code`,
+ * `category`, `retryable` and `requestId` are always present; `retryAfterSeconds` accompanies a Retry-After header; `details`
+ * and `recovery` appear where they help. Routes may add a documented field (`fields`, `state`, `nextAction`, `reasonCodes`).
+ * The health and readiness failures have their own bodies and do not use this schema.
+ */
 export const ErrorCategory = z.enum([
   "validation",
   "authentication",
@@ -467,11 +467,16 @@ export const EventEnvelopeSchema = z
   .object({
     id: EventCursorText,
     type: z.string(),
+    name: z.string(),
+    schemaVersion: z.literal(1),
     at: IsoDateTime,
+    workspaceId: z.string(),
     effectClass: z.string(),
     decision: z.string(),
     actor: z.object({ type: z.string(), id: z.string() }).passthrough(),
     workflowId: z.string().optional(),
+    object: z.object({ type: z.string(), id: z.string().nullable() }).optional(),
+    correlationId: z.string().optional(),
     data: z.record(z.unknown()),
   })
   .passthrough();

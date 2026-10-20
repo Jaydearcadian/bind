@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { query, withTransaction } from "../db/client.js";
 import { newId } from "../utils/ids.js";
 import { isSessionToken, resolveSession } from "../accounts/sessions.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 /**
  * Per-workspace access tokens (ADR 0021). A token is `bnd_` followed by 32 random bytes in base64url. Only its
@@ -91,9 +92,9 @@ async function writeTokenAudit(
   evidence: { tokenId: string; role: WorkspaceRole; label: string }
 ): Promise<void> {
   await client.query(
-    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, NULL, $3, $4, 'commercial_commitment', $5, 'ALLOW', $6::jsonb, NOW());`,
-    [newId("audit"), workspaceId, actor.type, actor.id, action, JSON.stringify(evidence)]
+    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+     VALUES ($1, $2, NULL, $3, $4, 'commercial_commitment', $5, 'ALLOW', $6::jsonb, NOW(), $7);`,
+    [newId("audit"), workspaceId, actor.type, actor.id, action, JSON.stringify(evidence), currentRequestId()]
   );
 }
 

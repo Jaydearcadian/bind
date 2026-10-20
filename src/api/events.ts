@@ -16,6 +16,7 @@
  */
 import { query } from "../db/client.js";
 import { redactDeep, redactText } from "../utils/redact.js";
+import { EVENT_CATALOGUE, eventNameOf } from "./event-catalogue.js";
 
 export const ZERO_CURSOR = "0.0";
 export const DEFAULT_POLL_LIMIT = 50;
@@ -76,17 +77,27 @@ export interface AuditRowForEvents {
   workflow_id: string | null;
   evidence: unknown;
   tx_hash: string | null;
+  workspace_id: string;
+  request_id: string | null;
 }
 
 /** The public event (docs/EVENTS.md). Field names are camelCase, as the service views are (docs/decisions/0034). */
 export interface EventEnvelope {
   id: string;
   type: string;
+  /** The past-tense name (ADR 0053). */
+  name: string;
+  schemaVersion: 1;
   at: string;
+  workspaceId: string;
   effectClass: string;
   decision: string;
   actor: { type: string; id: string };
   workflowId?: string;
+  /** The main thing the event is about. `id` is null when the row carries none. */
+  object?: { type: string; id: string | null };
+  /** The request that caused the event, when the row recorded one. */
+  correlationId?: string;
   data: Record<string, unknown>;
 }
 
@@ -122,18 +133,37 @@ export function isVisibleToRole(role: WorkspaceRoleName, type: string): boolean 
   return !OWNER_ONLY_PREFIXES.some((prefix) => type.startsWith(prefix));
 }
 
+/** The id of the thing an event is about: the `<object>Id` evidence key, or the workflow id for a workflow event. */
+function objectIdOf(object: string, workflowId: string | null, data: Record<string, unknown>): string | null {
+  const camel = object.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase());
+  const direct = data[`${camel}Id`];
+  if (typeof direct === "string" && direct.length > 0 && direct.length <= 128) return direct;
+  if (object === "workflow" && workflowId) return workflowId;
+  return null;
+}
+
+/** Only a safe request id is sent as correlationId. */
+const SAFE_REQUEST_ID = /^[A-Za-z0-9_-]{8,64}$/;
+
 /** The envelope of an audit row. Pure: the cursor comes from the row's txid and seq. */
 export function mapAuditRow(row: AuditRowForEvents): EventEnvelope {
   const createdAt = row.created_at instanceof Date ? row.created_at : new Date(row.created_at);
+  const data = eventData(row.evidence, row.tx_hash);
+  const object = EVENT_CATALOGUE[row.action]?.object;
   return {
     id: formatCursor(row.cursor_txid, row.cursor_seq),
     type: row.action,
+    name: eventNameOf(row.action),
+    schemaVersion: 1,
     at: createdAt.toISOString(),
+    workspaceId: row.workspace_id,
     effectClass: row.effect_class,
     decision: row.policy_decision,
     actor: { type: row.actor_type, id: redactText(row.actor_id) },
     ...(row.workflow_id !== null ? { workflowId: row.workflow_id } : {}),
-    data: eventData(row.evidence, row.tx_hash),
+    ...(object ? { object: { type: object, id: objectIdOf(object, row.workflow_id, data) } } : {}),
+    ...(row.request_id !== null && SAFE_REQUEST_ID.test(row.request_id) ? { correlationId: row.request_id } : {}),
+    data,
   };
 }
 
@@ -156,7 +186,7 @@ export interface EventPage {
 // The cursor parts are returned under other names: an output alias called txid would shadow the column in ORDER BY, and the
 // order would then be the order of the text. (Found by EXPLAIN; see docs/decisions/0035, "Index plan".)
 const COLUMNS = `txid::text AS cursor_txid, seq::text AS cursor_seq, created_at, action, effect_class, policy_decision,
-  actor_type, actor_id, workflow_id, evidence, tx_hash`;
+  actor_type, actor_id, workflow_id, evidence, tx_hash, workspace_id, request_id`;
 
 /** Only rows whose transaction has finished (docs/decisions/0035). The horizon is the oldest transaction still running. */
 const FINISHED = `workspace_id = $1 AND txid < pg_snapshot_xmin(pg_current_snapshot())`;

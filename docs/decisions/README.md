@@ -66,3 +66,4 @@ a live system: `docs/RELEASE_EVIDENCE.md` is the place for that.
 | [0050](0050-response-meta.md) | `_meta` on command responses | Accepted | Outcome status, state, next actions for the caller's role and warnings, on the 18 command operations. Additive. |
 | [0051](0051-sign-in-with-privy.md) | Sign-in with Privy, on top of workspace tokens | Accepted | Google and wallet sign-in for people; workspace tokens stay for machines. Privy proves identity only. Backend built in ADR 0052. |
 | [0052](0052-account-layer.md) | The account layer: accounts, sessions, invitations, members | Accepted | Privy token in, short-lived workspace-scoped session out; role read per request; single-use invitations; last-owner protection. Backend only. |
+| [0053](0053-event-envelope-v1.md) | Event envelope v1 | Accepted | Events gain name, schemaVersion, workspaceId, object and correlationId; audit rows record the request id. Additive. |

@@ -80,6 +80,9 @@ const ANY_ROLE_ROUTES: Array<[string, string]> = [
   ["GET", "/api/workspaces/:id/menu-proposals"],
   ["GET", "/api/workspaces/:id/menu"],
   ["GET", "/api/workspaces/:id/needs-attention"],
+  ["GET", "/api/workspaces/:id/workflows/:workflowId"],
+  ["GET", "/api/workspaces/:id/orders/:orderId"],
+  ["GET", "/api/workspaces/:id/approvals/:approvalId"],
   // Ends the account session the request used; a workspace token is told signedOut: false and keeps working.
   ["POST", "/api/auth/sign-out"],
 ];

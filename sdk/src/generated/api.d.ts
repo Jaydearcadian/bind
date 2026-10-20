@@ -412,6 +412,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{id}/approvals/{approvalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One approval of this workspace.
+         * @description Access: a workspace token of the owner or a staff member of the workspace in the path.
+         */
+        get: operations["getApproval"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspaces/{id}/audit": {
         parameters: {
             query?: never;
@@ -1044,6 +1064,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{id}/orders/{orderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One supplier order of this workspace, with its latest three-way match.
+         * @description Access: a workspace token of the owner or a staff member of the workspace in the path.
+         */
+        get: operations["getOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspaces/{id}/policy": {
         parameters: {
             query?: never;
@@ -1248,6 +1288,26 @@ export interface paths {
          * @description Access: a workspace token of the owner or a staff member of the workspace in the path.
          */
         get: operations["listWorkflows"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{id}/workflows/{workflowId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One workflow of this workspace.
+         * @description Access: a workspace token of the owner or a staff member of the workspace in the path.
+         */
+        get: operations["getWorkflow"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1690,6 +1750,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -1840,6 +1901,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -1998,6 +2060,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -3638,6 +3701,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -3796,6 +3860,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -3953,6 +4018,103 @@ export interface operations {
                 };
             };
             /** @description Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                approvalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The row, as the list returns it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        action_requested: string;
+                        amount_cents: string | number;
+                        /** Format: date-time */
+                        created_at: string;
+                        currency: string;
+                        /** Format: date-time */
+                        decided_at: string | null;
+                        decided_by: string | null;
+                        entity_id: string;
+                        entity_type: string;
+                        /** Format: date-time */
+                        expires_at: string;
+                        id: string;
+                        reason: string | null;
+                        requester_role: string;
+                        status: string;
+                        workspace_id: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Approval not found in this workspace (APPROVAL_NOT_FOUND). */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -4340,6 +4502,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -4696,6 +4859,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -4756,6 +4920,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -5013,6 +5178,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -5162,6 +5328,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -5318,6 +5485,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -5707,6 +5875,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -5915,14 +6084,25 @@ export interface operations {
                             };
                             /** Format: date-time */
                             at: string;
+                            correlationId?: string;
                             data: {
                                 [key: string]: unknown;
                             };
                             decision: string;
                             effectClass: string;
                             id: string;
+                            name: string;
+                            object?: {
+                                id: string | null;
+                                type: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {number} */
+                            schemaVersion: 1;
                             type: string;
                             workflowId?: string;
+                            workspaceId: string;
                         } & {
                             [key: string]: unknown;
                         })[];
@@ -8007,6 +8187,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -8469,6 +8650,113 @@ export interface operations {
             };
         };
     };
+    getOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The row, as the list returns it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        created_at: string;
+                        currency: string;
+                        external_order_ref: string | null;
+                        id: string;
+                        idempotency_key: string;
+                        item_name: string;
+                        item_sku: string;
+                        match_notes: string | null;
+                        match_status: string | null;
+                        /** Format: date-time */
+                        matched_at: string | null;
+                        order_number: string;
+                        quantity: string | number;
+                        settled_amount_cents: (string | number) | null;
+                        settled_bill_id: string | null;
+                        settled_receipt_id: string | null;
+                        status: string;
+                        supplier_id: string | null;
+                        supplier_name: string;
+                        total_price_cents: string | number;
+                        tx_hash: string | null;
+                        unit_price_cents: string | number;
+                        /** Format: date-time */
+                        updated_at: string;
+                        variance_cents: (string | number) | null;
+                        workspace_id: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Order not found in this workspace (ORDER_NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     updatePolicy: {
         parameters: {
             query?: never;
@@ -8519,6 +8807,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -8785,6 +9074,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -9027,6 +9317,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -9614,6 +9905,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -9846,6 +10138,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;
@@ -10028,6 +10321,100 @@ export interface operations {
             };
         };
     };
+    getWorkflow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                workflowId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The row, as the list returns it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        context_data: {
+                            [key: string]: unknown;
+                        };
+                        /** Format: date-time */
+                        created_at: string;
+                        error_message: string | null;
+                        id: string;
+                        idempotency_key: string;
+                        retry_count: number;
+                        state: string;
+                        /** Format: date-time */
+                        updated_at: string;
+                        workflow_type: string;
+                        workspace_id: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Workflow not found in this workspace (WORKFLOW_NOT_FOUND). The same answer for another tenant's id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     cancelWorkflow: {
         parameters: {
             query?: never;
@@ -10077,6 +10464,7 @@ export interface operations {
                             })[];
                             processing?: {
                                 events?: string;
+                                poll?: string;
                                 remaining?: string[];
                             } & {
                                 [key: string]: unknown;

@@ -222,7 +222,11 @@ describe("typed client against the real server (docs/decisions/0036)", () => {
     // The feedback summary's default window starts at "now", so the parity check gives it a fixed one.
     const queries: Record<string, Record<string, string>> = { getFeedbackSummary: { since: "2026-01-01T00:00:00.000Z" } };
 
-    const routes = ROUTES.filter((r) => r.method === "get" && r.access === "member" && r.contractTested);
+    // These three read one workflow, supplier order or approval by an id this file does not create; tests/integration/resource-reads.test.ts
+    // reads each of them. They share the `orderId` name with the customer-order route, so one value cannot serve both.
+    const needsOwnIds = new Set(["getWorkflow", "getOrder", "getApproval"]);
+    for (const id of needsOwnIds) expect(ROUTES.some((r) => r.operationId === id), id).toBe(true);
+    const routes = ROUTES.filter((r) => r.method === "get" && r.access === "member" && r.contractTested && !needsOwnIds.has(r.operationId));
     expect(routes.length).toBeGreaterThanOrEqual(10);
     // call is generic over operation ids; this loop has the ids as strings, so the signature is widened here only.
     const callLoose = staff.call.bind(staff) as unknown as (

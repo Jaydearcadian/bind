@@ -19,6 +19,7 @@ import {
   type PromiseReasonRef,
 } from "./fulfilment-promise.js";
 import { log } from "../observability/logger.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 /**
  * Customer orders, substantiated promises, stock reservations and kitchen capacity (Task 8a, ADR 0026).
@@ -263,8 +264,8 @@ async function writeAudit(
 ): Promise<void> {
   // Evidence holds ids, status and reason codes. It never holds the customer's note or any other free text.
   await client.query(
-    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8::jsonb, NOW());`,
+    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+     VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8::jsonb, NOW(), $9);`,
     [
       newId("audit"),
       row.workspaceId,
@@ -274,6 +275,7 @@ async function writeAudit(
       row.action,
       row.decision,
       JSON.stringify(row.evidence),
+      currentRequestId(),
     ]
   );
 }

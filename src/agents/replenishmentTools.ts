@@ -16,6 +16,7 @@ import { generateVerifiableDecisionRecord } from "./bindTemplateAgent.js";
 import { evaluateWithJevSystemOne } from "../domain/jevScorer.js";
 import { spendStatusesSql } from "../orders/statuses.js";
 import { classifyRequestEvidence } from "./evidence-classification.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 export interface ReplenishmentToolsContext {
   workspaceId: string;
@@ -363,13 +364,14 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
       );
 
       await query(
-        `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-         VALUES ($1, $2, $3, 'agent', 'procurement_agent', 'commercial_commitment', 'replenishment.propose', 'ALLOW', $4::jsonb, NOW());`,
+        `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+         VALUES ($1, $2, $3, 'agent', 'procurement_agent', 'commercial_commitment', 'replenishment.propose', 'ALLOW', $4::jsonb, NOW(), $5);`,
         [
           newId("audit_prop"),
           workspaceId,
           workflowId,
           JSON.stringify(proposalRecord),
+          currentRequestId(),
         ]
       );
 

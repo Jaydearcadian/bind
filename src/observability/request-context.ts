@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { NextFunction, Request, Response } from "express";
 import { log } from "./logger.js";
 import { httpDuration, httpRequests } from "./metrics.js";
@@ -70,4 +71,20 @@ export function requestContext(req: Request, res: Response, next: NextFunction):
   });
 
   next();
+}
+
+const requestIds = new AsyncLocalStorage<{ requestId: string }>();
+
+/**
+ * The id of the request being handled, or null outside one (the worker, a script, a test calling a service directly). It lets an
+ * audit row record which request caused it (`request_id`, the event's `correlationId`). Set by `bindRequestId`, which runs after
+ * body parsing: a context opened before the body is read can be lost in the parser's stream callbacks.
+ */
+export function currentRequestId(): string | null {
+  return requestIds.getStore()?.requestId ?? null;
+}
+
+/** Makes `req.id` the current request id for everything the route does, including its awaits. */
+export function bindRequestId(req: Request, _res: Response, next: NextFunction): void {
+  requestIds.run({ requestId: req.id ?? "" }, next);
 }

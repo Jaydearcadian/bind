@@ -819,6 +819,36 @@
    "stability": "stable",
    "flags": [],
    "note": "Ends the person's sessions at once. The last owner cannot be removed."
+  },
+  {
+   "operationId": "getWorkflow",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "One workflow, so a caller can follow asynchronous work by reading it."
+  },
+  {
+   "operationId": "getOrder",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "One supplier order with its latest match."
+  },
+  {
+   "operationId": "getApproval",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "One approval."
   }
  ]
 }

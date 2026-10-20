@@ -2,6 +2,7 @@ import type pg from "pg";
 import { withTransaction } from "../db/client.js";
 import { newId } from "../utils/ids.js";
 import { workspaceWebhookSecret } from "../webhooks/signing.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 /**
  * Owner controls over a workspace's agents and webhook signing (ADR 0022). Each change and each secret view writes its
@@ -23,9 +24,9 @@ async function writeControlAudit(
   evidence: Record<string, unknown>
 ): Promise<void> {
   await client.query(
-    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, NULL, $3, $4, $5, $6, 'ALLOW', $7::jsonb, NOW());`,
-    [newId("audit"), workspaceId, actor.type, actor.id, effectClass, action, JSON.stringify(evidence)]
+    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+     VALUES ($1, $2, NULL, $3, $4, $5, $6, 'ALLOW', $7::jsonb, NOW(), $8);`,
+    [newId("audit"), workspaceId, actor.type, actor.id, effectClass, action, JSON.stringify(evidence), currentRequestId()]
   );
 }
 

@@ -10,6 +10,7 @@ import { newId } from "../utils/ids.js";
 import { log } from "../observability/logger.js";
 import { recordWorkerTick } from "../observability/metrics.js";
 import { RETENTION_HOURS } from "../server/idempotency.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 /**
  * The background worker (ADR 0029, ADR 0030). One tick runs five steps in order, each bounded by a batch size:
@@ -258,8 +259,8 @@ async function recoverStuckOrder(orderId: string, staleBefore: Date): Promise<"s
     const action = submitted ? "settlement.recovered_to_submitted" : "settlement.recovered_to_hold";
     const evidence = submitted ? { orderId } : { orderId, hold: "SETTLEMENT_OUTCOME_UNKNOWN" };
     await client.query(
-      `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at)
-       VALUES ($1, $2, NULL, 'system', 'system:worker', $3, $4, $5, $6, $7, NOW());`,
+      `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at, request_id)
+       VALUES ($1, $2, NULL, 'system', 'system:worker', $3, $4, $5, $6, $7, NOW(), $8);`,
       [
         newId("audit"),
         row.workspace_id,
@@ -268,6 +269,7 @@ async function recoverStuckOrder(orderId: string, staleBefore: Date): Promise<"s
         submitted ? PolicyDecision.ALLOW : PolicyDecision.DENY,
         JSON.stringify(evidence),
         submitted ? row.tx_hash : null,
+        currentRequestId(),
       ]
     );
     return submitted ? "submitted" : "hold";

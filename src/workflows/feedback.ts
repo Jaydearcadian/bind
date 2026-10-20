@@ -2,6 +2,7 @@ import type pg from "pg";
 import { query, withTransaction } from "../db/client.js";
 import { newId } from "../utils/ids.js";
 import { summarizeTexts, type FeedbackSummary } from "./feedback-summary.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 /**
  * Feedback ingestion (Task 9, ADR 0028). Guest and staff feedback is untrusted text. It is stored as data, counted by
@@ -49,9 +50,9 @@ async function writeAudit(
   evidence: Record<string, unknown>
 ): Promise<void> {
   await client.query(
-    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, NULL, 'system', $3, 'read', $4, 'ALLOW', $5::jsonb, NOW());`,
-    [newId("audit"), workspaceId, actorId, action, JSON.stringify(evidence)]
+    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+     VALUES ($1, $2, NULL, 'system', $3, 'read', $4, 'ALLOW', $5::jsonb, NOW(), $6);`,
+    [newId("audit"), workspaceId, actorId, action, JSON.stringify(evidence), currentRequestId()]
   );
 }
 

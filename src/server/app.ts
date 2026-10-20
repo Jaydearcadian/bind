@@ -95,7 +95,7 @@ import { publicErrorMessage, rejectNulInput, requestErrorHandler, wrapAsyncHandl
 import { errorContract } from "./error-contract.js";
 import { log } from "../observability/logger.js";
 import { redactText } from "../utils/redact.js";
-import { requestContext } from "../observability/request-context.js";
+import { bindRequestId, requestContext } from "../observability/request-context.js";
 import { buildRateLimitScopes, rateLimitsEnabled, type RateLimitOptions } from "../security/rate-limit.js";
 import { rateLimitGate } from "../security/rate-limit-middleware.js";
 import { checkReadiness } from "../observability/readiness.js";
@@ -427,6 +427,8 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   );
   // A NUL character anywhere in the body, query or path is refused here, before any route reads it (docs/decisions/0031).
   app.use(rejectNulInput);
+  // From here on, an audit row written by this request records its id (ADR 0053).
+  app.use(bindRequestId);
 
   // Serve static UI assets with no-store cache headers so updates are always fresh
   const staticPath = path.resolve(__dirname, "../../src/ui/public");
@@ -678,6 +680,14 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       [id]
     );
     res.json(apprRes.rows);
+  });
+
+  app.get("/api/workspaces/:id/approvals/:approvalId", ...workspaceMember, async (req: Request, res: Response) => {
+    const { id, approvalId } = req.params;
+    await procurementRunner.expireApprovals({ workspaceId: id });
+    const row = await query("SELECT * FROM approvals WHERE id = $1 AND workspace_id = $2;", [approvalId, id]);
+    if (row.rows.length === 0) return res.status(404).json({ error: "Approval not found", code: "APPROVAL_NOT_FOUND" });
+    res.json(row.rows[0]);
   });
 
   app.post("/api/approvals/:id/approve", ...anyWorkspaceOwner, async (req: Request, res: Response) => {
@@ -996,6 +1006,13 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     res.json(wfRes.rows);
   });
 
+  app.get("/api/workspaces/:id/workflows/:workflowId", ...workspaceMember, async (req: Request, res: Response) => {
+    const { id, workflowId } = req.params;
+    const row = await query("SELECT * FROM workflows WHERE id = $1 AND workspace_id = $2;", [workflowId, id]);
+    if (row.rows.length === 0) return res.status(404).json({ error: "Workflow not found", code: "WORKFLOW_NOT_FOUND" });
+    res.json(row.rows[0]);
+  });
+
   // Owner cancel (ADR 0030). A pause does not block it. It never orders, pays or contacts a supplier.
   app.post("/api/workspaces/:id/workflows/:workflowId/cancel", ...workspaceOwner, async (req: Request, res: Response) => {
     const parsed = CancelWorkflowBodySchema.safeParse(req.body ?? {});
@@ -1023,6 +1040,21 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   });
 
   // Orders & 3-Way Match Status
+  app.get("/api/workspaces/:id/orders/:orderId", ...workspaceMember, async (req: Request, res: Response) => {
+    const { id, orderId } = req.params;
+    const row = await query(
+      `SELECT o.*, m.match_status, m.variance_cents, m.notes AS match_notes, m.matched_at
+         FROM orders o
+         LEFT JOIN LATERAL (
+           SELECT match_status, variance_cents, notes, matched_at FROM three_way_matches WHERE order_id = o.id ORDER BY matched_at DESC LIMIT 1
+         ) m ON true
+        WHERE o.id = $1 AND o.workspace_id = $2;`,
+      [orderId, id]
+    );
+    if (row.rows.length === 0) return res.status(404).json({ error: "Order not found", code: "ORDER_NOT_FOUND" });
+    res.json(row.rows[0]);
+  });
+
   app.get("/api/workspaces/:id/orders", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const ordRes = await query(

@@ -175,8 +175,11 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     policy_decision TEXT NOT NULL, -- 'ALLOW', 'REQUIRE_APPROVAL', 'DENY'
     evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
     tx_hash TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    request_id TEXT
 );
+-- The request that caused the row, for an event's correlationId (ADR 0053). Null for work no request started (the worker).
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS request_id TEXT;
 
 CREATE TABLE IF NOT EXISTS idempotency_keys (
     key TEXT PRIMARY KEY,

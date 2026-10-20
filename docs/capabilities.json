@@ -2,9 +2,9 @@
   "version": 1,
   "source": "docs/openapi.json + docs/ecosystem/exposure.json + sdk/src/client.ts + mcp/src/tools.ts. Generated: do not edit by hand.",
   "counts": {
-    "operations": 78,
+    "operations": 81,
     "mcpTools": 17,
-    "exposure:public_api": 68,
+    "exposure:public_api": 71,
     "exposure:internal_service": 6,
     "exposure:protocol_primitive": 4,
     "effect:owner_decision": 10,
@@ -13,7 +13,7 @@
     "effect:operational": 3,
     "effect:credential": 10,
     "effect:data_entry": 2,
-    "effect:read": 33,
+    "effect:read": 36,
     "effect:external_request": 3
   },
   "capabilities": [
@@ -435,6 +435,30 @@
       }
     },
     {
+      "id": "getApproval",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/approvals/{approvalId}",
+      "summary": "One approval of this workspace.",
+      "tag": "Approvals",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "One approval.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
       "id": "getCustomerOrder",
       "method": "GET",
       "route": "/api/workspaces/{id}/customer-orders/{orderId}",
@@ -603,6 +627,30 @@
       }
     },
     {
+      "id": "getOrder",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/orders/{orderId}",
+      "summary": "One supplier order of this workspace, with its latest three-way match.",
+      "tag": "Orders",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "One supplier order with its latest match.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
       "id": "getReady",
       "method": "GET",
       "route": "/ready",
@@ -666,6 +714,30 @@
         "returns_secret_repeatedly"
       ],
       "note": "Returns the secret on every call. Review: show once on rotate instead.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getWorkflow",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/workflows/{workflowId}",
+      "summary": "One workflow of this workspace.",
+      "tag": "Workflows",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "One workflow, so a caller can follow asynchronous work by reading it.",
       "idempotency": {
         "clientKey": false,
         "natural": "not documented"

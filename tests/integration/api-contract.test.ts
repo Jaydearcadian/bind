@@ -164,7 +164,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
   let ownerB: { id: string; token: string };
 
   /** Ids produced by the seeding that later tests read. */
-  const seeded: { orderId?: string; heldOrderId?: string; docId?: string; proposalId?: string; approvalId?: string } = {};
+  const seeded: { workflowId?: string; orderId?: string; heldOrderId?: string; docId?: string; proposalId?: string; approvalId?: string } = {};
 
   function tokenFor(spec: RouteSpec): string | undefined {
     switch (spec.access) {
@@ -264,6 +264,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
     }, 201);
     const replenish = await seedWrite("POST", "/api/workspaces/:id/replenish", staff, { sku: "FOOD-FLOUR-50LB" }, 200);
     seeded.orderId = replenish.orderId;
+    seeded.workflowId = replenish.workflowId;
     await seedWrite("POST", "/api/workspaces/:id/suppliers", owner, {
       id: "contract-supplier",
       name: "Contract Supplier",
@@ -556,6 +557,9 @@ describe("API contract: one registry, checked against the running server (ADR 00
     const VALUES: Record<string, Record<string, string>> = {
       "/api/templates/:id/blueprint": { id: "kitchen-v1" },
       "/api/workspaces/:id/customer-orders/:orderId": { orderId: seeded.heldOrderId ?? "" },
+      "/api/workspaces/:id/workflows/:workflowId": { workflowId: seeded.workflowId ?? "" },
+      "/api/workspaces/:id/orders/:orderId": { orderId: seeded.orderId ?? "" },
+      "/api/workspaces/:id/approvals/:approvalId": { approvalId: seeded.approvalId ?? "" },
     };
 
     // Every GET route except the UI catch-all is read here.

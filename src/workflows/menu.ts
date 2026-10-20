@@ -5,6 +5,7 @@ import { PolicyEngine } from "../policy/engine.js";
 import { PolicyDecision } from "../policy/types.js";
 import { newId } from "../utils/ids.js";
 import type { AgentActor, OwnerActor } from "./fulfilment.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 /**
  * Menu change proposals (Task 9, ADR 0028). An agent or a person proposes a change. Only an owner approves it, and only an
@@ -228,9 +229,9 @@ async function writeAudit(
 ): Promise<void> {
   // Evidence holds ids, the change type and counts. It never holds a proposal's name, rationale or any feedback text.
   await client.query(
-    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8::jsonb, NOW());`,
-    [newId("audit"), row.workspaceId, row.actorType, row.actorId, row.effectClass, row.action, row.decision, JSON.stringify(row.evidence)]
+    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+     VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8::jsonb, NOW(), $9);`,
+    [newId("audit"), row.workspaceId, row.actorType, row.actorId, row.effectClass, row.action, row.decision, JSON.stringify(row.evidence), currentRequestId()]
   );
 }
 
@@ -303,9 +304,9 @@ async function withRefusalAudit<T>(refusal: RefusalAudit, run: () => Promise<T>)
       }
       evidence.code = err.code;
       await query(
-        `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-         VALUES ($1, $2, NULL, $3, $4, $5, $6, 'DENY', $7::jsonb, NOW());`,
-        [newId("audit"), refusal.workspaceId, refusal.actorType, refusal.actorId, refusal.effectClass, refusal.action, JSON.stringify(evidence)]
+        `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+         VALUES ($1, $2, NULL, $3, $4, $5, $6, 'DENY', $7::jsonb, NOW(), $8);`,
+        [newId("audit"), refusal.workspaceId, refusal.actorType, refusal.actorId, refusal.effectClass, refusal.action, JSON.stringify(evidence), currentRequestId()]
       );
     }
     throw err;

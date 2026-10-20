@@ -8,6 +8,7 @@ import { CANONICAL_ARC_LOCK } from "../agents/antiDriftWriter.js";
 import { templatesArtifactsDir } from "../utils/artifacts.js";
 import { newId } from "../utils/ids.js";
 import type { AuditActor } from "../auth/tokens.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 export const SAFE_AGENT_TOOLS = [
   "get_business_context",
@@ -295,8 +296,8 @@ export async function onboardBlankWorkspace(rawInput: unknown, actor: AuditActor
 
     // The audit row names the actor the caller passed (ADR 0023).
     await client.query(
-      `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-       VALUES ($1, $2, $3, $4, 'commercial_commitment', 'workspace.onboard_configured', 'ALLOW', $5::jsonb, NOW());`,
+      `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+       VALUES ($1, $2, $3, $4, 'commercial_commitment', 'workspace.onboard_configured', 'ALLOW', $5::jsonb, NOW(), $6);`,
       [
         newId("audit_onboard"),
         input.workspaceId,
@@ -311,6 +312,7 @@ export async function onboardBlankWorkspace(rawInput: unknown, actor: AuditActor
           suppliesCount: input.supplies.length,
           suppliersCount: input.suppliers.length,
         }),
+        currentRequestId(),
       ]
     );
   });
@@ -369,8 +371,8 @@ export async function upsertAgentRole(workspaceId: string, rawInput: unknown, ac
   );
 
   await query(
-    `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, $3, $4, 'commercial_commitment', 'agent_role.configure', 'ALLOW', $5::jsonb, NOW());`,
+    `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+     VALUES ($1, $2, $3, $4, 'commercial_commitment', 'agent_role.configure', 'ALLOW', $5::jsonb, NOW(), $6);`,
     [
       newId("audit_role"),
       workspaceId,
@@ -385,6 +387,7 @@ export async function upsertAgentRole(workspaceId: string, rawInput: unknown, ac
         allowedTools: input.allowedTools,
         enabled: input.enabled,
       }),
+      currentRequestId(),
     ]
   );
 

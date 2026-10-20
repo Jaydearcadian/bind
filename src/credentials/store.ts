@@ -9,6 +9,7 @@ import {
   type StoredCiphertext,
 } from "./crypto.js";
 import { findVerifier, type VerifierResult } from "./verifiers.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 /**
  * Connector credentials (ADR 0024): the owner's keys for external services, encrypted at rest.
@@ -129,9 +130,9 @@ async function writeCredentialAudit(
   evidence: Record<string, unknown>
 ): Promise<void> {
   await client.query(
-    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, NULL, $3, $4, $5, $6, 'ALLOW', $7::jsonb, NOW());`,
-    [newId("audit"), workspaceId, actor.type, actor.id, effectClass, action, JSON.stringify(evidence)]
+    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+     VALUES ($1, $2, NULL, $3, $4, $5, $6, 'ALLOW', $7::jsonb, NOW(), $8);`,
+    [newId("audit"), workspaceId, actor.type, actor.id, effectClass, action, JSON.stringify(evidence), currentRequestId()]
   );
 }
 

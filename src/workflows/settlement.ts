@@ -12,6 +12,7 @@ import { recordIdempotentJournalEntry } from "../accounting/journal.js";
 import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
 import { newId } from "../utils/ids.js";
 import { log } from "../observability/logger.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 /**
  * Why an order is not paid or not yet final. RECONCILE_IN_PROGRESS means another caller holds the claim.
@@ -505,8 +506,8 @@ export class OrderSettlementService {
       );
       if (upd.rowCount !== 1) return false;
       await client.query(
-        `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at)
-         VALUES ($1, $2, NULL, 'system', 'settlement_engine', $3, 'settlement.reattached', $4, $5, $6, NOW());`,
+        `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at, request_id)
+         VALUES ($1, $2, NULL, 'system', 'settlement_engine', $3, 'settlement.reattached', $4, $5, $6, NOW(), $7);`,
         [
           newId("audit"),
           order.workspace_id,
@@ -514,6 +515,7 @@ export class OrderSettlementService {
           PolicyDecision.ALLOW,
           JSON.stringify({ orderId: order.id, txHash: transfer.txHash }),
           transfer.txHash,
+          currentRequestId(),
         ]
       );
       return true;
