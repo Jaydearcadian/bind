@@ -21,3 +21,9 @@ Bind settles in USDC on Arc behind a settlement adapter (ADR 0001), local and si
 - New states to model and show: funding pending, converting, on chain, settled, paid out, failed, refunded.
 - The ledger and reconciliation must carry both the fiat and the on-chain legs.
 - Agent-to-agent payments and escrow (ERC-8183, ADR 0001) remain later work.
+
+## Sequencing (agreed 2026-10-20)
+1. Finish the product first (app, sign-in, demo, a first accounting connector).
+2. Now and cheaply: a tamper-evident decision log inside Bind (each decision's hash includes the previous one, so any edit breaks the chain).
+3. When the first outside party needs to trust the record (auditor, counterparty, another business's agent): anchor those hashes on Arc.
+4. When a ramp provider is chosen and legal advice is in: fiat on and off ramps, one country and currency first, invoice payment kept as the default for suppliers who will not take stablecoins.

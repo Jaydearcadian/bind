@@ -17,3 +17,9 @@ Every commercial decision already gets a deterministic SHA-256 `decisionHash` ov
 - Who signs and pays for anchoring transactions (a Bind-operated key per environment, or per workspace).
 - How an owner, auditor or counterparty verifies a decision (a proof download and a public checker).
 - Legal and privacy review of what a hash of business data reveals.
+
+## Sequencing (agreed 2026-10-20)
+1. Finish the product first (app, sign-in, demo, a first accounting connector).
+2. Now and cheaply: a tamper-evident decision log inside Bind (each decision's hash includes the previous one, so any edit breaks the chain).
+3. When the first outside party needs to trust the record (auditor, counterparty, another business's agent): anchor those hashes on Arc.
+4. When a ramp provider is chosen and legal advice is in: fiat on and off ramps, one country and currency first, invoice payment kept as the default for suppliers who will not take stablecoins.
