@@ -1,10 +1,12 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
     globals: true,
     environment: "node",
     testTimeout: 15000,
+    // Agent worktrees live under .claude/worktrees and carry their own copy of the tests; never collect them here.
+    exclude: [...configDefaults.exclude, ".claude/**"],
     // Integration files share one PostgreSQL database and some change shared schema state
     // (tests/integration/three-way-match-migration.test.ts drops and recreates a unique index).
     // Running files one at a time keeps those tests from interfering with each other. See docs/decisions/0010.

@@ -34,6 +34,7 @@ export const OPERATIONS: { readonly [K in OperationId]: OperationRoute } = {
   "getFeedbackSummary": { method: "GET", path: "/api/workspaces/{id}/feedback/summary" },
   "getHealth": { method: "GET", path: "/health" },
   "getLedger": { method: "GET", path: "/api/workspaces/{id}/accounting/ledger" },
+  "getMe": { method: "GET", path: "/api/me" },
   "getMetrics": { method: "GET", path: "/metrics" },
   "getNeedsAttention": { method: "GET", path: "/api/workspaces/{id}/needs-attention" },
   "getOpenApi": { method: "GET", path: "/api/openapi.json" },

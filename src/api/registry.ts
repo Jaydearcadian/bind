@@ -40,6 +40,7 @@ import {
   InviteIssuedSchema,
   InviteRevokedSchema,
   InviteSummarySchema,
+  MeSchema,
   MemberRemovedSchema,
   MemberRoleBodySchema,
   MemberSchema,
@@ -267,6 +268,19 @@ export const ROUTES: RouteSpec[] = [
     tags: ["Workspaces"],
     summary: "The caller's own workspace (never another one).",
     responses: { 200: ok("The caller's workspace, as a one-item list.", list(WorkspaceRowSchema)) },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "getMe",
+    method: "get",
+    path: "/api/me",
+    access: "authenticated",
+    tags: ["Workspaces"],
+    summary: "Who the bearer token is: its workspace, role, label, credential kind and the pause switch. Never a secret.",
+    responses: {
+      200: ok("The caller's identity in its workspace. Sent with Cache-Control: no-store.", MeSchema),
+      404: err("The caller's workspace no longer exists. The same body a missing workspace gets elsewhere."),
+    },
     contractTested: true,
   }),
   withGenericErrors({

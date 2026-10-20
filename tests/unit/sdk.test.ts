@@ -351,3 +351,36 @@ describe("typed client: idempotency key", () => {
     expect(m.calls.length).toBe(1);
   });
 });
+
+describe("typed client: me() (ADR 0058)", () => {
+  const ME = {
+    workspaceId: WS,
+    workspaceName: "SDK Unit Kitchen",
+    role: "owner",
+    label: "founder",
+    credential: "workspace_token",
+    agentsPaused: false,
+  };
+
+  it("sends one GET to /api/me with the bearer token and returns the answer unchanged", async () => {
+    const mock = mockFetch(() => json(200, ME, { "cache-control": "no-store" }));
+    const client = new BindClient({ baseUrl: BASE, token: TOKEN, fetch: mock.fetch, sleep: recordingSleep().sleep });
+    expect(await client.me()).toEqual(ME);
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0].url).toBe(`${BASE}/api/me`);
+    expect(mock.calls[0].init.method).toBe("GET");
+    expect(mock.calls[0].init.headers?.authorization).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it("a 401 rejects with BindApiError, and the token is not in the error", async () => {
+    const mock = mockFetch(() => json(401, { error: "Authentication required" }));
+    const client = new BindClient({ baseUrl: BASE, token: TOKEN, fetch: mock.fetch, sleep: recordingSleep().sleep });
+    const failure = await client.me().then(
+      () => null,
+      (e: unknown) => e
+    );
+    expect(failure).toBeInstanceOf(BindApiError);
+    expect((failure as BindApiError).status).toBe(401);
+    expect(String((failure as Error).message)).not.toContain(TOKEN);
+  });
+});

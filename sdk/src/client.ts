@@ -266,6 +266,11 @@ export class BindClient {
     return this.call("getWorkspace", { params: { id } });
   }
 
+  /** Who the token is: its workspace, role, label, credential kind and the pause switch (ADR 0058). */
+  me(): Promise<SuccessOf<"getMe">> {
+    return this.call("getMe");
+  }
+
   listInventory(id: string): Promise<SuccessOf<"listInventory">> {
     return this.call("listInventory", { params: { id } });
   }
