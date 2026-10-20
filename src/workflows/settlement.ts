@@ -10,6 +10,7 @@ import { SettlementRejectedError } from "../adapters/settlement/errors.js";
 import { evaluateThreeWayMatch, MatchStatus } from "../accounting/three-way-match.js";
 import { recordIdempotentJournalEntry } from "../accounting/journal.js";
 import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
+import { effectiveSettlementMode } from "../demo/policy.js";
 import { newId } from "../utils/ids.js";
 import { log } from "../observability/logger.js";
 import { currentRequestId } from "../observability/request-context.js";
@@ -351,7 +352,8 @@ export class OrderSettlementService {
     if (!workspace) {
       throw new Error(`Workspace '${order.workspace_id}' not found.`);
     }
-    const adapter = this.settlementFor(workspace.settlement_mode);
+    // A demo settles locally whatever the row says (docs/decisions/0057).
+    const adapter = this.settlementFor(effectiveSettlementMode(workspace));
     const outcome = await this.confirmOnce(adapter, order.tx_hash);
 
     if (outcome.kind === "failed") {
@@ -665,7 +667,7 @@ export class OrderSettlementService {
     }
 
     // Execute Settlement payment. The match hash binds the transfer to this order, receipt and bill.
-    const settlementAdapter = this.settlementFor(workspace.settlement_mode);
+    const settlementAdapter = this.settlementFor(effectiveSettlementMode(workspace));
     const matchHash = keccak256(encodePacked(["string", "string", "string"], [order.id, receipt.receiptId, bill.billId]));
 
     // The transfer runs through the effects ledger, so a retry never sends it a second time for this order.

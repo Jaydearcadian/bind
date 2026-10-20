@@ -51,6 +51,30 @@
       "note": ""
     },
     {
+      "code": "DEMO_DISABLED",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "Demo workspaces are off on this server (BIND_DEMO_ENABLED, off in production by default). docs/decisions/0057."
+    },
+    {
+      "code": "NOT_A_DEMO",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "A reset was asked for a workspace that is not a demo. Nothing is changed. docs/decisions/0057."
+    },
+    {
+      "code": "DEMO_CAPACITY_REACHED",
+      "httpStatus": 503,
+      "category": "unavailable",
+      "retryable": true,
+      "existing": true,
+      "note": "The cap on active demo workspaces is reached. Try again later. docs/decisions/0057."
+    },
+    {
       "code": "RATE_LIMITED",
       "httpStatus": 429,
       "category": "rate_limited",

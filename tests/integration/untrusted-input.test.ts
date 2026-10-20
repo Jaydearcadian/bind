@@ -214,7 +214,13 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
       ];
       // Routes that ignore their body and succeed with one. Recovery is an owner action with no inputs, and the rotate
       // route is owner-only and changes the secret of wsA only (no other test signs for wsA).
-      const bodyIgnored = new Set(["POST /api/workspaces/:id/recover", "POST /api/workspaces/:id/webhook-secret/rotate", "POST /api/auth/sign-out"]);
+      // POST /api/demo creates a demo whatever its body says (docs/decisions/0057). Each demo it creates is recorded for cleanup.
+      const bodyIgnored = new Set([
+        "POST /api/workspaces/:id/recover",
+        "POST /api/workspaces/:id/webhook-secret/rotate",
+        "POST /api/auth/sign-out",
+        "POST /api/demo",
+      ]);
       const pathHostile = ["%00", "a".repeat(5000), "%27%20OR%201%3D1%20--", '%22quoted%22'];
 
       // A long-lived route (its registry 200 is text/event-stream, ADR 0035) gets no query variants here: a valid request
@@ -237,6 +243,7 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
               contentType: variant.contentType,
             });
             expectSafe(r, `${label} [${variant.name}]`);
+            if (route.path === "/api/demo" && r.status === 201) created.push(r.body.workspaceId);
             if (!bodyIgnored.has(label) && variant.name !== "text-plain") {
               expect(r.status, `${label} [${variant.name}] must be refused`).toBeGreaterThanOrEqual(400);
               expect(r.status, `${label} [${variant.name}] must be refused`).toBeLessThan(500);

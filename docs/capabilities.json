@@ -2,13 +2,13 @@
   "version": 1,
   "source": "docs/openapi.json + docs/ecosystem/exposure.json + sdk/src/client.ts + mcp/src/tools.ts. Generated: do not edit by hand.",
   "counts": {
-    "operations": 81,
+    "operations": 83,
     "mcpTools": 17,
-    "exposure:public_api": 71,
+    "exposure:public_api": 73,
     "exposure:internal_service": 6,
     "exposure:protocol_primitive": 4,
     "effect:owner_decision": 10,
-    "effect:owner_configuration": 13,
+    "effect:owner_configuration": 15,
     "effect:commercial_commitment": 4,
     "effect:operational": 3,
     "effect:credential": 10,
@@ -281,6 +281,33 @@
         "api": true,
         "sdk": "convenience",
         "mcp": "create_customer_order"
+      }
+    },
+    {
+      "id": "createDemo",
+      "method": "POST",
+      "route": "/api/demo",
+      "summary": "Create a throwaway demo workspace: four hours, simulated only, with one real pending approval. Returns its owner token once.",
+      "tag": "Demo",
+      "authorization": "public",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [
+        "unauthenticated",
+        "returns_secret_once:token"
+      ],
+      "note": "Creates a throwaway demo workspace for four hours. Simulated only. Limited per address and in total. The owner token is shown once. docs/decisions/0057.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
       }
     },
     {
@@ -1577,6 +1604,32 @@
         "api": true,
         "sdk": "convenience",
         "mcp": "request_replenishment"
+      }
+    },
+    {
+      "id": "resetDemo",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/demo/reset",
+      "summary": "Reset a demo: delete it and its data, and return a fresh demo with new credentials. The old token stops working.",
+      "tag": "Demo",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [
+        "returns_secret_once:token"
+      ],
+      "note": "Deletes this demo workspace and its data. A demo is a throwaway sandbox, so no real data is lost, and no idempotency key is taken: the answer cannot be replayed once the workspace is gone. Returns a new demo with a new token. Refused for a workspace that is not a demo. docs/decisions/0057.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
       }
     },
     {

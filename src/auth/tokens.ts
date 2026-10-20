@@ -134,9 +134,12 @@ export async function issueToken(
 export async function resolveToken(raw: string): Promise<Actor | null> {
   if (isSessionToken(raw)) return resolveSession(raw);
   if (!isWellFormedToken(raw)) return null;
+  // An expired demo workspace (docs/decisions/0057) resolves to nothing, the same as an unknown token. The worker deletes it later.
   const res = await query(
-    `SELECT id, workspace_id, role, label FROM workspace_tokens
-     WHERE token_hash = $1 AND revoked_at IS NULL;`,
+    `SELECT t.id, t.workspace_id, t.role, t.label FROM workspace_tokens t
+     JOIN workspaces w ON w.id = t.workspace_id
+     WHERE t.token_hash = $1 AND t.revoked_at IS NULL
+       AND (NOT w.is_demo OR w.demo_expires_at > NOW());`,
     [hashToken(raw)]
   );
   const row = res.rows[0];

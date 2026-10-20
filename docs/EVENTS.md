@@ -134,6 +134,7 @@ from the plan.
 | `auth.webhook_secret_viewed`, `auth.webhook_secret_rotated` | the webhook secret is read or rotated | `src/studio/workspaceControls.ts` |
 | `workspace.agents_paused_changed` | the agents are paused or resumed | `src/studio/workspaceControls.ts` |
 | `workspace.onboard_configured` | a workspace is onboarded | `src/studio/onboarding.ts` |
+| `demo.created` | a demo workspace is created, or reset into a new one | `src/demo/service.ts` |
 | `agent_role.configure` | an agent role is set up | `src/studio/onboarding.ts` |
 | `connector.credential_set`, `connector.credential_revoked`, `connector.credential_verified`, `connector.credential_verification_failed`, `connector.credential_rotated` | a connector credential changes or is verified | `src/credentials/store.ts` |
 | `kitchen_capacity.set` | kitchen capacity is set | `src/workflows/fulfilment.ts` |

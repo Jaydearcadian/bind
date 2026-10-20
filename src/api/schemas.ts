@@ -246,6 +246,9 @@ export const WorkspaceRowSchema = z
     updated_at: IsoDateTime,
     agents_paused: z.boolean(),
     webhook_secret_version: z.number().int(),
+    // Demo workspaces (docs/decisions/0057). A real workspace has is_demo false and no expiry.
+    is_demo: z.boolean().optional(),
+    demo_expires_at: IsoDateTime.nullable().optional(),
   })
   .passthrough();
 
@@ -860,6 +863,18 @@ export const AgentsListSchema = z
     forbiddenCapabilities: z.array(z.string()),
   })
   .passthrough();
+
+/**
+ * POST /api/demo and POST /api/workspaces/:id/demo/reset (docs/decisions/0057). The token is the demo's owner token, shown once.
+ * The expiry is an ISO time about four hours after the answer.
+ */
+export const DemoCreatedSchema = z
+  .object({
+    workspaceId: z.string(),
+    token: z.string(),
+    expiresAt: IsoDateTime,
+  })
+  .strict();
 
 export const WorkspaceCreateResultSchema = z
   .object({

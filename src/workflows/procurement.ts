@@ -23,6 +23,8 @@ import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import type { SettlementAdapter } from "../adapters/settlement/types.js";
 import { generateIdempotencyKey } from "../utils/idempotency.js";
 import { resolveTemplateDir } from "../agents/bindTemplateAgent.js";
+import { assertDemoAdapterSimulated, DemoSafetyError, effectiveSettlementMode } from "../demo/policy.js";
+import { isDemoWorkspace } from "../demo/status.js";
 import { newId } from "../utils/ids.js";
 import { createReplenishmentTools } from "../agents/replenishmentTools.js";
 import { OrderSettlementService, SettlementOrderError } from "./settlement.js";
@@ -228,6 +230,15 @@ export class ProcurementWorkflowRunner {
         supplierId,
       });
     } catch (err) {
+      if (err instanceof DemoSafetyError) {
+        // A demo refuses a non-simulated supplier before contacting it. The workflow ends with the reason, and no quote is stored.
+        await this.workflowEngine.transition(workflowId, {
+          fromState: WorkflowState.REQUEST_SENT,
+          toState: WorkflowState.FAILED,
+          errorMessage: err.message,
+        });
+        return { workflowId, state: WorkflowState.FAILED };
+      }
       if (!(err instanceof SupplierResponseInvalidError)) throw err;
       // The supplier's answer was refused. The workflow fails with the code only: no quote is stored and no approval follows.
       await this.workflowEngine.transition(workflowId, {
@@ -263,7 +274,7 @@ export class ProcurementWorkflowRunner {
     const tools = createReplenishmentTools({ workspaceId, workflowId });
     const templateDir = resolveTemplateDir(ws?.template_id || "kitchen-ops");
 
-    if (ws?.settlement_mode === "arc-testnet") {
+    if (effectiveSettlementMode(ws ?? {}) === "arc-testnet") {
       // In live Arc Testnet mode, require NEBIUS_API_KEY. Spec Invariant 10 prohibits silent downgrade.
       if (!process.env.NEBIUS_API_KEY) {
         const errorMsg =
@@ -512,6 +523,8 @@ export class ProcurementWorkflowRunner {
     rfqId: string;
   }): Promise<QuoteResponse> {
     const supplierAdapter = this.supplierFor(input.supplierId);
+    // A demo asks only simulated suppliers (docs/decisions/0057). Refused before any effect is started.
+    assertDemoAdapterSimulated({ isDemo: await isDemoWorkspace(input.workspaceId), adapter: supplierAdapter });
     const quoteRequest: QuoteRequest = {
       workspaceId: input.workspaceId,
       sku: input.sku,
@@ -625,6 +638,7 @@ export class ProcurementWorkflowRunner {
 
     if (!order.supplier_id) throw new Error(`Order '${orderId}' has no supplier on record.`);
     const supplierAdapter = this.supplierFor(order.supplier_id);
+    assertDemoAdapterSimulated({ isDemo: await isDemoWorkspace(workspaceId), adapter: supplierAdapter });
     const request: OrderRequest = {
       workspaceId,
       orderId,
@@ -830,6 +844,7 @@ export class ProcurementWorkflowRunner {
 
   private async storedOrGeneratedEvidence(order: any): Promise<ReceiptAndBill> {
     const supplierAdapter = this.supplierFor(order.supplier_id);
+    assertDemoAdapterSimulated({ isDemo: await isDemoWorkspace(String(order.workspace_id)), adapter: supplierAdapter });
 
     // Delivery receipt: reuse the stored one when a previous attempt already ingested it.
     const storedReceipt = await query(

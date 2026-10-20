@@ -1583,6 +1583,98 @@
         "x-bind-access": "authenticated"
       }
     },
+    "/api/demo": {
+      "post": {
+        "description": "Access: public. No token is needed.",
+        "operationId": "createDemo",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "token",
+                    "expiresAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created. The owner token is in the body and is shown only here. Never cached."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Demo workspaces are off on this server (code DEMO_DISABLED). They are off in production unless BIND_DEMO_ENABLED=true."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or demo creation is busy. Retry later."
+          }
+        },
+        "security": [],
+        "summary": "Create a throwaway demo workspace: four hours, simulated only, with one real pending approval. Returns its owner token once.",
+        "tags": [
+          "Demo"
+        ],
+        "x-bind-access": "public"
+      }
+    },
     "/api/openapi.json": {
       "get": {
         "description": "Access: public. No token is needed.",
@@ -2996,8 +3088,16 @@
                         "format": "date-time",
                         "type": "string"
                       },
+                      "demo_expires_at": {
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
                       "id": {
                         "type": "string"
+                      },
+                      "is_demo": {
+                        "type": "boolean"
                       },
                       "name": {
                         "type": "string"
@@ -3753,8 +3853,16 @@
                           "format": "date-time",
                           "type": "string"
                         },
+                        "demo_expires_at": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "id": {
                           "type": "string"
+                        },
+                        "is_demo": {
+                          "type": "boolean"
                         },
                         "name": {
                           "type": "string"
@@ -8093,6 +8201,142 @@
           "Customer orders"
         ],
         "x-bind-access": "member"
+      }
+    },
+    "/api/workspaces/{id}/demo/reset": {
+      "post": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "resetDemo",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "token",
+                    "expiresAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Created. The new owner token is in the body and is shown only here. Never cached."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Owner role required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Demo workspaces are off on this server (code DEMO_DISABLED)."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "This workspace is not a demo (code NOT_A_DEMO). Nothing is changed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or the reset is busy. Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Reset a demo: delete it and its data, and return a fresh demo with new credentials. The old token stops working.",
+        "tags": [
+          "Demo"
+        ],
+        "x-bind-access": "owner"
       }
     },
     "/api/workspaces/{id}/documents": {
@@ -14047,8 +14291,16 @@
                           "format": "date-time",
                           "type": "string"
                         },
+                        "demo_expires_at": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "id": {
                           "type": "string"
+                        },
+                        "is_demo": {
+                          "type": "boolean"
                         },
                         "name": {
                           "type": "string"

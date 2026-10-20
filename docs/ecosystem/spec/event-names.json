@@ -434,6 +434,13 @@
       "object": "invite",
       "visibility": "owner",
       "renamed": true
+    },
+    {
+      "type": "demo.created",
+      "name": "demo.created",
+      "object": "workspace",
+      "visibility": "member",
+      "renamed": false
     }
   ]
 }

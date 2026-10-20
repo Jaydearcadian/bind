@@ -26,6 +26,9 @@ import {
 } from "../accounts/service.js";
 import { authenticated, workspaceMember, workspaceOwner, anyWorkspaceOwner } from "../auth/middleware.js";
 import { provisionWorkspace, listTemplates } from "../templates/registry.js";
+import { createDemoWorkspace, resetDemoWorkspace, DemoError, type DemoCredentials } from "../demo/service.js";
+import { DEFAULT_DEMO_MAX_ACTIVE, demoEnabled, effectiveSettlementMode } from "../demo/policy.js";
+import { isDemoWorkspace } from "../demo/status.js";
 import { AgentsPausedError, ProcurementWorkflowRunner } from "../workflows/procurement.js";
 import { ApprovalDecisionError } from "../workflows/engine.js";
 import {
@@ -343,6 +346,29 @@ export interface CreateAppOptions {
    * from PRIVY_APP_ID and PRIVY_VERIFICATION_KEY, or none when they are unset. Tests pass a verifier keyed with a generated key.
    */
   accounts?: { verifier?: PrivyVerifier | null; sessionMinutes?: number };
+  /**
+   * Demo workspaces (docs/decisions/0057). `enabled` decides when given. Omitted, BIND_DEMO_ENABLED decides, and the feature is on
+   * outside production. `maxActive` caps the demos that are active at once. Omitted, BIND_DEMO_MAX_ACTIVE, else 200.
+   */
+  demo?: { enabled?: boolean; maxActive?: number };
+}
+
+/** The body of a created or reset demo. The token is in it once; the answer is never cached (docs/decisions/0057). */
+function demoBody(created: DemoCredentials) {
+  return { workspaceId: created.workspaceId, token: created.token, expiresAt: created.expiresAt.toISOString() };
+}
+
+function sendDemoDisabled(res: Response) {
+  return res.status(404).json({ error: "Demo workspaces are not available on this server.", code: "DEMO_DISABLED" });
+}
+
+/** Maps a demo failure to its status. Any other failure gets a generic body; the cause is logged by the error handler. */
+function sendDemoError(res: Response, err: unknown) {
+  if (err instanceof DemoError) {
+    if (err.code === "NOT_A_DEMO") return res.status(409).json({ error: err.message, code: err.code });
+    return res.status(503).json({ error: err.message, code: err.code });
+  }
+  return res.status(500).json({ error: "Demo operation failed" });
 }
 
 const WEBHOOK_UNAUTHORIZED = { error: "Invalid signature or expired timestamp" };
@@ -384,6 +410,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     app.use(rateLimitGate(scopes));
   }
   const eventSettings = resolveEventsOptions(options.events);
+  // Demo workspaces (docs/decisions/0057): on outside production unless BIND_DEMO_ENABLED says otherwise.
+  const demoConfig = {
+    enabled: options.demo?.enabled ?? demoEnabled({ nodeEnv: config.NODE_ENV, flag: config.BIND_DEMO_ENABLED }),
+    maxActive: options.demo?.maxActive ?? config.BIND_DEMO_MAX_ACTIVE ?? DEFAULT_DEMO_MAX_ACTIVE,
+  };
   const procurementRunner = new ProcurementWorkflowRunner();
   const recoveryRunner = new WorkflowCrashRecoveryRunner();
   const corsOrigins = options.corsOrigins ?? parseCorsOrigins(config.BIND_CORS_ORIGINS);
@@ -564,6 +595,32 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     }
   });
 
+  // Demo workspaces (docs/decisions/0057). Public: a visitor gets a throwaway owner token, shown once, for four hours. The
+  // workspace is the kitchen template, simulated only, and seeded through the real replenishment runner.
+  app.post("/api/demo", async (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!demoConfig.enabled) return sendDemoDisabled(res);
+    try {
+      const created = await createDemoWorkspace({ maxActive: demoConfig.maxActive });
+      res.status(201).json(demoBody(created));
+    } catch (err) {
+      sendDemoError(res, err);
+    }
+  });
+
+  // Owner of a demo: deletes it and returns a fresh one with new credentials. The old token stops working. A workspace that
+  // is not a demo is refused with 409 and not touched.
+  app.post("/api/workspaces/:id/demo/reset", ...workspaceOwner, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!demoConfig.enabled) return sendDemoDisabled(res);
+    try {
+      const created = await resetDemoWorkspace(req.params.id, { maxActive: demoConfig.maxActive });
+      res.status(201).json(demoBody(created));
+    } catch (err) {
+      sendDemoError(res, err);
+    }
+  });
+
   app.get("/api/workspaces/:id", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const wsRes = await query("SELECT * FROM workspaces WHERE id = $1;", [id]);
@@ -571,7 +628,8 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       return res.status(404).json({ error: "Workspace not found" });
     }
     const rolesRes = await query("SELECT * FROM agent_roles WHERE workspace_id = $1 ORDER BY created_at ASC;", [id]);
-    const settlementAdapter = getSettlementAdapter(wsRes.rows[0].settlement_mode);
+    // A demo always reads the local settlement adapter (docs/decisions/0057).
+    const settlementAdapter = getSettlementAdapter(effectiveSettlementMode(wsRes.rows[0]) as "local" | "arc-testnet");
     const balance = await settlementAdapter.getBalance(wsRes.rows[0].settlement_address || "");
 
     res.json({
@@ -1119,6 +1177,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     const { id } = req.params;
     try {
       const supp = InitialSupplierSchema.parse(req.body);
+      // A demo workspace takes only simulated suppliers with no endpoint (docs/decisions/0057).
+      if ((!supp.isSimulated || supp.endpointUrl) && (await isDemoWorkspace(id))) {
+        res.status(400).json({ error: "Demo workspaces use simulated suppliers only.", code: "INVALID_INPUT" });
+        return;
+      }
       const fullSuppId = supp.id.startsWith(`${id}_`) ? supp.id : `${id}_${supp.id}`;
       // Optional payee address. When sent it must be a valid EVM address, stored checksummed.
       // Omitted: a simulated supplier gets its simulated address, a real one stays without an address.

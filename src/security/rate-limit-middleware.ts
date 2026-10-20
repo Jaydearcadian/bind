@@ -24,6 +24,8 @@ const MONITORING_PATH = /^\/(health|ready)\/?$/i;
 const WEBHOOK_PATH = /^\/api\/webhooks\/incoming\/?$/i;
 /** The two public creation routes share one scope. Express matches paths case-insensitively with an optional slash. */
 const CREATE_PATHS = [/^\/api\/workspaces\/onboard\/?$/i, /^\/api\/workspaces\/?$/i];
+/** Creating a demo and resetting one share a per-address scope (docs/decisions/0057). Each counts every attempt. */
+const DEMO_PATHS = [/^\/api\/demo\/?$/i, /^\/api\/workspaces\/[^/]+\/demo\/reset\/?$/i];
 
 /** The first 12 hex characters of the SHA-256 of a client address. The address itself is never logged. */
 export function ipHashOf(ip: string): string {
@@ -56,6 +58,7 @@ export function rateLimitGate(scopes: RateLimitScopes): RequestHandler {
     const ip = clientIp(req);
     const isWebhook = req.method === "POST" && WEBHOOK_PATH.test(req.path);
     const isCreate = req.method === "POST" && CREATE_PATHS.some((pattern) => pattern.test(req.path));
+    const isDemo = req.method === "POST" && DEMO_PATHS.some((pattern) => pattern.test(req.path));
 
     res.on("finish", () => {
       if (res.statusCode !== 401) return;
@@ -76,6 +79,11 @@ export function rateLimitGate(scopes: RateLimitScopes): RequestHandler {
     if (isCreate) {
       const created = scopes.workspaceCreate.hit(ip);
       if (!created.allowed) return refuse(req, res, "workspaceCreate", created.retryAfterSeconds);
+    }
+
+    if (isDemo) {
+      const demo = scopes.demoCreate.hit(ip);
+      if (!demo.allowed) return refuse(req, res, "demoCreate", demo.retryAfterSeconds);
     }
 
     next();

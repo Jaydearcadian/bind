@@ -10,6 +10,7 @@ export const EVENT_CATALOGUE: Readonly<Record<string, { name: string; object: st
   "auth.webhook_secret_rotated": { name: "webhook_secret.rotated", object: "webhook_secret" },
   "workspace.agents_paused_changed": { name: "workspace.agents_pause_changed", object: "workspace" },
   "workspace.onboard_configured": { name: "workspace.onboarded", object: "workspace" },
+  "demo.created": { name: "demo.created", object: "workspace" },
   "agent_role.configure": { name: "agent_role.configured", object: "agent_role" },
   "connector.credential_set": { name: "connector.credential_set", object: "connector" },
   "connector.credential_revoked": { name: "connector.credential_revoked", object: "connector" },

@@ -156,6 +156,7 @@ export const RATE_LIMIT_SCOPES = [
   "webhookCalls",
   "webhookBadSignatures",
   "workspaceCreate",
+  "demoCreate",
   "apiPerToken",
 ] as const;
 export type RateLimitScope = (typeof RATE_LIMIT_SCOPES)[number];
@@ -176,6 +177,8 @@ export const DEFAULT_RATE_LIMIT_RULES: Record<RateLimitScope, RateLimitRule> = {
   webhookBadSignatures: { windowMs: MINUTE_MS, max: 10 },
   // Per client address: attempts at the two public creation routes, successful or not.
   workspaceCreate: { windowMs: 60 * MINUTE_MS, max: 5 },
+  // Per client address: attempts to create a demo workspace (POST /api/demo) or reset one (docs/decisions/0057). Shared by both.
+  demoCreate: { windowMs: 60 * MINUTE_MS, max: 5 },
   // Per token id: authenticated requests. Applied after authentication succeeds.
   apiPerToken: { windowMs: MINUTE_MS, max: 600 },
 };
