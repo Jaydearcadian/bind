@@ -56,6 +56,7 @@ the owner resumes, the next count below par, or a manual replenishment, starts o
 - **Owner administration**: the pause toggle itself (so the owner can resume), token issue and revoke, spending policy,
   suppliers, agent roles, surface bindings, the webhook secret view and rotation.
 - **Rejecting or revoking an approval**: it commits nothing.
+- **An owner accepting a held customer order** (`acceptHeldOrder`): a human decision that moves no money through the commitment gate (ADR 0026). Any restock it triggers is still refused while paused (ADR 0027).
 
 ### Audit actors
 - Document extraction: `actor_type` is the token's role (`owner` or `staff`), `actor_id` is the token label. Evidence is

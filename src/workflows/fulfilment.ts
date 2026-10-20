@@ -5,6 +5,13 @@ import { EffectClass } from "../policy/effect-classifier.js";
 import { PolicyEngine } from "../policy/engine.js";
 import { PolicyDecision } from "../policy/types.js";
 import { newId } from "../utils/ids.js";
+import { acquireAdvisoryLock, type AdvisoryLock } from "../db/advisory-lock.js";
+import { boundedErrorMessage } from "../effects/ledger.js";
+import { sendOwnerNotification, type OwnerNoticeKind } from "../notifications/dispatch.js";
+import { customerOrderLink } from "../notifications/links.js";
+import { resolveOwnerRecipient } from "../notifications/recipients.js";
+import { WorkflowEngine } from "../workflows/engine.js";
+import { ProcurementWorkflowRunner } from "./procurement.js";
 import {
   decidePromise,
   type PromiseDecision,
@@ -141,6 +148,12 @@ const MAX_SKU_CHARACTERS = 120;
 const MAX_SLOTS_PER_REQUEST = 200;
 const MAX_CAPACITY_UNITS = 1_000_000;
 const LIST_LIMIT = 100;
+/** The restock trigger waits this long for another trigger on the same sku before it reports itself busy. */
+const RESTOCK_LOCK_WAIT_MS = 5_000;
+/** The trigger source recorded on a replenishment started from a customer order. */
+const RESTOCK_TRIGGER_SOURCE = "customer_order";
+/** startReplenishment refuses a paused workspace with a message that starts with this tag (ADR 0023). */
+const PAUSED_MESSAGE_PREFIX = "[AGENTS_PAUSED]";
 
 function invalid(message: string): never {
   throw new FulfilmentError("INVALID_INPUT", message);
@@ -439,7 +452,7 @@ export async function acceptCustomerOrder(
   const hash = identityHash(lines, requestedFor);
   const decidedBy = actor.kind === "agent" ? `agent:${actor.roleName}` : `owner:${actor.label}`;
 
-  return withTransaction(async (client) => {
+  const result = await withTransaction(async (client) => {
     const orderId = newId("cord");
     // The row is inserted first. A concurrent attempt with the same externalRef waits here until this one commits.
     const inserted = await client.query(
@@ -487,6 +500,9 @@ export async function acceptCustomerOrder(
       replayed: false,
     };
   });
+  // After the commit, never inside it (ADR 0027). A replay made no decision, so it notifies and restocks nothing.
+  if (!result.replayed) await afterNewDecision(workspaceId, result, lines);
+  return result;
 }
 
 /**
@@ -500,29 +516,224 @@ export async function acceptHeldOrder(
   now: Date = new Date()
 ): Promise<AcceptResult> {
   if (typeof ownerLabel !== "string" || ownerLabel.trim().length === 0) invalid("owner label is required.");
-  return withTransaction(async (client) => {
+  const { result, lines } = await withTransaction(async (client) => {
     const order = await lockOrder(client, workspaceId, orderId);
     if (order.status !== "needs_owner") throw new FulfilmentError("NOT_HELD");
-    const lines = (await loadLines(client, [orderId])).get(orderId) ?? [];
+    const heldLines = (await loadLines(client, [orderId])).get(orderId) ?? [];
     const requestedFor: Date | undefined = order.requested_for ?? undefined;
 
-    const decision = await decideLocked(client, workspaceId, lines, requestedFor, now, { kind: "owner", label: ownerLabel });
+    const decision = await decideLocked(client, workspaceId, heldLines, requestedFor, now, { kind: "owner", label: ownerLabel });
     await recordDecision(client, {
       workspaceId,
       orderId,
       decision,
       decidedBy: `owner:${ownerLabel}`,
       actorType: "owner",
-      lines,
+      lines: heldLines,
     });
-    return {
+    const decided: AcceptResult = {
       orderId,
       status: decision.status,
       ...(decision.promisedFor ? { promisedFor: decision.promisedFor } : {}),
       reasons: decision.reasons,
       replayed: false,
     };
+    return { result: decided, lines: heldLines };
   });
+  // A new decision, so the same after-commit steps as acceptCustomerOrder (ADR 0027).
+  await afterNewDecision(workspaceId, result, lines);
+  return result;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// After a new decision (Task 8b, ADR 0027). Everything here runs after the decision has committed. Nothing here can fail
+// the order or change it: each step catches its own errors and writes an audit row for them.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** The order decisions that tell the owner something. An accepted order sends nothing. */
+type OrderNoticeKind = Exclude<OwnerNoticeKind, "approval">;
+
+const NOTICE_KIND_BY_STATUS: Partial<Record<CustomerOrderStatus, OrderNoticeKind>> = {
+  needs_owner: "order_held",
+  declined: "order_declined",
+  partially_available: "order_partially_available",
+};
+
+const NOTICE_TITLE: Record<OrderNoticeKind, string> = {
+  order_held: "Bind: customer order needs your attention",
+  order_declined: "Bind: customer order declined",
+  order_partially_available: "Bind: customer order partly available",
+};
+
+/**
+ * A sku is named in the notice only when it is short and plain. The customer chose the sku, so any other text is
+ * withheld (ADR 0027).
+ */
+const SHOWN_SKU = /^[A-Za-z0-9._-]{1,40}$/;
+
+/**
+ * The notice text is built only from the order id, the status and the reason codes (and skus named in reasons). It never
+ * holds the customer's note or the externalRef, which are customer-controlled.
+ */
+function noticeMessage(orderId: string, status: CustomerOrderStatus, reasons: PromiseReasonRef[]): string {
+  const parts = reasons.map((reason) => {
+    if (reason.sku === undefined) return reason.code;
+    return SHOWN_SKU.test(reason.sku) ? `${reason.code} (${reason.sku})` : `${reason.code} (sku withheld)`;
+  });
+  return `Order ${orderId} status: ${status}. Reasons: ${parts.length > 0 ? parts.join(", ") : "none"}.`;
+}
+
+const systemEngine = new WorkflowEngine();
+
+/** Writes a system audit row. A failure to write it is swallowed: the caller has already done its work. */
+async function recordSystemAudit(
+  workspaceId: string,
+  actorId: string,
+  action: string,
+  effectClass: EffectClass,
+  decision: PolicyDecision,
+  evidence: Record<string, unknown>
+): Promise<void> {
+  await systemEngine
+    .recordAudit(workspaceId, null, "system", actorId, effectClass, action, decision, evidence)
+    .catch(() => undefined);
+}
+
+/**
+ * Tells the owner that an order was held, declined or only partly covered. The recipient is the owner's own binding
+ * (ADR 0025). With no binding nothing is sent and the skip is audited. A send error is audited as notification.failed.
+ */
+async function notifyOwnerOfDecision(
+  workspaceId: string,
+  orderId: string,
+  status: CustomerOrderStatus,
+  reasons: PromiseReasonRef[]
+): Promise<void> {
+  const kind = NOTICE_KIND_BY_STATUS[status];
+  if (!kind) return;
+  try {
+    const owner = await resolveOwnerRecipient(workspaceId);
+    if (!owner) {
+      await recordSystemAudit(
+        workspaceId,
+        "system:notifications",
+        "notification.skipped_no_recipient",
+        EffectClass.EXTERNAL_REQUEST,
+        PolicyDecision.ALLOW,
+        { orderId, status }
+      );
+      return;
+    }
+    await sendOwnerNotification({
+      workspaceId,
+      kind,
+      refId: orderId,
+      payload: {
+        workspaceId,
+        channel: owner.channel,
+        recipient: owner.recipient,
+        title: NOTICE_TITLE[kind],
+        message: noticeMessage(orderId, status, reasons),
+        actionUrl: customerOrderLink(orderId),
+      },
+    });
+  } catch (err) {
+    await recordSystemAudit(
+      workspaceId,
+      "system:notifications",
+      "notification.failed",
+      EffectClass.EXTERNAL_REQUEST,
+      PolicyDecision.ALLOW,
+      { orderId, error: boundedErrorMessage(err) }
+    );
+  }
+}
+
+/** The on-hand quantity less active reservations, and the par level, for one sku of the workspace. */
+async function availableLevel(workspaceId: string, sku: string): Promise<{ available: number; par: number } | null> {
+  const res = await query(
+    `SELECT i.current_quantity::float8 AS on_hand, i.par_level::float8 AS par,
+            COALESCE((SELECT SUM(r.quantity) FROM stock_reservations r
+                      WHERE r.workspace_id = i.workspace_id AND r.sku = i.sku AND r.status = 'active'), 0)::float8 AS reserved
+     FROM inventory_items i WHERE i.workspace_id = $1 AND i.sku = $2;`,
+    [workspaceId, sku]
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  return { available: Number(row.on_hand) - Number(row.reserved), par: Number(row.par) };
+}
+
+/**
+ * Starts a replenishment for one sku when its available quantity is below par. Serialised per sku by an advisory lock, so
+ * concurrent accepted orders read the level in turn, and the active-workflow check then returns the workflow the first
+ * one started. The replenishment goes through the existing workflow, gate and approvals (ADR 0027).
+ */
+async function restockIfLow(workspaceId: string, orderId: string, sku: string): Promise<void> {
+  let lock: AdvisoryLock | null;
+  try {
+    lock = await acquireAdvisoryLock(`restock:${workspaceId}:${sku}`, RESTOCK_LOCK_WAIT_MS);
+  } catch (err) {
+    await recordSystemAudit(workspaceId, "system:restock", "replenishment.trigger_failed", EffectClass.READ, PolicyDecision.ALLOW, {
+      orderId,
+      sku,
+      error: boundedErrorMessage(err),
+    });
+    return;
+  }
+  if (!lock) {
+    await recordSystemAudit(workspaceId, "system:restock", "replenishment.trigger_skipped", EffectClass.READ, PolicyDecision.ALLOW, {
+      orderId,
+      sku,
+      reason: "LOCK_BUSY",
+    });
+    return;
+  }
+  try {
+    const level = await availableLevel(workspaceId, sku);
+    if (!level || level.available >= level.par) return;
+    await new ProcurementWorkflowRunner().startReplenishment(workspaceId, sku, RESTOCK_TRIGGER_SOURCE, {
+      availableQuantity: level.available,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.startsWith(PAUSED_MESSAGE_PREFIX)) {
+      // A pause refuses the restock. It is a policy refusal, so it is recorded as a denial (ADR 0023).
+      await recordSystemAudit(workspaceId, "system:restock", "replenishment.trigger_skipped", EffectClass.READ, PolicyDecision.DENY, {
+        orderId,
+        sku,
+        reason: "AGENTS_PAUSED",
+      });
+    } else {
+      await recordSystemAudit(workspaceId, "system:restock", "replenishment.trigger_failed", EffectClass.READ, PolicyDecision.ALLOW, {
+        orderId,
+        sku,
+        error: boundedErrorMessage(err),
+      });
+    }
+  } finally {
+    await lock.release();
+  }
+}
+
+/** After an accepted order: each sku of the order is checked, and a restock starts when it is below par (ADR 0027). */
+async function triggerRestockAfterAcceptance(workspaceId: string, orderId: string, lines: CustomerOrderLine[]): Promise<void> {
+  const skus = [...new Set(lines.map((line) => line.sku))].sort(compareSku);
+  for (const sku of skus) {
+    // Per sku, so one failing sku does not stop the others. restockIfLow audits its own errors.
+    await restockIfLow(workspaceId, orderId, sku).catch(() => undefined);
+  }
+}
+
+/** Runs the notice and the restock trigger for a decision that was just made. Neither can fail the order. */
+async function afterNewDecision(
+  workspaceId: string,
+  decision: AcceptResult,
+  lines: CustomerOrderLine[]
+): Promise<void> {
+  await notifyOwnerOfDecision(workspaceId, decision.orderId, decision.status, decision.reasons).catch(() => undefined);
+  if (decision.status === "accepted") {
+    await triggerRestockAfterAcceptance(workspaceId, decision.orderId, lines).catch(() => undefined);
+  }
 }
 
 /**

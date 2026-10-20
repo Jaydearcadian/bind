@@ -78,7 +78,8 @@ export class ProcurementWorkflowRunner {
   async startReplenishment(
     workspaceId: string,
     sku: string,
-    triggerSource: string = "inventory_monitor"
+    triggerSource: string = "inventory_monitor",
+    opts?: { availableQuantity?: number }
   ): Promise<{ workflowId: string; state: WorkflowState; orderId?: string; approvalId?: string }> {
     // 0a. The owner's pause switch (ADR 0022). A paused workspace starts no workflow and asks no supplier for a quote.
     const pauseRes = await query(`SELECT agents_paused FROM workspaces WHERE id = $1;`, [workspaceId]);
@@ -117,8 +118,10 @@ export class ProcurementWorkflowRunner {
     }
     const item = itemRes.rows[0];
 
-    // 2. Check if replenishment is needed
-    const currentQty = Number(item.current_quantity);
+    // 2. Check if replenishment is needed. A caller that knows stock is committed to customer orders passes the
+    // available quantity (on hand minus active reservations, ADR 0027). It then replaces on-hand stock in the test,
+    // in the recorded quantity and in the idempotency key. Without it the on-hand quantity is used, as before.
+    const currentQty = opts?.availableQuantity ?? Number(item.current_quantity);
     const parLevel = Number(item.par_level);
     const reorderQty = Number(item.reorder_quantity);
 
