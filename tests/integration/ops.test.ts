@@ -149,7 +149,7 @@ describe("Operations: request ids, request log, readiness and metrics", () => {
 
       const malformed = await send("POST", "/api/workspaces/onboard", { body: "{not json" });
       expect(malformed.status).toBe(400);
-      expect(malformed.body).toEqual({ error: "Malformed JSON body", code: "MALFORMED_JSON" });
+      expect(malformed.body).toMatchObject({ error: "Malformed JSON body", code: "MALFORMED_JSON" });
       expect(malformed.headers.get("x-request-id")).toMatch(UUID);
 
       const tooLarge = await send("POST", "/api/workspaces/onboard", {
@@ -161,7 +161,7 @@ describe("Operations: request ids, request log, readiness and metrics", () => {
       fault.next = { match: /FROM suppliers/, error: Object.assign(new Error('relation "suppliers" failed'), { code: "42P01" }) };
       const failed = await send("GET", `/api/workspaces/${wsId}/suppliers`, { token: owner.token });
       expect(failed.status).toBe(500);
-      expect(failed.body).toEqual({ error: "Internal error" });
+      expect(failed.body).toMatchObject({ error: "Internal error" });
       expect(failed.headers.get("x-request-id")).toMatch(UUID);
     });
 
@@ -238,7 +238,7 @@ describe("Operations: request ids, request log, readiness and metrics", () => {
         headers: { "x-request-id": id },
       });
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({ error: "Internal error" });
+      expect(res.body).toMatchObject({ error: "Internal error" });
 
       const errorLine = entries().find((e) => e.level === "error" && e.requestId === id);
       expect(errorLine, "no error line for the request").toBeDefined();
@@ -327,15 +327,15 @@ describe("Operations: request ids, request log, readiness and metrics", () => {
     it("metrics needs the metrics token and refuses a workspace token", async () => {
       const none = await send("GET", "/metrics");
       expect(none.status).toBe(401);
-      expect(none.body).toEqual({ error: "Authentication required" });
+      expect(none.body).toMatchObject({ error: "Authentication required" });
 
       const wrong = await send("GET", "/metrics", { token: `${METRICS_TOKEN}x` });
       expect(wrong.status).toBe(401);
-      expect(wrong.body).toEqual({ error: "Authentication required" });
+      expect(wrong.body).toMatchObject({ error: "Authentication required" });
 
       const workspace = await send("GET", "/metrics", { token: owner.token });
       expect(workspace.status).toBe(401);
-      expect(workspace.body).toEqual({ error: "Authentication required" });
+      expect(workspace.body).toMatchObject({ error: "Authentication required" });
 
       const ok = await send("GET", "/metrics", { token: METRICS_TOKEN });
       expect(ok.status).toBe(200);

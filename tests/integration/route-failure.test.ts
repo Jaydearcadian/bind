@@ -106,7 +106,7 @@ describe("Route failures: a database error inside a route is a safe JSON error a
       const r = await send("GET", routePath);
       expect(r.status, label).toBe(500);
       expect(r.contentType, label).toMatch(/json/);
-      expect(r.body, label).toEqual({ error: "Internal error" });
+      expect(r.body, label).toMatchObject({ error: "Internal error" });
       expect(SQL_TEXT.test(r.text), `${label} leaked SQL: ${r.text}`).toBe(false);
       expect(failure.armed, `${label}: the failure was not reached`).toBe(false);
 
@@ -132,7 +132,7 @@ describe("Route failures: a database error inside a route is a safe JSON error a
     expect(failure.armed, "the write failure was not reached").toBe(false);
     expect(r.status).toBeGreaterThanOrEqual(400);
     expect(r.status).toBeLessThan(500);
-    expect(r.body).toEqual({ error: "Request could not be processed" });
+    expect(r.body).toMatchObject({ error: "Request could not be processed" });
     expect(SQL_TEXT.test(r.text)).toBe(false);
 
     const health = await send("GET", "/health");

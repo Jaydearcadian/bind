@@ -98,6 +98,13 @@ describe("error catalogue", () => {
     }
   });
 
+  it("the existing codes match the runtime table in src/server/error-contract.ts exactly", async () => {
+    const { ERROR_CODES } = await import("../../src/server/error-contract.js");
+    const existing = catalogue.codes.filter((c) => c.existing);
+    expect(existing.map((c) => c.code).sort()).toEqual(Object.keys(ERROR_CODES).sort());
+    for (const c of existing) expect(ERROR_CODES[c.code], c.code).toEqual({ category: c.category, retryable: c.retryable });
+  });
+
   it("category, status and retryability agree", () => {
     const expected: Record<string, number[]> = { validation: [400, 413, 422], authentication: [401], authorization: [403], not_found: [404], conflict: [409], policy: [403, 409, 422], rate_limited: [429], upstream: [502, 504], unavailable: [503], internal: [500] };
     for (const c of catalogue.codes) {

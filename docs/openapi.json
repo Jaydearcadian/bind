@@ -4,8 +4,28 @@
       "ErrorBody": {
         "additionalProperties": true,
         "properties": {
-          "code": {
+          "category": {
+            "enum": [
+              "validation",
+              "authentication",
+              "authorization",
+              "not_found",
+              "conflict",
+              "policy",
+              "rate_limited",
+              "upstream",
+              "unavailable",
+              "internal"
+            ],
             "type": "string"
+          },
+          "code": {
+            "pattern": "^[A-Z][A-Z0-9_]*$",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": {},
+            "type": "object"
           },
           "error": {
             "type": "string"
@@ -15,10 +35,45 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "recovery": {
+            "items": {
+              "additionalProperties": true,
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "href": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action",
+                "description"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "retryAfterSeconds": {
+            "type": "integer"
+          },
+          "retryable": {
+            "type": "boolean"
           }
         },
         "required": [
-          "error"
+          "error",
+          "code",
+          "category",
+          "retryable",
+          "requestId"
         ],
         "type": "object"
       }
@@ -1792,8 +1847,28 @@
                     {
                       "additionalProperties": true,
                       "properties": {
-                        "code": {
+                        "category": {
+                          "enum": [
+                            "validation",
+                            "authentication",
+                            "authorization",
+                            "not_found",
+                            "conflict",
+                            "policy",
+                            "rate_limited",
+                            "upstream",
+                            "unavailable",
+                            "internal"
+                          ],
                           "type": "string"
+                        },
+                        "code": {
+                          "pattern": "^[A-Z][A-Z0-9_]*$",
+                          "type": "string"
+                        },
+                        "details": {
+                          "additionalProperties": {},
+                          "type": "object"
                         },
                         "error": {
                           "type": "string"
@@ -1803,10 +1878,45 @@
                             "type": "string"
                           },
                           "type": "array"
+                        },
+                        "recovery": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "action": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "action",
+                              "description"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "retryAfterSeconds": {
+                          "type": "integer"
+                        },
+                        "retryable": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
-                        "error"
+                        "error",
+                        "code",
+                        "category",
+                        "retryable",
+                        "requestId"
                       ],
                       "type": "object"
                     },

@@ -75,7 +75,7 @@ describe("the accounting ledger GET is read-only, and the backfill is an explici
     const orderId = await reconciledOrderWithoutEntry(wsScript, "script");
 
     // The arguments: a workspace id is required, and the dry run is the default.
-    expect(parseBackfillArgs([])).toEqual({ error: expect.stringContaining("usage") });
+    expect(parseBackfillArgs([])).toMatchObject({ error: expect.stringContaining("usage") });
     expect(parseBackfillArgs([wsScript])).toEqual({ target: wsScript, apply: false });
     expect(parseBackfillArgs([wsScript, "--apply"])).toEqual({ target: wsScript, apply: true });
     expect(parseBackfillArgs(["--all"])).toEqual({ target: "all", apply: false });

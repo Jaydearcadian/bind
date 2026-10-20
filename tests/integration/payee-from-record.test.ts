@@ -283,15 +283,15 @@ describe("The payee comes from the verified supplier record", () => {
 
       const short = await post("0x1234");
       expect(short.status).toBe(400);
-      expect(short.body).toEqual({ error: "paymentAddress must be a valid EVM address" });
+      expect(short.body).toMatchObject({ error: "paymentAddress must be a valid EVM address" });
 
       const nonHex = await post("0x" + "g".repeat(40));
       expect(nonHex.status).toBe(400);
-      expect(nonHex.body).toEqual({ error: "paymentAddress must be a valid EVM address" });
+      expect(nonHex.body).toMatchObject({ error: "paymentAddress must be a valid EVM address" });
 
       const notString = await post(12345);
       expect(notString.status).toBe(400);
-      expect(notString.body).toEqual({ error: "paymentAddress must be a valid EVM address" });
+      expect(notString.body).toMatchObject({ error: "paymentAddress must be a valid EVM address" });
 
       const fullId = `${wsId}_${suppId}`;
       expect((await query(`SELECT 1 FROM suppliers WHERE id = $1;`, [fullId])).rows.length).toBe(0);

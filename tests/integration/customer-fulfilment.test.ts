@@ -634,11 +634,11 @@ describe("customer orders: substantiated promises only", () => {
     expect((await call("POST", `${base}/fulfil`, { token: tokenA.token })).status).toBe(404);
     const accept = await call("POST", `/api/workspaces/${wsA}/customer-orders/${heldPausedB.orderId}/accept`, { token: tokenA.token });
     expect(accept.status).toBe(404);
-    expect(accept.body).toEqual({ error: "Order not found", code: "ORDER_NOT_FOUND" });
+    expect(accept.body).toMatchObject({ error: "Order not found", code: "ORDER_NOT_FOUND" });
 
     const wrongWorkspace = await call("GET", `/api/workspaces/${wsA}/customer-orders`, { token: tokenB.token });
     expect(wrongWorkspace.status).toBe(404);
-    expect(wrongWorkspace.body).toEqual({ error: "Workspace not found" });
+    expect(wrongWorkspace.body).toMatchObject({ error: "Workspace not found" });
     expect((await getCustomerOrder(wsB, orderB.orderId))?.status).toBe("accepted");
   });
 
@@ -722,7 +722,7 @@ describe("customer orders: substantiated promises only", () => {
       });
     const lower = await put(1);
     expect(lower.status).toBe(409);
-    expect(lower.body).toEqual({ error: expect.any(String), code: "CAPACITY_BELOW_USED" });
+    expect(lower.body).toMatchObject({ error: expect.any(String), code: "CAPACITY_BELOW_USED" });
     expect((await put(2)).status).toBe(200);
     expect(await slotUsed(ws, slot)).toEqual({ used: 2, capacity: 2 });
   });

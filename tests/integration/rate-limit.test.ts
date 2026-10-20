@@ -168,11 +168,11 @@ describe("Rate limits: auth failures, webhooks, public creation and per-token bu
     for (let i = 0; i < 3; i++) {
       const res = await send(base, "GET", `/api/workspaces/${wsA}/inventory`, { ip, token: BAD_TOKEN });
       expect(res.status, `attempt ${i + 1}`).toBe(401);
-      expect(res.body).toEqual({ error: "Authentication required" });
+      expect(res.body).toMatchObject({ error: "Authentication required" });
     }
     const blocked = await send(base, "GET", `/api/workspaces/${wsA}/inventory`, { ip, token: BAD_TOKEN });
     expect(blocked.status).toBe(429);
-    expect(blocked.body).toEqual(RATE_LIMITED);
+    expect(blocked.body).toMatchObject(RATE_LIMITED);
   });
 
   it("a blocked client is refused even with a valid token until the window ends", async () => {
@@ -207,7 +207,7 @@ describe("Rate limits: auth failures, webhooks, public creation and per-token bu
     // Metrics stays under the block: it is token-guarded and a target for guessing.
     const metrics = await send(base, "GET", "/metrics", { ip, token: METRICS_TOKEN });
     expect(metrics.status).toBe(429);
-    expect(metrics.body).toEqual(RATE_LIMITED);
+    expect(metrics.body).toMatchObject(RATE_LIMITED);
   });
 
   it("another client is not affected by that block", async () => {
@@ -246,11 +246,11 @@ describe("Rate limits: auth failures, webhooks, public creation and per-token bu
     for (let i = 0; i < 2; i++) {
       const res = await send(base, "POST", "/api/webhooks/incoming", { ip, json: unsigned });
       expect(res.status, `unsigned ${i + 1}`).toBe(401);
-      expect(res.body).toEqual(UNAUTHORIZED);
+      expect(res.body).toMatchObject(UNAUTHORIZED);
     }
     const blocked = await send(base, "POST", "/api/webhooks/incoming", { ip, json: unsigned });
     expect(blocked.status).toBe(429);
-    expect(blocked.body).toEqual(RATE_LIMITED);
+    expect(blocked.body).toMatchObject(RATE_LIMITED);
     expect(blocked.headers.get("retry-after")).toBe("60");
   });
 
@@ -277,7 +277,7 @@ describe("Rate limits: auth failures, webhooks, public creation and per-token bu
       json: { id: idTwo, name: "Rate Kitchen Two", templateId: "kitchen-v1" },
     });
     expect(third.status).toBe(429);
-    expect(third.body).toEqual(RATE_LIMITED);
+    expect(third.body).toMatchObject(RATE_LIMITED);
     const created = await query(`SELECT id FROM workspaces WHERE id = $1;`, [idTwo]);
     expect(created.rows.length).toBe(0);
 
@@ -287,7 +287,7 @@ describe("Rate limits: auth failures, webhooks, public creation and per-token bu
       json: { id: idOne, name: "Overwritten", templateId: "kitchen-v1" },
     });
     expect(other.status).toBe(409);
-    expect(other.body).toEqual({ error: "Workspace id is not available" });
+    expect(other.body).toMatchObject({ error: "Workspace id is not available" });
     const row = await query(`SELECT name FROM workspaces WHERE id = $1;`, [idOne]);
     expect(row.rows[0].name).toBe("Rate Kitchen One");
 
@@ -305,7 +305,7 @@ describe("Rate limits: auth failures, webhooks, public creation and per-token bu
     }
     const limited = await send(base, "GET", `/api/workspaces/${wsA}/inventory`, { ip, token: owner.token });
     expect(limited.status).toBe(429);
-    expect(limited.body).toEqual(RATE_LIMITED);
+    expect(limited.body).toMatchObject(RATE_LIMITED);
 
     // The budget belongs to the token, so the same token from another client is limited too.
     const elsewhere = await send(base, "GET", `/api/workspaces/${wsA}/inventory`, {
@@ -339,8 +339,9 @@ describe("Rate limits: auth failures, webhooks, public creation and per-token bu
     const retry = blocked.headers.get("retry-after") ?? "";
     expect(retry).toMatch(/^\d+$/);
     expect(Number(retry)).toBe(60);
-    expect(Object.keys(blocked.body).sort()).toEqual(["code", "error"]);
-    expect(blocked.body).toEqual(RATE_LIMITED);
+    // Error body v2 (ADR 0047): the old fields plus a category, retryability, a typed recovery and the request id. Nothing else.
+    expect(Object.keys(blocked.body).sort()).toEqual(["category", "code", "error", "recovery", "requestId", "retryAfterSeconds", "retryable"]);
+    expect(blocked.body).toMatchObject(RATE_LIMITED);
     expect(blocked.text).not.toContain(BAD_TOKEN);
     expect(blocked.text).not.toContain(ip);
   });

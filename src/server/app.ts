@@ -76,6 +76,7 @@ import {
 } from "../studio/workspaceControls.js";
 import { newId } from "../utils/ids.js";
 import { publicErrorMessage, rejectNulInput, requestErrorHandler, wrapAsyncHandlers } from "./errors.js";
+import { errorContract } from "./error-contract.js";
 import { log } from "../observability/logger.js";
 import { redactText } from "../utils/redact.js";
 import { requestContext } from "../observability/request-context.js";
@@ -334,6 +335,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   // First of all: every response, including errors and static files, carries x-request-id, and each request is logged
   // once on finish with its route pattern and no URL, query, header or body (docs/decisions/0032).
   app.use(requestContext);
+  app.use(errorContract);
   // The client address (docs/decisions/0033): the socket address, unless a number of trusted proxy hops is configured.
   app.set("trust proxy", options.trustProxy ?? config.BIND_TRUST_PROXY);
   // Rate limits run before body parsing, so a flood of large or malformed bodies is refused before it is read.

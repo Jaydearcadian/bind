@@ -509,11 +509,11 @@ describe("Settlement waits for confirmation before an order is paid", () => {
 
       const unknown = await post(`/api/orders/ord_missing_${Date.now()}/confirm-settlement`);
       expect(unknown.status).toBe(404);
-      expect(unknown.body).toEqual({ error: expect.any(String), code: "ORDER_NOT_FOUND" });
+      expect(unknown.body).toMatchObject({ error: expect.any(String), code: "ORDER_NOT_FOUND" });
 
       const notAwaiting = await post(`/api/orders/${notYetPaid.orderId}/confirm-settlement`);
       expect(notAwaiting.status).toBe(409);
-      expect(notAwaiting.body).toEqual({ error: expect.any(String), code: "ORDER_NOT_AWAITING_CONFIRMATION" });
+      expect(notAwaiting.body).toMatchObject({ error: expect.any(String), code: "ORDER_NOT_AWAITING_CONFIRMATION" });
 
       await query(`UPDATE inventory_items SET current_quantity = 1 WHERE workspace_id = $1 AND sku = $2;`, [wsId, MILK]);
       const paid = await confirmedOrder(new ProcurementWorkflowRunner(), wsId, MILK);

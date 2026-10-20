@@ -462,7 +462,7 @@ describe("feedback and approval-gated menu proposals", () => {
     expect(httpPublish.body.code).toBe("PROPOSAL_NOT_FOUND");
     const httpCrossPath = await call("POST", `/api/workspaces/${wsA}/menu-proposals/${proposal.proposalId}/publish`, { token: ownerB.token });
     expect(httpCrossPath.status).toBe(404);
-    expect(httpCrossPath.body).toEqual({ error: "Workspace not found" });
+    expect(httpCrossPath.body).toMatchObject({ error: "Workspace not found" });
 
     expect((await listMenuProposals(wsB)).map((p) => p.proposalId)).not.toContain(proposal.proposalId);
     const [stillA] = await listMenuProposals(wsA);

@@ -39,12 +39,38 @@ export const Decimal = z.union([z.string(), z.number()]);
 /** An ISO 8601 date-time, as `Date.toJSON` writes it. */
 export const IsoDateTime = z.string().datetime({ offset: true });
 
-/** The body of every error response. Routes may add a documented field (`fields`, `state`, `nextAction`). */
+/**
+ * The body of every error response (error body v2, docs/ecosystem/RESPONSE_AND_EVENT_SPEC.md section 4). `error`, `code`,
+ * `category`, `retryable` and `requestId` are always present; `retryAfterSeconds` accompanies a Retry-After header; `details`
+ * and `recovery` appear where they help. Routes may add a documented field (`fields`, `state`, `nextAction`, `reasonCodes`).
+ * The health and readiness failures have their own bodies and do not use this schema.
+ */
+export const ErrorCategory = z.enum([
+  "validation",
+  "authentication",
+  "authorization",
+  "not_found",
+  "conflict",
+  "policy",
+  "rate_limited",
+  "upstream",
+  "unavailable",
+  "internal",
+]);
+
 export const ErrorBody = z
   .object({
     error: z.string(),
-    code: z.string().optional(),
+    code: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+    category: ErrorCategory,
+    retryable: z.boolean(),
+    requestId: z.string(),
+    retryAfterSeconds: z.number().int().optional(),
     reasonCodes: z.array(z.string()).optional(),
+    details: z.record(z.unknown()).optional(),
+    recovery: z
+      .array(z.object({ action: z.string(), description: z.string(), href: z.string().optional() }).passthrough())
+      .optional(),
   })
   .passthrough();
 

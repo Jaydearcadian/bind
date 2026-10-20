@@ -8,6 +8,7 @@ import { issueToken } from "../../src/auth/tokens.js";
 import { WorkflowEngine } from "../../src/workflows/engine.js";
 import { WorkflowState } from "../../src/workflows/types.js";
 import { ProcurementWorkflowRunner } from "../../src/workflows/procurement.js";
+import { stableText } from "../helpers/error-body.js";
 
 /**
  * The owner's cancel of a workflow (ADR 0030). A cancel never touches an order, a supplier or a payment. A pending
@@ -180,7 +181,7 @@ describe("the owner cancels a workflow (PostgreSQL)", () => {
       const res = await cancel(token, ws, wf);
 
       expect(res.status, state).toBe(409);
-      expect(res.body).toEqual({ error: expect.any(String), code: "WORKFLOW_NOT_CANCELLABLE", state, nextAction });
+      expect(res.body).toMatchObject({ error: expect.any(String), code: "WORKFLOW_NOT_CANCELLABLE", state, nextAction });
       expect(await stateOf(wf), state).toBe(state);
       expect(await auditRows(ws, "workflow.cancelled", wf), state).toHaveLength(0);
     }
@@ -196,8 +197,8 @@ describe("the owner cancels a workflow (PostgreSQL)", () => {
     const missing = await cancel(token, ws, `wf_missing_${run}`);
 
     expect(crossed.status).toBe(404);
-    expect(crossed.body).toEqual(NOT_FOUND);
-    expect(crossed.text).toBe(missing.text);
+    expect(crossed.body).toMatchObject(NOT_FOUND);
+    expect(stableText(crossed.text)).toBe(stableText(missing.text));
     expect(missing.status).toBe(404);
     expect(await stateOf(theirs)).toBe(WorkflowState.AUTHORIZED);
   });
@@ -210,7 +211,7 @@ describe("the owner cancels a workflow (PostgreSQL)", () => {
     const res = await cancel(staff, ws, wf);
 
     expect(res.status).toBe(403);
-    expect(res.body).toEqual(OWNER_REQUIRED);
+    expect(res.body).toMatchObject(OWNER_REQUIRED);
     expect(await stateOf(wf)).toBe(WorkflowState.AUTHORIZED);
   });
 
@@ -257,7 +258,7 @@ describe("the owner cancels a workflow (PostgreSQL)", () => {
     const res = await cancel(token, ws, workflowId);
 
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: expect.any(String), code: "WORKFLOW_STATE_CHANGED", state: WorkflowState.AUTHORIZED });
+    expect(res.body).toMatchObject({ error: expect.any(String), code: "WORKFLOW_STATE_CHANGED", state: WorkflowState.AUTHORIZED });
     expect(await stateOf(workflowId)).toBe(WorkflowState.AUTHORIZED);
     expect(await auditRows(ws, "workflow.cancelled", workflowId)).toHaveLength(0);
   });
@@ -276,7 +277,7 @@ describe("the owner cancels a workflow (PostgreSQL)", () => {
     const res = await cancel(token, ws, wf);
 
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: expect.any(String), code: "WORKFLOW_STATE_CHANGED", state: WorkflowState.SUBMITTED });
+    expect(res.body).toMatchObject({ error: expect.any(String), code: "WORKFLOW_STATE_CHANGED", state: WorkflowState.SUBMITTED });
     expect(await stateOf(wf)).toBe(WorkflowState.SUBMITTED);
     expect(await auditRows(ws, "workflow.cancelled", wf)).toHaveLength(0);
   });

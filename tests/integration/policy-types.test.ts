@@ -48,13 +48,13 @@ describe("policy limits are JSON numbers, not numeric text (ADR 0040)", () => {
 
     // Numeric text is refused with the existing messages, although Number() would read it.
     const textBudget = await putPolicy('{"budgetDailyLimitCents":"100000","approvalThresholdCents":1000}');
-    expect(textBudget).toEqual({ status: 400, body: { error: "budgetDailyLimitCents must be a positive integer." } });
+    expect(textBudget).toMatchObject({ status: 400, body: { error: "budgetDailyLimitCents must be a positive integer." } });
     const textThreshold = await putPolicy('{"budgetDailyLimitCents":100000,"approvalThresholdCents":"1000"}');
-    expect(textThreshold).toEqual({ status: 400, body: { error: "approvalThresholdCents must be a non-negative integer." } });
+    expect(textThreshold).toMatchObject({ status: 400, body: { error: "approvalThresholdCents must be a non-negative integer." } });
     const notANumber = await putPolicy('{"budgetDailyLimitCents":"NaN","approvalThresholdCents":1000}');
     expect(notANumber.status).toBe(400);
     const floatBudget = await putPolicy('{"budgetDailyLimitCents":1000.5,"approvalThresholdCents":10}');
-    expect(floatBudget).toEqual({ status: 400, body: { error: "budgetDailyLimitCents must be a positive integer." } });
+    expect(floatBudget).toMatchObject({ status: 400, body: { error: "budgetDailyLimitCents must be a positive integer." } });
     const emptyText = await putPolicy('{"budgetDailyLimitCents":"","approvalThresholdCents":0}');
     expect(emptyText.status).toBe(400);
 

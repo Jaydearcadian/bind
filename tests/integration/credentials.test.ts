@@ -364,7 +364,7 @@ describe("Connector credentials: encrypted at rest, owner-only, honest status (A
 
     const staffPut = await call("PUT", path, { token: staffA.token, body: { kind: CONNECTOR_KINDS_OK, secret } });
     expect(staffPut.status).toBe(403);
-    expect(staffPut.body).toEqual(OWNER_REQUIRED);
+    expect(staffPut.body).toMatchObject(OWNER_REQUIRED);
     expect((await call("GET", `/api/workspaces/${wsA}/connectors`, { token: staffA.token })).status).toBe(403);
     expect((await call("DELETE", path, { token: staffA.token })).status).toBe(403);
     expect((await call("POST", `${path}/verify`, { token: staffA.token })).status).toBe(403);
@@ -372,13 +372,13 @@ describe("Connector credentials: encrypted at rest, owner-only, honest status (A
 
     const crossPut = await call("PUT", path, { token: ownerB.token, body: { kind: CONNECTOR_KINDS_OK, secret } });
     expect(crossPut.status).toBe(404);
-    expect(crossPut.body).toEqual(NOT_FOUND);
-    expect((await call("GET", `/api/workspaces/${wsA}/connectors`, { token: ownerB.token })).body).toEqual(NOT_FOUND);
-    expect((await call("DELETE", path, { token: ownerB.token })).body).toEqual(NOT_FOUND);
-    expect((await call("POST", `${path}/verify`, { token: ownerB.token })).body).toEqual(NOT_FOUND);
+    expect(crossPut.body).toMatchObject(NOT_FOUND);
+    expect((await call("GET", `/api/workspaces/${wsA}/connectors`, { token: ownerB.token })).body).toMatchObject(NOT_FOUND);
+    expect((await call("DELETE", path, { token: ownerB.token })).body).toMatchObject(NOT_FOUND);
+    expect((await call("POST", `${path}/verify`, { token: ownerB.token })).body).toMatchObject(NOT_FOUND);
     expect(await row(wsA, conn)).toBeUndefined();
 
-    expect((await call("PUT", path, { body: { kind: CONNECTOR_KINDS_OK, secret } })).body).toEqual(AUTH_REQUIRED);
+    expect((await call("PUT", path, { body: { kind: CONNECTOR_KINDS_OK, secret } })).body).toMatchObject(AUTH_REQUIRED);
   });
 
   it("an invalid connector id, kind or empty secret is a 400 that does not echo the secret", async () => {
@@ -411,12 +411,12 @@ describe("Connector credentials: encrypted at rest, owner-only, honest status (A
     try {
       const put = await call("PUT", connectorPath(wsA, conn), { token: ownerA.token, body: { kind: CONNECTOR_KINDS_OK, secret: seeded() } });
       expect(put.status).toBe(503);
-      expect(put.body).toEqual(NOT_CONFIGURED);
-      expect((await call("GET", `/api/workspaces/${wsA}/connectors`, { token: ownerA.token })).body).toEqual(NOT_CONFIGURED);
-      expect((await call("DELETE", connectorPath(wsA, conn), { token: ownerA.token })).body).toEqual(NOT_CONFIGURED);
+      expect(put.body).toMatchObject(NOT_CONFIGURED);
+      expect((await call("GET", `/api/workspaces/${wsA}/connectors`, { token: ownerA.token })).body).toMatchObject(NOT_CONFIGURED);
+      expect((await call("DELETE", connectorPath(wsA, conn), { token: ownerA.token })).body).toMatchObject(NOT_CONFIGURED);
       const verify = await call("POST", `${connectorPath(wsA, conn)}/verify`, { token: ownerA.token });
       expect(verify.status).toBe(503);
-      expect(verify.body).toEqual(NOT_CONFIGURED);
+      expect(verify.body).toMatchObject(NOT_CONFIGURED);
 
       await expect(
         setCredential({ workspaceId: wsA, connectorId: conn, kind: CONNECTOR_KINDS_OK, secret: seeded(), actor: ACTOR })

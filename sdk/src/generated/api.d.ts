@@ -1169,9 +1169,24 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         ErrorBody: {
-            code?: string;
+            /** @enum {string} */
+            category: "validation" | "authentication" | "authorization" | "not_found" | "conflict" | "policy" | "rate_limited" | "upstream" | "unavailable" | "internal";
+            code: string;
+            details?: {
+                [key: string]: unknown;
+            };
             error: string;
             reasonCodes?: string[];
+            recovery?: ({
+                action: string;
+                description: string;
+                href?: string;
+            } & {
+                [key: string]: unknown;
+            })[];
+            requestId: string;
+            retryAfterSeconds?: number;
+            retryable: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -2173,9 +2188,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": ({
-                        code?: string;
+                        /** @enum {string} */
+                        category: "validation" | "authentication" | "authorization" | "not_found" | "conflict" | "policy" | "rate_limited" | "upstream" | "unavailable" | "internal";
+                        code: string;
+                        details?: {
+                            [key: string]: unknown;
+                        };
                         error: string;
                         reasonCodes?: string[];
+                        recovery?: ({
+                            action: string;
+                            description: string;
+                            href?: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        requestId: string;
+                        retryAfterSeconds?: number;
+                        retryable: boolean;
                     } & {
                         [key: string]: unknown;
                     }) | ({

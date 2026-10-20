@@ -186,7 +186,7 @@ describe("typed client: requests", () => {
     expect(api.requestId).toBe("srv-req-1234");
     expect(api.reasonCodes).toEqual(["ORDER_OPEN", "APPROVAL_PENDING"]);
     expect(api.retryAfterSeconds).toBe(7);
-    expect(api.body).toEqual({ error: "Workspace is busy", code: "BUSY", reasonCodes: ["ORDER_OPEN", "APPROVAL_PENDING"] });
+    expect(api.body).toMatchObject({ error: "Workspace is busy", code: "BUSY", reasonCodes: ["ORDER_OPEN", "APPROVAL_PENDING"] });
   });
 
   it("an error never contains the token or the authorization header", async () => {

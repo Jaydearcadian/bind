@@ -11,6 +11,7 @@ import { WorkflowEngine } from "../../src/workflows/engine.js";
 import { WorkflowState } from "../../src/workflows/types.js";
 import { config } from "../../src/config/env.js";
 import { signPayload, workspaceWebhookSecret } from "../../src/webhooks/signing.js";
+import { stableText } from "../helpers/error-body.js";
 
 /*
  * Webhook authentication, bound actors, replay protection and the pause switch (ADR 0022). HTTP against createApp(),
@@ -307,7 +308,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
       const ev = approvalEvent(wsA, ownerActorA, appr.approvalId);
       const res = await sendUnsigned(ev);
       expect(res.status).toBe(401);
-      expect(res.body).toEqual(BAD_SIGNATURE);
+      expect(res.body).toMatchObject(BAD_SIGNATURE);
 
       expect((await approvalRow(appr.approvalId)).status).toBe("pending");
       expect(await dedupeCount(`surface:${wsA}:whatsapp`, ev.eventId)).toBe(0);
@@ -331,7 +332,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
       for (const [name, headers] of cases) {
         const res = await postRaw(baseUrl, SURFACE_PATH, raw, headers);
         expect(res.status, name).toBe(401);
-        expect(res.text, name).toBe(BAD_SIGNATURE_TEXT);
+        expect(JSON.parse(res.text), name).toMatchObject(JSON.parse(BAD_SIGNATURE_TEXT));
       }
       expect((await approvalRow(appr.approvalId)).status).toBe("pending");
       expect(await dedupeCount(`surface:${wsA}:whatsapp`, ev.eventId)).toBe(0);
@@ -344,7 +345,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
 
       const wrongKey = await postRaw(baseUrl, SURFACE_PATH, raw, signHeaders(raw, surfaceSecret(wsA)));
       expect(wrongKey.status).toBe(401);
-      expect(wrongKey.text).toBe(BAD_SIGNATURE_TEXT);
+      expect(JSON.parse(wrongKey.text)).toMatchObject(JSON.parse(BAD_SIGNATURE_TEXT));
       expect((await approvalRow(appr.approvalId)).status).toBe("pending");
 
       // Control: the same bytes signed with B's own secret are accepted, so the refusal above is the signature check.
@@ -365,8 +366,8 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
 
       expect(signedForUnknown.status).toBe(401);
       expect(badSignature.status).toBe(401);
-      expect(signedForUnknown.text).toBe(badSignature.text);
-      expect(signedForUnknown.text).toBe(BAD_SIGNATURE_TEXT);
+      expect(stableText(signedForUnknown.text)).toBe(stableText(badSignature.text));
+      expect(JSON.parse(signedForUnknown.text)).toMatchObject(JSON.parse(BAD_SIGNATURE_TEXT));
       expect(await dedupeCount(`surface:${unknown}:whatsapp`, ev.eventId)).toBe(0);
     });
 
@@ -419,7 +420,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
       for (const decision of ["approve", "reject"] as const) {
         const res = await sendSurface(approvalEvent(wsA, ownerActorA, appr.approvalId, decision));
         expect(res.status, decision).toBe(404);
-        expect(res.body, decision).toEqual({ error: expect.any(String), code: "APPROVAL_NOT_FOUND" });
+        expect(res.body, decision).toMatchObject({ error: expect.any(String), code: "APPROVAL_NOT_FOUND" });
       }
       const row = await approvalRow(appr.approvalId);
       expect(row.status).toBe("pending");
@@ -562,7 +563,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
     it("the owner API resumes the workspace", async () => {
       const denied = await call("PUT", `/api/workspaces/${wsC}/agents-paused`, { token: staffC.token, body: { paused: false } });
       expect(denied.status).toBe(403);
-      expect(denied.body).toEqual(OWNER_REQUIRED);
+      expect(denied.body).toMatchObject(OWNER_REQUIRED);
       expect(await pausedOf(wsC)).toBe(true);
 
       const resumed = await call("PUT", `/api/workspaces/${wsC}/agents-paused`, { token: ownerC.token, body: { paused: false } });
@@ -589,7 +590,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
 
       const none = await call("PUT", `/api/workspaces/${wsC}/agents-paused`, { body: { paused: true } });
       expect(none.status).toBe(401);
-      expect(none.body).toEqual(AUTH_REQUIRED);
+      expect(none.body).toMatchObject(AUTH_REQUIRED);
     });
   });
 
@@ -602,7 +603,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
       const raw = JSON.stringify({ provider, eventId, payload: { item: "flour" } });
       const res = await postRaw(baseUrl, STANDARD, raw);
       expect(res.status).toBe(401);
-      expect(res.text).toBe(BAD_SIGNATURE_TEXT);
+      expect(JSON.parse(res.text)).toMatchObject(JSON.parse(BAD_SIGNATURE_TEXT));
       expect(await dedupeCount(provider, eventId)).toBe(0);
     });
 
@@ -613,7 +614,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
         "x-bind-signature": "abc",
       });
       expect(res.status).toBe(401);
-      expect(res.text).toBe(BAD_SIGNATURE_TEXT);
+      expect(JSON.parse(res.text)).toMatchObject(JSON.parse(BAD_SIGNATURE_TEXT));
     });
 
     it("the standard webhook refuses a missing eventId with 400", async () => {
@@ -694,7 +695,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
     it("the webhook secret is shown to the owner only and rotation invalidates the old signature", async () => {
       const staff = await call("GET", `/api/workspaces/${wsA}/webhook-secret`, { token: staffA.token });
       expect(staff.status).toBe(403);
-      expect(staff.body).toEqual(OWNER_REQUIRED);
+      expect(staff.body).toMatchObject(OWNER_REQUIRED);
 
       const shown = await call("GET", `/api/workspaces/${wsA}/webhook-secret`, { token: ownerA.token });
       expect(shown.status).toBe(200);
@@ -714,7 +715,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
 
       const staffRotate = await call("POST", `/api/workspaces/${wsA}/webhook-secret/rotate`, { token: staffA.token });
       expect(staffRotate.status).toBe(403);
-      expect(staffRotate.body).toEqual(OWNER_REQUIRED);
+      expect(staffRotate.body).toMatchObject(OWNER_REQUIRED);
       expect((await query(`SELECT webhook_secret_version FROM workspaces WHERE id = $1;`, [wsA])).rows[0].webhook_secret_version).toBe(1);
 
       const rotated = await call("POST", `/api/workspaces/${wsA}/webhook-secret/rotate`, { token: ownerA.token });
@@ -735,7 +736,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
 
       const stale = await sendSurface(stockEvent(wsA, ownerActorA, 10), 1);
       expect(stale.status).toBe(401);
-      expect(stale.text).toBe(BAD_SIGNATURE_TEXT);
+      expect(JSON.parse(stale.text)).toMatchObject(JSON.parse(BAD_SIGNATURE_TEXT));
 
       const fresh = await sendSurface(stockEvent(wsA, ownerActorA, 10), 2);
       expect(fresh.status).toBe(200);
@@ -763,12 +764,12 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
 
         const std = await postRaw(localUrl, SURFACE_PATH, stdRaw, signHeaders(stdRaw, WEBHOOK));
         expect(std.status).toBe(503);
-        expect(std.body).toEqual(notConfigured);
+        expect(std.body).toMatchObject(notConfigured);
 
         const stockRaw = JSON.stringify(stockEvent(wsA, ownerActorA, 3));
         const stock = await postRaw(localUrl, SURFACE_PATH, stockRaw, signHeaders(stockRaw, surfaceSecret(wsA)));
         expect(stock.status).toBe(503);
-        expect(stock.body).toEqual(notConfigured);
+        expect(stock.body).toMatchObject(notConfigured);
 
         const approvalRaw = JSON.stringify(approvalEvent(wsA, ownerActorA, appr.approvalId));
         const approval = await postRaw(localUrl, SURFACE_PATH, approvalRaw, signHeaders(approvalRaw, surfaceSecret(wsA)));
@@ -780,7 +781,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
 
         const shown = await request(localUrl, "GET", `/api/workspaces/${wsA}/webhook-secret`, { token: ownerA.token });
         expect(shown.status).toBe(503);
-        expect(shown.body).toEqual(notConfigured);
+        expect(shown.body).toMatchObject(notConfigured);
         const rotated = await request(localUrl, "POST", `/api/workspaces/${wsA}/webhook-secret/rotate`, { token: ownerA.token });
         expect(rotated.status).toBe(503);
 

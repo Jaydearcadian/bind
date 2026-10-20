@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "existing=true: the code is sent today (checked against the source by tests/unit/ecosystem-spec.test.ts). existing=false: proposed by this specification and not in the source. HTTP statuses of the existing codes come from the handlers in src/server/app.ts and from docs/EVENTS.md.",
+  "note": "existing=true: the code is sent today (checked against the source by tests/unit/ecosystem-spec.test.ts, and compared with the runtime table in src/server/error-contract.ts). existing=false: proposed and not in the source yet. HTTP statuses of the older codes come from the handlers in src/server/app.ts and docs/EVENTS.md; the generic codes are chosen by status.",
   "codes": [
     {
       "code": "MALFORMED_JSON",
@@ -151,48 +151,56 @@
       "httpStatus": 401,
       "category": "authentication",
       "retryable": false,
-      "existing": false,
+      "existing": true,
       "note": "Today a 401 carries only a message."
-    },
-    {
-      "code": "OWNER_REQUIRED",
-      "httpStatus": 403,
-      "category": "authorization",
-      "retryable": false,
-      "existing": false,
-      "note": "Today the 403 for an owner route carries only a message."
-    },
-    {
-      "code": "WORKSPACE_NOT_FOUND",
-      "httpStatus": 404,
-      "category": "not_found",
-      "retryable": false,
-      "existing": false,
-      "note": "The same body answers a missing workspace and another tenant's (ADR 0021)."
     },
     {
       "code": "VALIDATION_FAILED",
       "httpStatus": 400,
       "category": "validation",
       "retryable": false,
-      "existing": false,
+      "existing": true,
       "note": "The generic 400 for a field that fails its schema. details.fields names them."
-    },
-    {
-      "code": "AUTH_UNAVAILABLE",
-      "httpStatus": 503,
-      "category": "unavailable",
-      "retryable": true,
-      "existing": false,
-      "note": "The token lookup failed."
     },
     {
       "code": "INTERNAL_ERROR",
       "httpStatus": 500,
       "category": "internal",
       "retryable": false,
-      "existing": false,
+      "existing": true,
       "note": "Detail is logged with the request id, never returned."
+    },
+    {
+      "code": "FORBIDDEN",
+      "httpStatus": 403,
+      "category": "authorization",
+      "retryable": false,
+      "existing": true,
+      "note": "Generic 403: the token's role may not do this. Staff on an owner route. Recovery: use another role or ask an owner."
+    },
+    {
+      "code": "NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "Generic 404. The same body answers a missing workspace and another tenant's (ADR 0021)."
+    },
+    {
+      "code": "CONFLICT",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "Generic 409, such as an id that is not available."
+    },
+    {
+      "code": "UNAVAILABLE",
+      "httpStatus": 503,
+      "category": "unavailable",
+      "retryable": true,
+      "existing": true,
+      "note": "A dependency, such as the token lookup or the credential store, is not available."
     },
     {
       "code": "IDEMPOTENCY_KEY_INVALID",

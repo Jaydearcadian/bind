@@ -12,6 +12,7 @@ import { WorkflowEngine } from "../../src/workflows/engine.js";
 import { ProcurementWorkflowRunner } from "../../src/workflows/procurement.js";
 import { WorkflowState } from "../../src/workflows/types.js";
 import { LocalSettlementSimulator } from "../../src/adapters/settlement/local-sim.js";
+import { stableText } from "../helpers/error-body.js";
 
 const run = Date.now();
 const wsA = `ws-auth-a-${run}`;
@@ -259,7 +260,7 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
         body: method === "GET" || method === "DELETE" ? undefined : {},
       });
       expect(res.status, `${method} ${template}`).toBe(401);
-      expect(res.body, `${method} ${template}`).toEqual(AUTH_REQUIRED);
+      expect(res.body, `${method} ${template}`).toMatchObject(AUTH_REQUIRED);
     }
   });
 
@@ -293,8 +294,8 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
     for (const probe of probes) {
       const res = await call("GET", `/api/workspaces/${wsA}/inventory`, probe.opts);
       expect(res.status, probe.name).toBe(401);
-      expect(res.body, probe.name).toEqual(AUTH_REQUIRED);
-      texts.push(res.text);
+      expect(res.body, probe.name).toMatchObject(AUTH_REQUIRED);
+      texts.push(stableText(res.text));
     }
     expect(new Set(texts).size).toBe(1);
   });
@@ -315,13 +316,13 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
     ];
     const missing = await call("GET", `/api/workspaces/${wsMissing}/inventory`, { token: ownerA.token });
     expect(missing.status).toBe(404);
-    expect(missing.body).toEqual(NOT_FOUND);
+    expect(missing.body).toMatchObject(NOT_FOUND);
 
     for (const p of readPaths) {
       for (const caller of [ownerA, staffA]) {
         const res = await call("GET", p, { token: caller.token });
         expect(res.status, p).toBe(404);
-        expect(res.text, p).toBe(missing.text);
+        expect(stableText(res.text), p).toBe(stableText(missing.text));
       }
     }
 
@@ -331,7 +332,7 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
       body: { budgetDailyLimitCents: 1, approvalThresholdCents: 0 },
     });
     expect(policy.status).toBe(404);
-    expect(policy.text).toBe(missing.text);
+    expect(stableText(policy.text)).toBe(stableText(missing.text));
   });
 
   it("a token for A cannot approve, reject or revoke an approval of B and nothing changes", async () => {
@@ -349,7 +350,7 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
         body: { decidedBy: "owner@other-tenant.example", reason: "cross-tenant attempt" },
       });
       expect(res.status, action).toBe(404);
-      expect(res.body, action).toEqual({ error: expect.any(String), code: "APPROVAL_NOT_FOUND" });
+      expect(res.body, action).toMatchObject({ error: expect.any(String), code: "APPROVAL_NOT_FOUND" });
     }
 
     for (const { approvalId, wfId, orderId } of approvals) {
@@ -370,11 +371,11 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
     try {
       const reconcile = await call("POST", `/api/orders/${orderId}/reconcile`, { token: ownerA.token });
       expect(reconcile.status).toBe(404);
-      expect(reconcile.body).toEqual({ error: expect.any(String), code: "ORDER_NOT_FOUND" });
+      expect(reconcile.body).toMatchObject({ error: expect.any(String), code: "ORDER_NOT_FOUND" });
 
       const confirm = await call("POST", `/api/orders/${orderId}/confirm-settlement`, { token: ownerA.token });
       expect(confirm.status).toBe(404);
-      expect(confirm.body).toEqual({ error: expect.any(String), code: "ORDER_NOT_FOUND" });
+      expect(confirm.body).toMatchObject({ error: expect.any(String), code: "ORDER_NOT_FOUND" });
 
       expect(transfer).not.toHaveBeenCalled();
       expect((await query(`SELECT status FROM orders WHERE id = $1;`, [orderId])).rows[0].status).toBe("confirmed");
@@ -431,7 +432,7 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
     for (const [method, p, body] of forbidden) {
       const res = await call(method, p, { token: staffA.token, body });
       expect(res.status, `${method} ${p}`).toBe(403);
-      expect(res.body, `${method} ${p}`).toEqual(OWNER_REQUIRED);
+      expect(res.body, `${method} ${p}`).toMatchObject(OWNER_REQUIRED);
     }
 
     expect((await approvalRow(pending.approvalId)).status).toBe("pending");
@@ -486,7 +487,7 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
 
     const after = await call("GET", `/api/workspaces/${wsA}/inventory`, { token: second.token });
     expect(after.status).toBe(401);
-    expect(after.body).toEqual(AUTH_REQUIRED);
+    expect(after.body).toMatchObject(AUTH_REQUIRED);
   });
 
   it("the last active owner token cannot be revoked", async () => {
@@ -596,13 +597,13 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
       },
     });
     expect(onboard.status).toBe(409);
-    expect(onboard.body).toEqual({ error: "Workspace id is not available" });
+    expect(onboard.body).toMatchObject({ error: "Workspace id is not available" });
 
     const provision = await call("POST", "/api/workspaces", {
       body: { id: wsA, name: "Hijacked Kitchen", templateId: "kitchen-v1" },
     });
     expect(provision.status).toBe(409);
-    expect(provision.body).toEqual({ error: "Workspace id is not available" });
+    expect(provision.body).toMatchObject({ error: "Workspace id is not available" });
 
     const after = (await query(`SELECT name, budget_daily_limit_cents, approval_threshold_cents FROM workspaces WHERE id = $1;`, [wsA])).rows[0];
     expect(after).toEqual(before);
@@ -629,7 +630,7 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
     expect((await call("GET", `/api/workspaces/${wsNew}/inventory`, { token: newOwner.token })).status).toBe(200);
     const crossA = await call("GET", `/api/workspaces/${wsA}/inventory`, { token: newOwner.token });
     expect(crossA.status).toBe(404);
-    expect(crossA.body).toEqual(NOT_FOUND);
+    expect(crossA.body).toMatchObject(NOT_FOUND);
     expect((await call("GET", `/api/workspaces/${wsNew}`, { token: ownerA.token })).status).toBe(404);
 
     const created = await call("POST", "/api/workspaces", {
@@ -734,7 +735,7 @@ describe("Per-workspace owner and staff tokens: tenancy enforced on the server",
     // A token in the query string is not accepted, and is not echoed back.
     const inQuery = await call("GET", `/api/workspaces/${wsA}/inventory?token=${ownerA.token}`);
     expect(inQuery.status).toBe(401);
-    expect(inQuery.body).toEqual(AUTH_REQUIRED);
+    expect(inQuery.body).toMatchObject(AUTH_REQUIRED);
     expect(inQuery.text).not.toContain(ownerA.token);
   });
 });

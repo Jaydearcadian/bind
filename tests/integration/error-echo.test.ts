@@ -47,7 +47,7 @@ describe("error text does not echo untrusted ids (ADR 0031, ADR 0040)", () => {
     });
     const text = await res.text();
     expect(res.status).toBe(400);
-    expect(JSON.parse(text)).toEqual({ error: "Document could not be confirmed" });
+    expect(JSON.parse(text)).toMatchObject({ error: "Document could not be confirmed" });
     expect(text).not.toContain(docId);
     expect(text).not.toContain(wsId);
   });
@@ -87,7 +87,7 @@ describe("error text does not echo untrusted ids (ADR 0031, ADR 0040)", () => {
 
     const text = await res.text();
     expect(res.status).toBe(403);
-    expect(JSON.parse(text)).toEqual({ error: "Actor is not authorized for this event", code: "SURFACE_ROLE_VIOLATION" });
+    expect(JSON.parse(text)).toMatchObject({ error: "Actor is not authorized for this event", code: "SURFACE_ROLE_VIOLATION" });
     expect(text).not.toContain(actorId);
     // The detail, with the actor id, is in the server log (redacted), never in the response.
     expect(lines.some((line) => line.includes("surface.authorization_refused") && line.includes(actorId))).toBe(true);

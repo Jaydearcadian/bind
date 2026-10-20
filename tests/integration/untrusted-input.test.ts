@@ -153,7 +153,7 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
         raw: '{"source": "pos", "externalId":',
       });
       expect(r.status).toBe(400);
-      expect(r.body).toEqual({ error: "Malformed JSON body", code: "MALFORMED_JSON" });
+      expect(r.body).toMatchObject({ error: "Malformed JSON body", code: "MALFORMED_JSON" });
       expect(LEAK.test(r.text)).toBe(false);
     });
 
@@ -163,7 +163,7 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
         raw: JSON.stringify({ source: "pos", externalId: "x", text: "y".repeat(300_000) }),
       });
       expect(r.status).toBe(413);
-      expect(r.body).toEqual({ error: "Request body too large", code: "BODY_TOO_LARGE" });
+      expect(r.body).toMatchObject({ error: "Request body too large", code: "BODY_TOO_LARGE" });
       expect(LEAK.test(r.text)).toBe(false);
     });
 
@@ -378,7 +378,7 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
       for (const bad of ["not-an-address", "0x123", "0xZZ4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2", "0xa4d196c26f07bcd68fa76a0f1becd2536c4ae9c2 ", "x".repeat(100_000)]) {
         const r = await put(bad);
         expect(r.status, bad.slice(0, 20)).toBe(400);
-        expect(r.body, bad.slice(0, 20)).toEqual({ error: "settlementAddress must be a valid EVM address" });
+        expect(r.body, bad.slice(0, 20)).toMatchObject({ error: "settlementAddress must be a valid EVM address" });
         expectSafe(r, `settlement ${bad.slice(0, 12)}`);
       }
       const ok = await put("0xa4d196c26f07bcd68fa76a0f1becd2536c4ae9c2");
@@ -392,7 +392,7 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
         const r = await send(baseUrl, method, `/api/no-such-route/${run}`, { token: wsA.owner.token, json: method === "GET" ? undefined : {} });
         expect(r.status, method).toBe(404);
         expect(r.contentType, method).toMatch(/json/);
-        expect(r.body, method).toEqual({ error: "Not found" });
+        expect(r.body, method).toMatchObject({ error: "Not found" });
       }
     });
 

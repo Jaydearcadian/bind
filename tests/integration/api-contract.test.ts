@@ -464,7 +464,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
         // A workspace token is not the metrics token: the route answers 401 to it.
         const res = await send(baseUrl, spec.method, url, { token: staffA.token });
         expect(res.status, where).toBe(401);
-        expect(res.body, where).toEqual(AUTH_REQUIRED);
+        expect(res.body, where).toMatchObject(AUTH_REQUIRED);
         continue;
       }
       if (spec.access === "signed-webhook") {
@@ -477,12 +477,12 @@ describe("API contract: one registry, checked against the running server (ADR 00
 
       const none = await send(baseUrl, spec.method, url, { body: bodyless ? undefined : {} });
       expect(none.status, `${where} without a token`).toBe(401);
-      expect(none.body, `${where} without a token`).toEqual(AUTH_REQUIRED);
+      expect(none.body, `${where} without a token`).toMatchObject(AUTH_REQUIRED);
 
       if (spec.access === "owner" || spec.access === "owner-any") {
         const staff = await send(baseUrl, spec.method, url, { token: staffA.token, body: bodyless ? undefined : {} });
         expect(staff.status, `${where} with a staff token`).toBe(403);
-        expect(staff.body, `${where} with a staff token`).toEqual(OWNER_REQUIRED);
+        expect(staff.body, `${where} with a staff token`).toMatchObject(OWNER_REQUIRED);
       } else if (spec.access === "member") {
         if (isEventStream(spec)) {
           const status = await streamStatus(baseUrl, url, staffA.token);

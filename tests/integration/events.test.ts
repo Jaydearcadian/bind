@@ -584,7 +584,7 @@ describe("workspace event stream and poll (docs/decisions/0035)", () => {
       const refused = await openStream(url, t.id, { token: t.owner.token });
       expect(refused.status).toBe(429);
       expect(refused.headers.get("retry-after")).toBe("5");
-      expect(refused.body).toEqual({ error: "Too many event streams", code: "TOO_MANY_STREAMS" });
+      expect(refused.body).toMatchObject({ error: "Too many event streams", code: "TOO_MANY_STREAMS" });
 
       // Another token of the same workspace still has its own slots.
       const staffStream = await openStream(url, t.id, { token: t.staff.token });
@@ -644,11 +644,11 @@ describe("workspace event stream and poll (docs/decisions/0035)", () => {
     const t = await makeTenant("query-token");
     const stream = await openStream(baseUrl, t.id, { query: `?token=${t.owner.token}` });
     expect(stream.status).toBe(401);
-    expect(stream.body).toEqual(AUTH_REQUIRED);
+    expect(stream.body).toMatchObject(AUTH_REQUIRED);
 
     const polled = await send(baseUrl, `/api/workspaces/${t.id}/events/poll?token=${t.owner.token}`);
     expect(polled.status).toBe(401);
-    expect(polled.body).toEqual(AUTH_REQUIRED);
+    expect(polled.body).toMatchObject(AUTH_REQUIRED);
     expect(polled.text).not.toContain(t.owner.token);
   });
 
@@ -658,34 +658,34 @@ describe("workspace event stream and poll (docs/decisions/0035)", () => {
 
     const bare = await openStream(baseUrl, mine.id);
     expect(bare.status).toBe(401);
-    expect(bare.body).toEqual(AUTH_REQUIRED);
+    expect(bare.body).toMatchObject(AUTH_REQUIRED);
 
     const crossStream = await openStream(baseUrl, mine.id, { token: theirs.owner.token });
     expect(crossStream.status).toBe(404);
-    expect(crossStream.body).toEqual(NOT_FOUND);
+    expect(crossStream.body).toMatchObject(NOT_FOUND);
 
     const crossPoll = await poll(mine, "", theirs.staff.token);
     expect(crossPoll.status).toBe(404);
-    expect(crossPoll.body).toEqual(NOT_FOUND);
+    expect(crossPoll.body).toMatchObject(NOT_FOUND);
 
     const barePoll = await send(baseUrl, `/api/workspaces/${mine.id}/events/poll`);
     expect(barePoll.status).toBe(401);
-    expect(barePoll.body).toEqual(AUTH_REQUIRED);
+    expect(barePoll.body).toMatchObject(AUTH_REQUIRED);
   });
 
   it("a malformed cursor is a 400", async () => {
     const t = await makeTenant("cursor-400");
     const badHeader = await openStream(baseUrl, t.id, { token: t.owner.token, lastEventId: "not-a-cursor" });
     expect(badHeader.status).toBe(400);
-    expect(badHeader.body).toEqual({ error: "Invalid cursor", code: "INVALID_CURSOR" });
+    expect(badHeader.body).toMatchObject({ error: "Invalid cursor", code: "INVALID_CURSOR" });
 
     const badQuery = await openStream(baseUrl, t.id, { token: t.owner.token, query: "?lastEventId=1.2.3" });
     expect(badQuery.status).toBe(400);
-    expect(badQuery.body).toEqual({ error: "Invalid cursor", code: "INVALID_CURSOR" });
+    expect(badQuery.body).toMatchObject({ error: "Invalid cursor", code: "INVALID_CURSOR" });
 
     const badPoll = await poll(t, "?after=abc");
     expect(badPoll.status).toBe(400);
-    expect(badPoll.body).toEqual({ error: "Invalid cursor", code: "INVALID_CURSOR" });
+    expect(badPoll.body).toMatchObject({ error: "Invalid cursor", code: "INVALID_CURSOR" });
   });
 
   it("hostile input to the stream and poll routes is a JSON 4xx with no internal detail", async () => {
