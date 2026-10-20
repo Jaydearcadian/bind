@@ -66,6 +66,8 @@ const envSchema = z.object({
   // BIND_CREDENTIAL_KEY_PREVIOUS is decrypt-only, for rotation (npm run credentials:rotate-key).
   BIND_CREDENTIAL_KEY: optionalCredentialKey("BIND_CREDENTIAL_KEY"),
   BIND_CREDENTIAL_KEY_PREVIOUS: optionalCredentialKey("BIND_CREDENTIAL_KEY_PREVIOUS"),
+  // The background worker (ADR 0029) runs in the server process. Only the exact value "false" disables it.
+  BIND_WORKER_ENABLED: z.string().optional(),
   ALLOW_NO_CONTRACTS: z.string().optional().default("1"),
   PARALLEL_API_KEY: z.string().optional(),
   NEBIUS_API_KEY: z.string().optional(),

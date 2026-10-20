@@ -382,7 +382,7 @@ export class ProcurementWorkflowRunner {
   /**
    * Expires pending approvals past their window and cancels their workflows.
    */
-  async expireApprovals(filter: { workspaceId?: string; approvalId?: string } = {}): Promise<number> {
+  async expireApprovals(filter: { workspaceId?: string; approvalId?: string; limit?: number } = {}): Promise<number> {
     return this.workflowEngine.expireApprovals(filter);
   }
 

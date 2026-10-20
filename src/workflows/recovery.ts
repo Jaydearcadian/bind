@@ -39,21 +39,31 @@ export class WorkflowCrashRecoveryRunner {
    * Scans for dangling or interrupted workflows and resumes each one through its own records. A workflow is only ever
    * resumed through the order id derived from its own id, never through another order. An error in one workflow is
    * counted as failed and does not stop the scan. With a workspaceId, only that workspace's workflows are scanned.
+   *
+   * The background worker (ADR 0029) bounds the scan: `staleAfterMs` skips a workflow updated more recently (a live
+   * request may still be handling it), `limit` caps the number scanned, and the oldest-touched rows come first. In
+   * that bounded mode each scanned row is touched afterwards, so a workflow that stays in doubt or keeps failing moves
+   * to the back of the queue instead of blocking newer work. The explicit route passes no filter and behaves as before.
    */
-  async recoverInterruptedWorkflows(filter: { workspaceId?: string } = {}): Promise<RecoveryReport> {
+  async recoverInterruptedWorkflows(
+    filter: { workspaceId?: string; limit?: number; staleAfterMs?: number } = {}
+  ): Promise<RecoveryReport> {
     const report: RecoveryReport = {
       recoveredCount: 0,
       failedCount: 0,
       inDoubt: [],
       details: [],
     };
+    const bounded = filter.staleAfterMs !== undefined;
 
     const res = await query(
       `SELECT * FROM workflows
        WHERE state IN ('draft', 'request_sent', 'submitted', 'authorized')
          AND ($1::text IS NULL OR workspace_id = $1)
-       ORDER BY created_at ASC;`,
-      [filter.workspaceId ?? null]
+         AND ($2::float8 IS NULL OR updated_at <= NOW() - ($2::float8 * INTERVAL '1 millisecond'))
+       ORDER BY ${bounded ? "updated_at ASC, created_at ASC, id ASC" : "created_at ASC"}
+       LIMIT $3::int;`,
+      [filter.workspaceId ?? null, filter.staleAfterMs ?? null, filter.limit ?? null]
     );
 
     for (const row of res.rows) {
@@ -78,9 +88,20 @@ export class WorkflowCrashRecoveryRunner {
       } catch {
         report.failedCount++;
       }
+
+      if (bounded) await this.touch(workflowId);
     }
 
     return report;
+  }
+
+  /** Moves a row to the back of the bounded queue. It changes no state. A failure here is ignored. */
+  private async touch(workflowId: string): Promise<void> {
+    try {
+      await query(`UPDATE workflows SET updated_at = NOW() WHERE id = $1;`, [workflowId]);
+    } catch {
+      // The row keeps its old updated_at and is scanned again on a later tick.
+    }
   }
 
   private async recoverSubmitted(row: any, report: RecoveryReport): Promise<void> {

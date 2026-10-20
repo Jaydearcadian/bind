@@ -229,16 +229,28 @@ export class WorkflowEngine {
   /**
    * Marks pending approvals past their window as expired and cancels their
    * waiting workflows. Optionally limited to one workspace or one approval.
+   *
+   * With `limit`, at most that many approvals are taken, oldest window first, and rows another
+   * transaction has locked are skipped (the background worker, ADR 0029). Without it, every match is
+   * expired, as before.
    */
-  async expireApprovals(filter: { workspaceId?: string; approvalId?: string } = {}): Promise<number> {
+  async expireApprovals(filter: { workspaceId?: string; approvalId?: string; limit?: number } = {}): Promise<number> {
+    const matching = `status = 'pending'
+           AND expires_at <= NOW()
+           AND ($1::text IS NULL OR workspace_id = $1)
+           AND ($2::text IS NULL OR id = $2)`;
+    const bounded = filter.limit !== undefined;
+    const candidates = bounded
+      ? `SELECT id FROM approvals WHERE ${matching} ORDER BY expires_at ASC, id ASC LIMIT $3::int FOR UPDATE SKIP LOCKED`
+      : `SELECT id FROM approvals WHERE ${matching}`;
+    const params: unknown[] = [filter.workspaceId ?? null, filter.approvalId ?? null];
+    if (bounded) params.push(filter.limit);
+
     const res = await query(
       `WITH expired AS (
          UPDATE approvals
          SET status = 'expired', reason = 'Owner approval window elapsed', decided_at = NOW()
-         WHERE status = 'pending'
-           AND expires_at <= NOW()
-           AND ($1::text IS NULL OR workspace_id = $1)
-           AND ($2::text IS NULL OR id = $2)
+         WHERE id IN (${candidates})
          RETURNING entity_id
        ),
        cancelled AS (
@@ -248,7 +260,7 @@ export class WorkflowEngine {
          RETURNING id
        )
        SELECT (SELECT COUNT(*) FROM expired)::int AS expired_count;`,
-      [filter.workspaceId ?? null, filter.approvalId ?? null]
+      params
     );
     return res.rows[0].expired_count;
   }

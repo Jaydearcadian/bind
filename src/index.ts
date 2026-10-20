@@ -2,6 +2,7 @@ import { createApp } from "./server/app.js";
 import { config } from "./config/env.js";
 import { runMigrations } from "./db/migrate.js";
 import { provisionDemoWorkspace } from "./server/demo.js";
+import { startWorker, type Worker } from "./workers/runner.js";
 
 async function main() {
   console.log("Starting Bind Business Agent Engine...");
@@ -20,10 +21,34 @@ async function main() {
   const app = createApp();
   const port = config.PORT;
 
-  app.listen(port, () => {
+  let worker: Worker | null = null;
+  const server = app.listen(port, () => {
     console.log(`Bind Server listening on http://127.0.0.1:${port}`);
     console.log(`Web Dashboard available at http://127.0.0.1:${port}`);
+
+    // The worker expires approvals, resumes interrupted workflows and polls settlements without anyone opening a
+    // page (ADR 0029). BIND_WORKER_ENABLED=false turns it off. Serverless deployments run no worker.
+    if (config.BIND_WORKER_ENABLED !== "false") {
+      worker = startWorker();
+      console.log("Background worker started.");
+    }
   });
+
+  let shuttingDown = false;
+  const shutdown = (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal} received: stopping the background worker.`);
+    const stopped = worker ? worker.stop() : Promise.resolve();
+    stopped
+      .catch((err) => console.error("Worker did not stop cleanly:", err?.message ?? err))
+      .finally(() => {
+        server.close();
+        process.exit(0);
+      });
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
 
 main().catch((err) => {
