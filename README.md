@@ -84,7 +84,7 @@ Checked on commit `407533a` in this container, 2026-10-20 (UTC), with `.env.loca
 | Anvil deployment and client suite | `tests/integration/anvil-settlement.test.ts` | 10 tests skipped (no Anvil, no `ANVIL_RPC_URL`) | BLOCKED |
 | Slither | `slither .` in `contracts/` | not installed here | BLOCKED |
 | Live Arc reads and transactions | `scripts/verify-live-arc.ts` | not run (no token, no `cast`, no network) | NOT_RUN |
-| CI | `.github/workflows/quality-gates.yml` | never executed on GitHub | NOT_RUN |
+| CI | `.github/workflows/quality-gates.yml` | dispatched once; no job got a runner (section 6) | BLOCKED |
 | Built server smoke run | `node dist/index.js`, then HTTP calls | health, readiness, OpenAPI, onboarding, two authenticated routes, clean SIGTERM | LOCAL_PASS (smoke) |
 
 The full commands, counts, the skipped tests and the known risks are in [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md). The claims from earlier sessions that this task did not reproduce are in its appendix.
@@ -200,7 +200,7 @@ Key source:
 
 - Any live Arc read or transaction (`NOT_RUN`). The earlier-session deployment, transaction and revert claims are unverified and listed in the appendix of `docs/RELEASE_EVIDENCE.md`.
 - Forge, Anvil and Slither (`BLOCKED`). The Forge invariant and reentrancy suites are written but have not been run.
-- The browser E2E (`BLOCKED`; the UI is orphaned). CI (never executed). The hosted deployment.
+- The browser E2E (`BLOCKED`; the UI is orphaned). CI (BLOCKED: dispatched once, no runner). The hosted deployment.
 - The Bind agent harness's own model path, a long-running or adversarial model session against the MCP server (a short local run is in `docs/RELEASE_EVIDENCE.md` section 4.1), and any live supplier, messaging, accounting or payment service.
 
 **Action needed from the owner**:

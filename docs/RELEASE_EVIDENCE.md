@@ -27,7 +27,7 @@ commit that adds this document; the working tree was clean at that commit).
 - **What those passes cover:** a local PostgreSQL database; a simulated supplier; owner notices that are recorded but not delivered;
   a settlement simulator in memory; and the settlement contract run in an in-process EVM. None of these is a live check.
 - **Not verified:** any live Arc read or transaction; the contract deployment and transactions named in earlier notes; Forge,
-  Anvil and Slither (BLOCKED here); the browser suite (BLOCKED: the UI is orphaned); CI (never executed); the hosted deployment.
+  Anvil and Slither (BLOCKED here); the browser suite (BLOCKED: the UI is orphaned); CI (BLOCKED: dispatched once, no runner); the hosted deployment.
 - **Action needed:** see `README.md`, section "Status".
 
 ## 2. How to reproduce
@@ -99,7 +99,7 @@ Results from the runs on `407533a`. "Class" is one of the five evidence classes 
 | Slither | `slither .` in `contracts/` | not run: not installed | BLOCKED |
 | Clean dependency install | `npm ci` | not run in this task: `node_modules` was already present, and the runner printed INFO | NOT_RUN |
 | Live Arc checks | `ARC_RPC_URL=<arc-rpc-url-with-token> npx tsx scripts/verify-live-arc.ts` | not run: no token, no `cast`, no chain access | NOT_RUN |
-| CI workflow | `.github/workflows/quality-gates.yml` | never executed on GitHub | NOT_RUN |
+| CI workflow | `.github/workflows/quality-gates.yml` | dispatched once; no job got a runner, no step ran (section 6) | BLOCKED |
 | Local gate runner | `BIND_ACCEPT_NOT_RUN=test:e2e bash scripts/verify-local.sh` | exit 1; summary below | BLOCKED |
 | Built-server smoke run | section 4 | every check listed passed | LOCAL_PASS (smoke) |
 
