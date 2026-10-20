@@ -2,6 +2,7 @@ import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import path from "path";
+import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { z } from "zod";
 import { query } from "../db/client.js";
@@ -459,6 +460,23 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   const BRAND_FILE = /^\/(tokens\.css|fonts\/[A-Za-z0-9-]+\.woff2|assets\/[A-Za-z0-9-]+\.svg)$/;
   app.use("/brand", (req: Request, res: Response, next: NextFunction) => {
     if ((req.method === "GET" || req.method === "HEAD") && BRAND_FILE.test(req.path)) return brandStatic(req, res, next);
+    next();
+  });
+  // The browser SDK (ADR 0056): the compiled ES modules in sdk/dist, served at /sdk/ so a page can import /sdk/index.js under
+  // the strict policy. Only .js files with plain names are served: no .d.ts, source map, or path that leaves the folder.
+  // Built by `npm run sdk:build` (also run by `npm run build`). Until then /sdk/ answers 404.
+  const sdkPath = path.resolve(__dirname, "../../sdk/dist");
+  if (!existsSync(path.join(sdkPath, "index.js"))) {
+    log.warn("sdk.browser_build_missing", { path: sdkPath, fix: "run npm run sdk:build; /sdk/ answers 404 until then" });
+  }
+  const sdkStatic = express.static(sdkPath, {
+    index: false,
+    fallthrough: false,
+    setHeaders: (res) => res.setHeader("Cache-Control", "public, max-age=300"),
+  });
+  const SDK_FILE = /^\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.js$/;
+  app.use("/sdk", (req: Request, res: Response, next: NextFunction) => {
+    if ((req.method === "GET" || req.method === "HEAD") && SDK_FILE.test(req.path)) return sdkStatic(req, res, next);
     next();
   });
   app.use(
