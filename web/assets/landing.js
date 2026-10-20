@@ -14,14 +14,78 @@
   }
   var started = false;
   function start() { if (!started) { started = true; ready(); } }
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(start, start);
-  setTimeout(start, 700);
 
-  // Header: a hairline once the page has scrolled.
+  // First visit of a session (boot.js decides): the ring draws, the bead seats, then the page appears (ADR 0055).
+  var INTRO_MS = 1320;
+  if (root.classList.contains("is-intro")) {
+    var intro = document.createElement("div");
+    intro.className = "intro";
+    intro.setAttribute("aria-hidden", "true");
+    intro.innerHTML =
+      '<div><svg viewBox="0 0 64 64"><path class="ring" pathLength="100" d="M32 12A20 20 0 1 1 32 52A20 20 0 1 1 32 12"/>' +
+      '<circle class="clasp" cx="42" cy="14.68" r="6.4"/></svg><p class="intro-word">BIND</p></div>';
+    document.body.insertBefore(intro, document.body.firstChild);
+    try { window.sessionStorage.setItem("bind-intro-seen", "1"); } catch (e) { /* the intro may play again; harmless */ }
+    setTimeout(function () {
+      root.classList.remove("is-intro");
+      intro.classList.add("is-done");
+      start();
+      setTimeout(function () { intro.remove(); }, 500);
+    }, INTRO_MS);
+  } else {
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(start, start);
+    setTimeout(start, 700);
+  }
+
+  // Header: the glass pill tightens once the page scrolls, and the logo's bead travels round the ring with the page.
   var header = document.querySelector(".site-header");
-  function onScroll() { if (header) header.classList.toggle("is-scrolled", window.scrollY > 8); }
+  var orbit = Array.prototype.slice.call(document.querySelectorAll(".site-header .orbit"));
+  var ticking = false;
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () {
+      ticking = false;
+      var y = window.scrollY;
+      if (header) header.classList.toggle("is-compact", y > 24);
+      if (!reduceMotion.matches && orbit.length) {
+        var max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+        var angle = Math.min(1, y / max) * 360;
+        orbit.forEach(function (el) { el.setAttribute("transform", "rotate(" + angle.toFixed(1) + " 32 32)"); });
+      }
+    });
+  }
   window.addEventListener("scroll", onScroll, { passive: true });
   onScroll();
+
+  // Sections ease into place the first time they come into view. Groups stagger by 60 ms.
+  var REVEAL = [
+    [".problem .eyebrow", ".problem .section-title"], [".problem-list li"],
+    [".how > .wrap > .eyebrow", ".how .section-title"],
+    [".who .eyebrow", ".who .section-title", ".who .section-lede"], [".tabs", ".day"],
+    [".trust .eyebrow", ".trust .section-title"], [".promise"],
+    [".integrations .eyebrow", ".integrations .section-title"], [".int-list li"], [".integrations .section-note"],
+    [".builders-grid > div", ".code-card"], [".pricing-row > *"], [".faq-grid > div:first-child", ".faq-list details"],
+    [".final"],
+  ];
+  if ("IntersectionObserver" in window && !reduceMotion.matches) {
+    var revealIo = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("is-in");
+        revealIo.unobserve(entry.target);
+      });
+    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
+    REVEAL.forEach(function (group) {
+      var els = [];
+      group.forEach(function (sel) { els = els.concat(Array.prototype.slice.call(document.querySelectorAll(sel))); });
+      els.forEach(function (el, i) {
+        el.classList.add("reveal");
+        el.style.setProperty("--reveal-delay", Math.min(i, 6) * 60 + "ms");
+        revealIo.observe(el);
+      });
+    });
+  }
 
   // Phone menu.
   var toggle = document.querySelector(".menu-toggle");

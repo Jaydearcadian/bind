@@ -84,6 +84,10 @@ Rounded, even and quiet. Transform and opacity only.
 
 A calm single page on the dark field: the serif headline "Connect once. Get back to work.", the mark assembling, and a row of demo cards. Sections: hero; how it connects (connect your tools, say how you run things, meet your team; say only what exists today); a day in the business (a swipeable strip of demo cards); you stay in the loop (limits you set, asked when it matters; a short block, not the headline); what has been tested and what has not (link `docs/RELEASE_EVIDENCE.md`); a close. `board.html` is the hero study.
 
+## Website additions (ADR 0055)
+
+At the owner's request the website adds a faint glass and gloss finish (translucent surfaces, a top highlight, one soft copper glow behind the hero, a faint reflection under the hero ring), a glass pill header that tightens on scroll while the header mark's bead travels round the ring with the page, a once-per-session intro (the ring draws, the bead seats) and scroll reveals. All of it is off with reduced motion. These supersede the "no gradients or glow" line in section B for the website only.
+
 ## Known limits
 
 No real person has seen this. Not tested: colour-blind users, other operating systems' font rendering, device performance, trademark clearance for "Bind" or the mark. The tagline is working text. The root `DESIGN.md` and `BRAND_DIRECTION.md` still describe an older direction and are not reconciled with this one.

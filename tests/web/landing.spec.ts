@@ -109,6 +109,64 @@ test.describe("landing page", () => {
   });
 });
 
+test.describe("motion and the intro (ADR 0055)", () => {
+  test("the first visit of a session plays the intro once, then the page appears; a second visit skips it", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator(".intro")).toBeAttached();
+    await expect(page.locator(".intro svg .ring")).toBeAttached();
+    await expect(page.locator(".intro")).toHaveCount(0, { timeout: 4000 });
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await page.reload();
+    await expect(page.locator(".intro")).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.classList.contains("is-intro"))).toBe(false);
+  });
+
+  test("with reduced motion there is no intro, no reveal hiding and the logo stays put", async ({ browser }) => {
+    const ctx = await browser.newContext({ reducedMotion: "reduce" });
+    const page = await ctx.newPage();
+    await page.goto("/");
+    await expect(page.locator(".intro")).toHaveCount(0);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+    await page.waitForTimeout(200);
+    expect(await page.locator(".site-header .logo-bead").getAttribute("transform")).toBeNull();
+    expect(await page.locator(".promise").first().evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+    await ctx.close();
+  });
+
+  test("the header tightens on scroll and the logo's bead travels with the page", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator(".intro")).toHaveCount(0, { timeout: 4000 });
+    const header = page.locator(".site-header");
+    await expect(header).not.toHaveClass(/is-compact/);
+    const before = await header.locator(".header-row").boundingBox();
+    await page.evaluate(() => window.scrollTo(0, 1200));
+    await expect(header).toHaveClass(/is-compact/);
+    await expect.poll(async () => (await header.locator(".header-row").boundingBox())!.height).toBeLessThan(before!.height);
+    const t1 = await header.locator(".logo-bead").getAttribute("transform");
+    await page.evaluate(() => window.scrollTo(0, 3200));
+    await expect.poll(() => header.locator(".logo-bead").getAttribute("transform")).not.toBe(t1);
+    // The ring's gap travels with the bead, so the mark stays whole.
+    // (Scrolling is smooth, so read both in one frame.)
+    await expect
+      .poll(() => header.evaluate((h) => [h.querySelector("mask .orbit")!.getAttribute("transform"), h.querySelector(".logo-bead")!.getAttribute("transform")]))
+      .toEqual(expect.arrayContaining([expect.stringMatching(/^rotate\(/)]));
+    const [gap, bead] = await header.evaluate((h) => [h.querySelector("mask .orbit")!.getAttribute("transform"), h.querySelector(".logo-bead")!.getAttribute("transform")]);
+    expect(gap).toBe(bead);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(header).not.toHaveClass(/is-compact/);
+  });
+
+  test("sections ease in when they come into view", async ({ page }) => {
+    await page.goto("/");
+    const promise = page.locator(".promise").first();
+    await expect(promise).toHaveClass(/reveal/);
+    await expect(promise).not.toHaveClass(/is-in/);
+    await promise.scrollIntoViewIfNeeded();
+    await expect(promise).toHaveClass(/is-in/);
+    await expect.poll(() => promise.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  });
+});
+
 test.describe("landing page, desktop", () => {
   test.skip(({ isMobile }) => isMobile, "the pinned picture is a wide-screen layout");
 
