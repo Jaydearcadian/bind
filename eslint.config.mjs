@@ -30,6 +30,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**", "artifacts/**", ".agtx/**", ".agents/**", "src/ui/public/**"],
+    ignores: ["dist/**", "mcp/dist/**", "sdk/dist/**", "node_modules/**", "coverage/**", "artifacts/**", ".agtx/**", ".agents/**", "src/ui/public/**"],
   }
 );

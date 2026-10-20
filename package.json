@@ -5,8 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "lint": "eslint src/ tests/ sdk/src/",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p sdk/tsconfig.json",
+    "lint": "eslint src/ tests/ sdk/src/ mcp/src/",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p sdk/tsconfig.json && tsc --noEmit -p mcp/tsconfig.json",
     "test": "vitest run tests/unit/",
     "test:unit": "vitest run tests/unit/",
     "test:integration": "vitest run tests/integration/",
@@ -22,6 +22,8 @@
     "api:spec": "tsx scripts/generate-openapi.ts",
     "sdk:generate": "tsx scripts/generate-sdk.ts",
     "sdk:build": "tsc -p sdk/tsconfig.json && cp sdk/src/generated/api.d.ts sdk/dist/generated/api.d.ts",
+    "mcp:build": "tsc -p mcp/tsconfig.json",
+    "mcp:start": "node mcp/dist/mcp/src/main.js",
     "token:issue": "tsx scripts/issue-owner-token.ts",
     "credentials:rotate-key": "tsx scripts/rotate-credential-key.ts",
     "contract:artifact": "npm --prefix tools/compile-contract ci && node tools/compile-contract/generate.mjs"
@@ -31,6 +33,7 @@
     "@heroicons/vue": "^2.2.0",
     "@langchain/core": "^1.2.17",
     "@langchain/openai": "^1.6.2",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@typesafe-ai/sdk": "^0.6.0",
     "cors": "^2.8.5",
     "deepagents": "^1.15.0",
@@ -43,7 +46,7 @@
     "uuid": "^11.0.5",
     "viem": "^2.21.57",
     "zod": "^3.24.1",
-    "zod-to-json-schema": "^3.24.6"
+    "zod-to-json-schema": "3.24.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
