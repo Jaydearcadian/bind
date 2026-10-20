@@ -1,0 +1,18 @@
+{
+  "requestId": "9f2c1a6e-4b1d-4c7e-8a55-3e0d2f7b1c10",
+  "status": "held",
+  "state": "awaiting_approval",
+  "provenance": "simulated",
+  "processing": {
+    "remaining": [
+      "owner_decision"
+    ]
+  },
+  "nextActions": [],
+  "warnings": [
+    {
+      "code": "OWNER_DECISION_NEEDED",
+      "message": "Only an owner can decide this."
+    }
+  ]
+}

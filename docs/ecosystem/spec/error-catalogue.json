@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "note": "existing=true: the code is sent today (checked against the source by tests/unit/ecosystem-spec.test.ts). existing=false: proposed by this specification and not in the source. HTTP statuses of the existing codes come from the handlers in src/server/app.ts and from docs/EVENTS.md.",
+  "codes": [
+    {
+      "code": "MALFORMED_JSON",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "INVALID_CHARACTERS",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "INVALID_INPUT",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": "Service-level validation (orders, tokens). The field names go in details."
+    },
+    {
+      "code": "INVALID_CURSOR",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "INVALID_LIMIT",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "BODY_TOO_LARGE",
+      "httpStatus": 413,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "RATE_LIMITED",
+      "httpStatus": 429,
+      "category": "rate_limited",
+      "retryable": true,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "TOO_MANY_STREAMS",
+      "httpStatus": 429,
+      "category": "rate_limited",
+      "retryable": true,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "APPROVAL_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "WORKFLOW_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "ORDER_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "TOKEN_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "APPROVAL_NOT_PENDING",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "Already decided. Refresh and look at the current state."
+    },
+    {
+      "code": "APPROVAL_EXPIRED",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "WORKFLOW_NOT_CANCELLABLE",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "WORKFLOW_STATE_CHANGED",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": true,
+      "existing": true,
+      "note": "Safe to retry after reading the workflow again."
+    },
+    {
+      "code": "ORDER_NOT_AWAITING_CONFIRMATION",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "LAST_OWNER_TOKEN",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "UNAUTHENTICATED",
+      "httpStatus": 401,
+      "category": "authentication",
+      "retryable": false,
+      "existing": false,
+      "note": "Today a 401 carries only a message."
+    },
+    {
+      "code": "OWNER_REQUIRED",
+      "httpStatus": 403,
+      "category": "authorization",
+      "retryable": false,
+      "existing": false,
+      "note": "Today the 403 for an owner route carries only a message."
+    },
+    {
+      "code": "WORKSPACE_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": false,
+      "note": "The same body answers a missing workspace and another tenant's (ADR 0021)."
+    },
+    {
+      "code": "VALIDATION_FAILED",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": false,
+      "note": "The generic 400 for a field that fails its schema. details.fields names them."
+    },
+    {
+      "code": "AUTH_UNAVAILABLE",
+      "httpStatus": 503,
+      "category": "unavailable",
+      "retryable": true,
+      "existing": false,
+      "note": "The token lookup failed."
+    },
+    {
+      "code": "INTERNAL_ERROR",
+      "httpStatus": 500,
+      "category": "internal",
+      "retryable": false,
+      "existing": false,
+      "note": "Detail is logged with the request id, never returned."
+    },
+    {
+      "code": "IDEMPOTENCY_KEY_INVALID",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": false,
+      "note": ""
+    },
+    {
+      "code": "IDEMPOTENCY_KEY_REUSED",
+      "httpStatus": 422,
+      "category": "validation",
+      "retryable": false,
+      "existing": false,
+      "note": "The same key was sent with a different request."
+    },
+    {
+      "code": "IDEMPOTENCY_IN_PROGRESS",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": true,
+      "existing": false,
+      "note": "The first request with this key has not finished. Retry after retryAfterSeconds."
+    },
+    {
+      "code": "WEBHOOK_URL_REFUSED",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": false,
+      "note": "Not https, or resolves to a private address."
+    },
+    {
+      "code": "WEBHOOK_ENDPOINT_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": false,
+      "note": ""
+    }
+  ]
+}

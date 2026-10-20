@@ -1,0 +1,19 @@
+{
+  "error": "Invalid request body",
+  "code": "VALIDATION_FAILED",
+  "category": "validation",
+  "retryable": false,
+  "requestId": "9f2c1a6e-4b1d-4c7e-8a55-3e0d2f7b1c10",
+  "details": {
+    "fields": [
+      "sku",
+      "quantity"
+    ]
+  },
+  "recovery": [
+    {
+      "action": "fix_request",
+      "description": "Correct the named fields and send again."
+    }
+  ]
+}

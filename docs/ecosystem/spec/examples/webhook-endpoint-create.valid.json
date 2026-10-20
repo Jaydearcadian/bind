@@ -1,0 +1,9 @@
+{
+  "url": "https://hooks.example.com/bind",
+  "events": [
+    "order.submitted",
+    "approval.approved",
+    "customer_order.held"
+  ],
+  "description": "Accounting sync"
+}

@@ -60,3 +60,4 @@ a live system: `docs/RELEASE_EVIDENCE.md` is the place for that.
 | [0044](0044-brand-study-1.md) | Brand study 1: the handoff | Superseded | A dovetail mark study. Replaced by ADR 0045; kept as a record. |
 | [0045](0045-bead-ring-brand.md) | The bead ring is the brand direction | Accepted | The ring's own wordmark, type and palette, with a copper bead that is also the dot of the i. Canonical in `docs/brand/`; the other directions are in `docs/brand/archive/`. |
 | [0046](0046-ecosystem-audit.md) | Ecosystem audit round 1 and the capability catalogue | Accepted | 67 operations classified; a generated, tested catalogue; 14 findings; no payment protocol; specify before building. |
+| [0047](0047-response-and-event-spec.md) | Response model and event surface specification, draft 1 | Accepted | Additive: an idempotency key, `_meta`, error v2, event envelope v1 and outbound webhooks. Draft schemas and tests only; nothing built. |

@@ -1,0 +1,6 @@
+{
+  "url": "http://hooks.example.com/bind",
+  "events": [
+    "order.submitted"
+  ]
+}
