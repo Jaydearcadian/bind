@@ -15,7 +15,7 @@ commit that adds this document; the working tree was clean at that commit).
 | Container | Linux 6.18.44-fc-v139, x86_64 |
 | Node | v22.22.0 (npm 10.9.4). CI pins Node 24 (`.github/workflows/quality-gates.yml`) and this run did not use it. |
 | PostgreSQL | 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on 127.0.0.1:5432, database `bind_local`. CI pins PostgreSQL 17. |
-| Not available here | Foundry (`forge`), Anvil, Slither, `cast`; model keys (`NEBIUS_API_KEY`); search keys (`PARALLEL_API_KEY`, `TAVILY_API_KEY`); live supplier, messaging, accounting and payment connectors; an Arc RPC token; GitHub Actions. |
+| Not available here | model keys (`NEBIUS_API_KEY`); search keys (`PARALLEL_API_KEY`, `TAVILY_API_KEY`); live supplier, messaging, accounting and payment connectors; an Arc RPC token; a working GitHub Actions runner. |
 | Outbound network | Only the npm registry, through the configured proxy, was reached (by `npm audit`). No live supplier, chain, messaging or hosting endpoint was contacted by any step. |
 | Clean-checkout condition | `.env.local` was moved aside for the whole gate batch and for the smoke run, and restored afterwards (the file is untracked and gitignored). |
 
@@ -26,8 +26,7 @@ commit that adds this document; the working tree was clean at that commit).
   and a smoke run of the built server. The dependency audit reports no high-severity findings.
 - **What those passes cover:** a local PostgreSQL database; a simulated supplier; owner notices that are recorded but not delivered;
   a settlement simulator in memory; and the settlement contract run in an in-process EVM. None of these is a live check.
-- **Not verified:** any live Arc read or transaction; the contract deployment and transactions named in earlier notes; Forge,
-  Anvil and Slither (BLOCKED here); the browser suite (BLOCKED: the UI is orphaned); CI (BLOCKED: dispatched once, no runner); the hosted deployment.
+- **Not verified:** any live Arc read or transaction; the contract deployment and transactions named in earlier notes; the browser suite (BLOCKED: the UI is orphaned); CI (BLOCKED: dispatched once, no runner); the hosted deployment.
 - **Action needed:** see `README.md`, section "Status".
 
 ## 2. How to reproduce
@@ -94,9 +93,9 @@ Results from the runs on `407533a`. "Class" is one of the five evidence classes 
 | In-process contract suite | `npx vitest run tests/unit/contract-artifact.test.ts tests/integration/local-chain.test.ts tests/integration/arc-settlement-evm.test.ts tests/integration/arc-find-transfer.test.ts` | 4 of 4 files; 32 of 32 tests passed. In-process EVM, not Anvil. | LOCAL_PASS |
 | Browser E2E (orphaned UI) | `npm run test:e2e` | prints `BLOCKED: browser E2E is not run: the UI is orphaned (ADR 0016)` and exits 1 | BLOCKED |
 | Browser E2E (legacy) | `npm run test:e2e:legacy` | not run in this task | NOT_RUN |
-| Forge format, build, unit, fuzz, invariant, coverage | `forge fmt --check`, `forge build`, `forge test -vvv`, `forge coverage` in `contracts/` | not run: `forge` is not installed | BLOCKED |
-| Anvil deployment and client suite | `ANVIL_RPC_URL=<node> npx vitest run tests/integration/anvil-settlement.test.ts` | not run: `anvil` is not installed. Without `ANVIL_RPC_URL` the file's 10 tests are skipped. | BLOCKED |
-| Slither | `slither .` in `contracts/` | not run: not installed | BLOCKED |
+| Forge format, build, unit, fuzz, invariant, coverage | `forge fmt --check`, `forge build`, `forge test -vvv`, `forge coverage` in `contracts/` | Forge 1.5.1. Format and build exit 0 (the build prints lint warnings about `uint160` casts in tests). 3 suites, 24 of 24 tests passed: 10 unit or fuzz, 8 reentrancy, 6 invariants (256 runs, depth 15, 0 reverts). Coverage of `src/BindSettlement.sol`: lines 100% (68/68), statements 93.02% (80/86), branches 72.73% (16/22), functions 100% (11/11). The branch figure is why "100% coverage" is not claimed. | LOCAL_PASS |
+| Anvil deployment and client suite | `ANVIL_RPC_URL=<node> npx vitest run tests/integration/anvil-settlement.test.ts` | Anvil 1.5.1 on chain 31337, started by `scripts/verify-local.sh`: 10 of 10 tests passed. Without `ANVIL_RPC_URL` the file's 10 tests are skipped, so the plain integration run does not cover it. | LOCAL_PASS |
+| Slither | `slither . --fail-medium` in `contracts/` (config: `contracts/slither.config.json`) | Slither 0.11.6, solc 0.8.28. 1 contract, 102 detectors, 9 findings, none medium or high: 3 reentrancy-events and 2 timestamp (low), 3 low-level-calls (informational), 1 `owner` could be immutable (optimization). Exit 0. With an arbitrary-send function added, the same command exits 255 (mutation check; the file was restored). The first attempt, `slither .` with no config, analysed 0 contracts and exited 0: a false pass, fixed in `f776d34`. | LOCAL_PASS |
 | Clean dependency install | `npm ci` | not run in this task: `node_modules` was already present, and the runner printed INFO | NOT_RUN |
 | Live Arc checks | `ARC_RPC_URL=<arc-rpc-url-with-token> npx tsx scripts/verify-live-arc.ts` | not run: no token, no `cast`, no chain access | NOT_RUN |
 | CI workflow | `.github/workflows/quality-gates.yml` | dispatched once; no job got a runner, no step ran (section 6) | BLOCKED |
@@ -111,17 +110,19 @@ code changed. Integration results are the same as above, because the test and th
 The local gate runner's own summary (its output is quoted as printed; the rows above explain each line):
 
 ```
-PASS=12 FAIL_OR_BLOCKED=3 NOT_RUN_ACCEPTED=1
+PASS=12 FAIL_OR_BLOCKED=3 NOT_RUN_ACCEPTED=1     (commit 407533a, before Foundry and Slither were installed)
+BLOCKED: forge, anvil and slither not installed
+
+PASS=18 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=1     (commit f776d34, 2026-10-20, after installing them; exit 0)
 PASS: lint, typecheck, unit, integration, contract in-process suite, build, sdk:build, mcp:build, audit,
-      spec drift, sdk drift, map drift
-BLOCKED: forge not installed (forge fmt --check, forge build, forge test -vvv, forge coverage)
-BLOCKED: anvil not installed (anvil integration)
-BLOCKED: slither not installed (slither (unverified invocation))
+      spec drift, sdk drift, map drift, forge fmt --check, forge build, forge test -vvv, forge coverage,
+      anvil integration, slither (--fail-medium)
 NOT_RUN accepted by BIND_ACCEPT_NOT_RUN: test:e2e (UI orphaned, ADR 0016)
 ```
 
-The runner also ran the unit suite a second time and the integration suite a third time; both passed with the counts above. The three BLOCKED lines
-make the runner exit 1 here, which is the intended result: a missing tool is never a pass.
+The first summary exited 1 because a missing tool is never a pass. The second exited 0 with Foundry 1.5.1, Anvil 1.5.1, Slither 0.11.6 and
+solc 0.8.28 installed locally (downloaded through the environment's proxy; the tools are not part of the repository). In that run unit was 347 of 347,
+integration 535 passed and 10 skipped, and the in-process contract suite 32 of 32.
 
 Remote reproduction recorded: `npm audit --audit-level=high` on `407533a` at 2026-10-20T10:24:56Z, and again inside
 `scripts/verify-local.sh` at about 10:29Z. npm's advisory database was read through the proxy, 0 vulnerabilities. This is a read of a
@@ -175,7 +176,7 @@ above, except where the class column says otherwise.
 | Order reservation and effects ledger | LOCAL_PASS | `tests/integration/effects-ledger.test.ts`, `tests/integration/order-submission-recovery.test.ts`, `tests/integration/daily-budget-statuses.test.ts`, `tests/unit/effects-operation-map.test.ts`, `tests/unit/effects-serialize.test.ts`, `tests/integration/notification-effects.test.ts` | Local PostgreSQL. The supplier and emitter are simulated. |
 | Settlement: local simulator (default) | LOCAL_PASS | `tests/unit/local-settlement-sim.test.ts`, `tests/integration/settlement-confirmation.test.ts`, `tests/integration/settlement-effects.test.ts`, `tests/integration/settlement-pause.test.ts`, `tests/integration/settlement-lost-claim.test.ts`, `tests/integration/studio-settle-once.test.ts` | In memory. Transfers are lost on restart. No money moves. |
 | Settlement: Arc adapter against the in-process EVM | LOCAL_PASS (in-process EVM) | `tests/integration/arc-settlement-evm.test.ts`, `tests/integration/arc-find-transfer.test.ts`, `tests/integration/local-chain.test.ts`, `tests/integration/bind-settlement-properties.test.ts`, `tests/integration/bind-settlement-reentrancy.test.ts`, `tests/unit/contract-artifact.test.ts`, `tests/unit/arc-contract-boundary.test.ts` | The in-process EVM is not Anvil and not Arc. The live Arc check is NOT_RUN (section 6). |
-| Settlement against Anvil | BLOCKED | `tests/integration/anvil-settlement.test.ts` (10 tests, skipped) | `anvil` is not installed. |
+| Settlement against Anvil | LOCAL_PASS (local Anvil) | `tests/integration/anvil-settlement.test.ts` (10 tests) | A local node, not Arc. Skipped in the plain integration run unless `ANVIL_RPC_URL` is set. |
 | Crash recovery and worker | LOCAL_PASS | `tests/integration/crash-recovery.test.ts`, `tests/integration/worker.test.ts`, `tests/integration/worker-sweep.test.ts`, `tests/integration/needs-attention.test.ts`, `tests/integration/workflow-cancel.test.ts`, `tests/integration/shutdown.test.ts`, `tests/integration/migration-lock.test.ts` | A crash is simulated by leaving the state a crash would leave. No test kills a process in the middle of an effect. The worker runs only in the server process. |
 | Auth and tenancy | LOCAL_PASS | `tests/integration/auth-tenancy.test.ts`, `tests/integration/audit-actors.test.ts`, `tests/unit/tokens.test.ts`, `tests/integration/error-echo.test.ts`, `tests/integration/untrusted-input.test.ts` | The owner is identified by a token label, not a person (ADR 0021). |
 | Webhooks and surface identity | LOCAL_PASS | `tests/integration/webhook-auth.test.ts`, `tests/integration/webhook-receiver.test.ts`, `tests/unit/webhook-signing.test.ts`, `tests/integration/surface-pause.test.ts`, `tests/unit/socialSurface.test.ts`, `tests/integration/notification-recipients.test.ts` | Bind's own signed format only. No WhatsApp, email, Telegram or POS connector. |
@@ -185,8 +186,8 @@ above, except where the class column says otherwise.
 | API contract, event stream, SDK, MCP | LOCAL_PASS | `tests/integration/api-contract.test.ts`, `tests/unit/openapi.test.ts`, `tests/integration/openapi-route.test.ts`, `tests/integration/events.test.ts`, `tests/integration/events-shutdown.test.ts`, `tests/unit/events.test.ts`, `tests/integration/sdk.test.ts`, `tests/unit/sdk.test.ts`, `tests/unit/sdk-sse.test.ts`, `tests/unit/sdk-stream.test.ts`, `tests/integration/mcp.test.ts`, `tests/unit/mcp.test.ts` | MCP is driven by the SDK client over an in-memory transport and over stdio. No real model client. |
 | Observability and rate limits | LOCAL_PASS | `tests/integration/ops.test.ts`, `tests/unit/logger.test.ts`, `tests/unit/metrics.test.ts`, `tests/integration/rate-limit.test.ts`, `tests/unit/rate-limit.test.ts`, `tests/integration/route-failure.test.ts` | Limits and metrics are per process, in memory. |
 | Contract tests, in-process | LOCAL_PASS | `tests/unit/contract-artifact.test.ts`, `tests/unit/helper-artifacts.test.ts`, `tests/unit/arc-contract-boundary.test.ts`, `tests/integration/bind-settlement-properties.test.ts`, `tests/integration/bind-settlement-reentrancy.test.ts`, `tests/integration/local-chain.test.ts` | In-process EVM. The property tests are not Forge invariant tests and are not a proof. |
-| Contract tests, Forge (unit, fuzz, invariant, reentrancy) | NOT_RUN | `contracts/test/BindSettlement.t.sol` (10 functions), `contracts/test/BindSettlement.invariant.t.sol` (6 invariants), `contracts/test/BindSettlement.reentrancy.t.sol` (8 functions) | Written and compile-checked with solc-js. Never run by `forge`. |
-| Contract tests, Anvil | BLOCKED | `tests/integration/anvil-settlement.test.ts` | `anvil` not installed. |
+| Contract tests, Forge (unit, fuzz, invariant, reentrancy) | LOCAL_PASS | `contracts/test/BindSettlement.t.sol` (10 functions), `contracts/test/BindSettlement.invariant.t.sol` (6 invariants), `contracts/test/BindSettlement.reentrancy.t.sol` (8 functions) | Forge 1.5.1: 24 of 24 passed, invariants 256 runs at depth 15. Branch coverage of the contract is 72.73%. |
+| Contract tests, Anvil | LOCAL_PASS | `tests/integration/anvil-settlement.test.ts` | Local Anvil, chain 31337. |
 | Browser UI | NOT_RUN | `tests/e2e/dashboard.spec.ts` (tests the orphaned UI) | The UI is orphaned (ADR 0016). Nothing tests a new UI, because none exists. |
 | Local-only, no testnet credentials | LOCAL_PASS | the whole unit and integration run above, with `.env.local` moved aside | No live credential was used. |
 
@@ -205,7 +206,7 @@ above, except where the class column says otherwise.
 - **Market benchmarks.** Without `PARALLEL_API_KEY` or `TAVILY_API_KEY`, a labelled offline reference (`OFFLINE_DETERMINISTIC_FALLBACK`)
   is returned. It is not a market price.
 - **Arc live.** NOT_RUN. No network to the chain, no token, no `cast`. The live script (`scripts/verify-live-arc.ts`) was not run.
-- **Forge, Anvil, Slither.** BLOCKED. Their suites are listed in section 5.
+- **Forge, Anvil, Slither.** Ran locally (section 3). They are installed in this environment only; CI has not run them.
 - **CI.** BLOCKED. One manual run was dispatched on 2026-10-20 (run 39412218020, commit 23042f2). The `quality` and `contracts` jobs
   ended `failure` after 3 seconds with no runner assigned, no steps and no log (the log download returns 404), and `verify-local`
   was skipped. No step of the workflow executed, so its job definitions are still unproven. The cause is not visible from the
@@ -244,16 +245,16 @@ changing it is a product decision and it has not been changed here.
 | Git history: commit `0b69b2e` says it removed a hard-coded Arc RPC token from source, docs and the example. A search of every commit found no literal token; every occurrence is the placeholder `<ARC_RPC_TOKEN>`. The exposure is not confirmed. | Appendix, A24 | Rotate the Arc RPC token if it was ever used with this repository. |
 | Receipts and bills are ordered by a random row id when `received_at` ties. | ADR 0020 (Consequences) | Order by a stored sequence. Low risk: `received_at` has microsecond resolution. |
 | Version gap: CI pins Node 24 and PostgreSQL 17. This run used Node 22 and PostgreSQL 16. ADR 0001 names Node 24. | `.github/workflows/quality-gates.yml`; ADR 0001 | Run the gates on the CI versions once CI runs. |
-| The contract's and the adapter's tests run in-process. The Anvil and Forge suites have never run. | section 3; ADR 0038 | Install Foundry and Anvil, then run them. |
+| Forge, Anvil and Slither ran once, locally, on one machine. Branch coverage of the contract is 72.73%, and Slither's low findings (reentrancy-events, timestamp) were reviewed but not fixed. | section 3 | Run them in CI when a runner exists; add tests for the 6 uncovered branches. |
 | The restock sweep starts replenishments on its own, within policy, when `BIND_RESTOCK_SWEEP=true`. It is off by default. | RUNBOOK 6.2; ADR 0030 | Leave it off unless deliberately enabled. |
 
 ## 8. Skipped tests
 
 - **`tests/integration/anvil-settlement.test.ts`**: `describe.skipIf(!ANVIL_RPC_URL)`. Its 10 `[anvil]` tests were reported as
   skipped in both integration runs and in the runner's run. The integration gate exits 0 with them skipped, because a skip is not a
-  failure. Do not read "535 passed" as covering Anvil.
+  failure. Do not read "535 passed" as covering Anvil; the Anvil file ran separately (10 of 10).
 - **`tests/e2e/dashboard.spec.ts`**: 4 tests in two Playwright projects (8 runs). Not run: the UI is orphaned (BLOCKED or NOT_RUN).
-- **Solidity tests** in `contracts/test/`: 10 unit or fuzz functions, 6 invariants and 8 reentrancy functions. Not run (no `forge`).
+- **Solidity tests** in `contracts/test/`: 10 unit or fuzz functions, 6 invariants and 8 reentrancy functions. Run by Forge 1.5.1 on 2026-10-20: all passed (section 3).
 - **CI jobs** in `.github/workflows/quality-gates.yml`. Never executed.
 - **Searches for other skips.** `it.skip`, `describe.skip`, `test.skip`, `xit`, `xdescribe`, `it.todo`, `test.todo`, `.only`
   (in `tests/` and `contracts/test/`): none found. The only conditional skip is the Anvil file above.

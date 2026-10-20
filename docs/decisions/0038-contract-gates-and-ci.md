@@ -163,3 +163,11 @@ boundary check and is not a deployment on a real node.
 - The aggregate CI job repeats the other jobs. It costs CI time in exchange for a single authoritative summary line.
 - Any change to `contracts/src/BindSettlement.sol` requires `npm run contract:artifact` and a commit. The artifact test
   fails on a stale hash.
+
+## Update 2026-10-20: the gates were run locally
+Foundry 1.5.1, Anvil 1.5.1 and Slither 0.11.6 (with solc 0.8.28) were downloaded and installed in the working container, because the
+owner could not fix the GitHub runner. `bash scripts/verify-local.sh` then reported `PASS=18 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=1`
+at commit `f776d34`. The BLOCKED lines above describe the earlier environment and are kept as written. Slither's gate was changed:
+`slither .` analysed 0 contracts and exited 0 (a false pass), so the gate is now `slither . --fail-medium` with
+`contracts/slither.config.json`, and it was shown to exit 255 on an injected arbitrary-send function. The gate label no longer says
+"unverified invocation". CI still has not executed; the one dispatch got no runner. Details: `docs/RELEASE_EVIDENCE.md` section 3.

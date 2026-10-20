@@ -80,9 +80,9 @@ Checked on commit `407533a` in this container, 2026-10-20 (UTC), with `.env.loca
 | API spec, SDK and map drift | `npm run api:spec`, `npm run sdk:generate`, `npm run map:functions`, each followed by `git diff --exit-code` | no drift | LOCAL_PASS |
 | In-process contract suite | four `vitest` files, see [`docs/CONTRACT_SCOPE.md`](docs/CONTRACT_SCOPE.md) section 6 | 4 files, 32 tests passed | LOCAL_PASS |
 | Browser E2E | `npm run test:e2e` | exits 1 with BLOCKED (UI orphaned) | BLOCKED |
-| Forge fmt, build, tests, coverage | `forge ...` in `contracts/` | not installed here | BLOCKED |
-| Anvil deployment and client suite | `tests/integration/anvil-settlement.test.ts` | 10 tests skipped (no Anvil, no `ANVIL_RPC_URL`) | BLOCKED |
-| Slither | `slither .` in `contracts/` | not installed here | BLOCKED |
+| Forge fmt, build, tests, coverage | `forge ...` in `contracts/` | 24 of 24 passed (unit, fuzz, reentrancy, invariants). Contract line coverage 100%, branch coverage 72.73% | LOCAL_PASS |
+| Anvil deployment and client suite | `tests/integration/anvil-settlement.test.ts` | 10 of 10 passed against a local Anvil (skipped unless `ANVIL_RPC_URL` is set) | LOCAL_PASS |
+| Slither | `slither . --fail-medium` in `contracts/` | no medium or high findings; 9 low, informational or optimization findings | LOCAL_PASS |
 | Live Arc reads and transactions | `scripts/verify-live-arc.ts` | not run (no token, no `cast`, no network) | NOT_RUN |
 | CI | `.github/workflows/quality-gates.yml` | dispatched once; no job got a runner (section 6) | BLOCKED |
 | Built server smoke run | `node dist/index.js`, then HTTP calls | health, readiness, OpenAPI, onboarding, two authenticated routes, clean SIGTERM | LOCAL_PASS (smoke) |
@@ -109,8 +109,8 @@ npm run test:unit                 # 347 tests on the final tree (340 on 407533a,
 npm run test:integration          # 535 pass, 10 skipped (Anvil)
 npm run build
 npm run test:e2e                  # BLOCKED: exits 1 while the UI is orphaned (ADR 0016)
-cd contracts && forge test -vvv   # BLOCKED here: forge is not installed
-bash scripts/verify-local.sh      # runs the gates above; exits 1 here (forge, anvil, slither are BLOCKED)
+cd contracts && forge test -vvv   # needs Foundry
+bash scripts/verify-local.sh      # runs the gates above; exits 0 with Foundry, Anvil and Slither installed
 ```
 
 ## Architecture
@@ -199,7 +199,7 @@ Key source:
 **Not verified**:
 
 - Any live Arc read or transaction (`NOT_RUN`). The earlier-session deployment, transaction and revert claims are unverified and listed in the appendix of `docs/RELEASE_EVIDENCE.md`.
-- Forge, Anvil and Slither (`BLOCKED`). The Forge invariant and reentrancy suites are written but have not been run.
+- Forge, Anvil and Slither have run only locally, once, not in CI.
 - The browser E2E (`BLOCKED`; the UI is orphaned). CI (BLOCKED: dispatched once, no runner). The hosted deployment.
 - The Bind agent harness's own model path, a long-running or adversarial model session against the MCP server (a short local run is in `docs/RELEASE_EVIDENCE.md` section 4.1), and any live supplier, messaging, accounting or payment service.
 

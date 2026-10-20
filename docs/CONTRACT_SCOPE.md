@@ -58,12 +58,14 @@ Local check of the committed artifact: `LOCAL_PASS (npx vitest run tests/unit/co
 
 ## 4. Foundry Verification Gates
 
-The earlier session recorded these results. They are not reproduced here, and Forge is `BLOCKED` in this environment (not installed):
-- `forge fmt --check`: 100% compliant. `UNVERIFIED_CLAIM (earlier session; reproduce with: cd contracts && forge fmt --check)`. Local result: `BLOCKED`.
-- `forge test -vvv`: 10 passed (unit, fuzzing, policy, invariant, and adversarial tests). `UNVERIFIED_CLAIM (earlier session; reproduce with: cd contracts && forge test -vvv)`. Local result: `BLOCKED`.
+**Update 2026-10-20 (`f776d34`):** Foundry 1.5.1, Anvil 1.5.1 and Slither 0.11.6 were installed in this container and the gates were run. Results are in `docs/RELEASE_EVIDENCE.md` section 3: Forge format and build exit 0; 24 of 24 Forge tests passed (10 unit or fuzz, 8 reentrancy, 6 invariants at 256 runs, depth 15); contract coverage is lines 100% (68/68), statements 93.02%, branches 72.73%, functions 100%; Anvil suite 10 of 10; Slither found nothing medium or high. The lines below are the earlier session's claims, kept for history. The 10-test count and the 100% line and function figures are now reproduced. "No invariant tests" and "No reentrancy test exists" are superseded (Task 13b added them). Everything remains local: nothing ran in CI or against Arc.
+
+The earlier session recorded these results:
+- `forge fmt --check`: 100% compliant. `UNVERIFIED_CLAIM (earlier session; reproduce with: cd contracts && forge fmt --check)`. Local result on 2026-10-20: reproduced (`LOCAL_PASS`).
+- `forge test -vvv`: 10 passed (unit, fuzzing, policy, invariant, and adversarial tests). `UNVERIFIED_CLAIM (earlier session; reproduce with: cd contracts && forge test -vvv)`. Local result on 2026-10-20: reproduced (`LOCAL_PASS`).
   - Static check, not a run (`LOCAL_PASS (grep -c "function test" contracts/test/BindSettlement.t.sol)`): the file defines 10 test functions, nine `test_*` and one `testFuzz_*`. It defines no `invariant_*` function and imports no invariant helper. The word "invariant" appears only in a comment. The "invariant" part of the claim is therefore not supported by the file.
   - The adversarial tests are access-control checks (`test_PolicyAdmin_OnlyOwner`, `test_UnauthorizedCallerCannotRelease`). No reentrancy test exists.
-- `forge coverage`: 100% line coverage (68/68 lines), 100% function coverage (11/11 functions). `UNVERIFIED_CLAIM (earlier session; reproduce with: cd contracts && forge coverage)`. Local result: `BLOCKED`.
+- `forge coverage`: 100% line coverage (68/68 lines), 100% function coverage (11/11 functions). `UNVERIFIED_CLAIM (earlier session; reproduce with: cd contracts && forge coverage)`. Local result on 2026-10-20: reproduced (`LOCAL_PASS`).
 
 Gaps against `docs/TESTING_AND_RELEASE_GATES.md` section 2, from the tree as it is:
 - No invariant tests (see above).
@@ -83,22 +85,22 @@ Gaps against `docs/TESTING_AND_RELEASE_GATES.md` section 2, from the tree as it 
 
 ## 6. Which gate ran where
 
-Local result is what happened in this container. CI is what `.github/workflows/quality-gates.yml` configures; no CI job has ever executed (`NOT_RUN` on GitHub).
+Local result is what happened in this container. CI is what `.github/workflows/quality-gates.yml` configures; no CI job has executed: the one dispatch on 2026-10-20 got no runner (`BLOCKED`).
 
-| Gate | Command | Local container result | CI (configured, never executed) | Evidence class |
+| Gate | Command | Local container result | CI (configured; one dispatch got no runner) | Evidence class |
 | --- | --- | --- | --- | --- |
-| Forge format | `forge fmt --check` in `contracts/` | BLOCKED (forge not installed) | `contracts` job | UNVERIFIED_CLAIM (earlier session) |
-| Forge build | `forge build` in `contracts/` | BLOCKED (forge not installed) | `contracts` job | NOT_RUN |
-| Forge unit and fuzz tests | `forge test -vvv` in `contracts/` | BLOCKED (forge not installed) | `contracts` job | UNVERIFIED_CLAIM (earlier session: 10 passed; no invariant tests in the file) |
-| Forge coverage | `forge coverage` in `contracts/` | BLOCKED (forge not installed) | `contracts` job | UNVERIFIED_CLAIM (earlier session: 100%) |
-| Slither | `slither .` in `contracts/` (unverified invocation); CI uses `crytic/slither-action@v0.4.0` (unverified tag) | BLOCKED (slither not installed) | `contracts` job and `verify-local` job (which installs Slither unpinned) | NOT_RUN |
-| Anvil deployment and client suite | `ANVIL_RPC_URL=<node> npx vitest run tests/integration/anvil-settlement.test.ts` | BLOCKED (anvil not installed; the suite also skips without `ANVIL_RPC_URL`) | `contracts` job (Anvil on 8545) and `verify-local` job (Anvil on 18545) | NOT_RUN |
+| Forge format | `forge fmt --check` in `contracts/` | exit 0 | `contracts` job | LOCAL_PASS |
+| Forge build | `forge build` in `contracts/` | exit 0 | `contracts` job | LOCAL_PASS |
+| Forge unit and fuzz tests | `forge test -vvv` in `contracts/` | 24 of 24 passed across 3 suites | `contracts` job | LOCAL_PASS |
+| Forge coverage | `forge coverage` in `contracts/` | lines 100% (68/68), statements 93.02%, branches 72.73%, functions 100% | `contracts` job | LOCAL_PASS |
+| Slither | `slither . --fail-medium` in `contracts/` (reads `contracts/slither.config.json`); CI uses `crytic/slither-action@v0.4.0` (unverified tag) | exit 0: no medium or high findings; 9 lower findings listed in the evidence. Without the config, `slither .` analysed 0 contracts and exited 0 | `contracts` job and `verify-local` job (which installs Slither unpinned) | LOCAL_PASS |
+| Anvil deployment and client suite | `ANVIL_RPC_URL=<node> npx vitest run tests/integration/anvil-settlement.test.ts` | 10 of 10 passed on a local Anvil (the suite skips without `ANVIL_RPC_URL`) | `contracts` job (Anvil on 8545) and `verify-local` job (Anvil on 18545) | LOCAL_PASS |
 | In-process EVM: client, ABI, events, artifact hash | `npx vitest run tests/unit/contract-artifact.test.ts tests/integration/local-chain.test.ts tests/integration/arc-settlement-evm.test.ts tests/integration/arc-find-transfer.test.ts` | LOCAL_PASS (4 files, 32 tests) | `contracts` job | LOCAL_PASS (in-process EVM, not Anvil) |
 | In-process property tests (I1 to I7, six seeds of 60 steps, the daily-window named tests) | `npx vitest run tests/integration/bind-settlement-properties.test.ts` | LOCAL_PASS (1 file, 9 tests: six seeds of 60 steps, one coverage check, two named tests) | not in CI | LOCAL_PASS (in-process EVM, not Forge invariant testing, not a proof) |
 | In-process reentrancy (six attacker modes, swallowed and bubbled) | `npx vitest run tests/integration/bind-settlement-reentrancy.test.ts` | LOCAL_PASS (1 file, 13 tests: six modes, each swallowed and bubbled, plus one extra test for a second order) | not in CI | LOCAL_PASS (in-process EVM, not Forge) |
 | Helper artifact hash guard (`ReentrantSupplier`) | `npx vitest run tests/unit/helper-artifacts.test.ts` | LOCAL_PASS (1 file, 5 tests) | not in CI | LOCAL_PASS |
-| Forge invariant suite (`BindSettlementInvariantTest`, I1 to I6 as Solidity invariants) | `cd contracts && forge test --match-contract BindSettlementInvariantTest` | NOT_RUN (forge not installed). COMPILES (solc-js 0.8.37, with `forge-std` from `contracts/lib`); it was not executed | `contracts` job (configured, never run) | NOT_RUN |
-| Forge reentrancy suite (`BindSettlementReentrancyTest`, uses `ReentrantSupplier`) | `cd contracts && forge test --match-contract BindSettlementReentrancyTest` | NOT_RUN (forge not installed). COMPILES (solc-js 0.8.37); it was not executed | `contracts` job (configured, never run) | NOT_RUN |
+| Forge invariant suite (`BindSettlementInvariantTest`, I1 to I6 as Solidity invariants) | `cd contracts && forge test --match-contract BindSettlementInvariantTest` | 6 invariants passed (256 runs, depth 15, 0 reverts) | `contracts` job (never run) | LOCAL_PASS |
+| Forge reentrancy suite (`BindSettlementReentrancyTest`, uses `ReentrantSupplier`) | `cd contracts && forge test --match-contract BindSettlementReentrancyTest` | 8 tests passed | `contracts` job (never run) | LOCAL_PASS |
 | Live Arc reads and recorded transactions | `ARC_RPC_URL=<arc-rpc-url-with-token> npx tsx scripts/verify-live-arc.ts [--write-evidence <new-file>]` | NOT_RUN (no network, no token, no `cast`). The script is read-only and writes only the file named by `--write-evidence`. Without a configured URL every gate is BLOCKED. | not configured (no secret in CI) | UNVERIFIED_CLAIM (earlier session); the rewritten checks are unit-tested: LOCAL_PASS (`npx vitest run tests/unit/verify-live-arc.test.ts`, injected cast and RPC) |
 | Browser E2E | `npm run test:e2e` | BLOCKED (UI orphaned, ADR 0016); accepted as NOT_RUN only through `BIND_ACCEPT_NOT_RUN=test:e2e` | `verify-local` job, recorded as NOT_RUN_ACCEPTED | NOT_RUN (ADR 0016) |
 
@@ -127,7 +129,7 @@ changed here. Each behaviour is asserted as it is, with a comment that names thi
 3. **A stranger on a settled escrow gets `EscrowAlreadySettled`, not `Unauthorized`.** `releaseEscrow` and `refundEscrow`
    check the escrow status before the caller. The stranger rule therefore holds for open escrows only. The property model
    encodes the actual order. `LOCAL_PASS` (property suite, I5).
-4. **Forge invariant and reentrancy suites are `NOT_RUN`.** `contracts/test/BindSettlement.invariant.t.sol` and
+4. **Forge invariant and reentrancy suites** (`NOT_RUN` when this was written; run and passed on 2026-10-20, `LOCAL_PASS`). `contracts/test/BindSettlement.invariant.t.sol` and
    `contracts/test/BindSettlement.reentrancy.t.sol` compile with solc-js, but no `forge test` has run them here. Their
    results are unknown until a Forge run is recorded in `docs/RELEASE_EVIDENCE.md`.
 5. **Corrections to earlier text in this document (Task 13b).** Section 4 says "No invariant tests" and the Forge gate row says
