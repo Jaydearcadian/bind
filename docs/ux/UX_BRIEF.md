@@ -29,6 +29,19 @@ Status: draft. No UI has been built. `src/ui/` stays untouched (ADR 0016). This 
 - Problem: four short statements in large type, each with a small broken link that clicks into the ring in the how-it-works scroll.
 - Final call: the line "Get back to work." with two buttons, "Try a demo workspace" and "Start your own workspace".
 
+## Sign-in and accounts (decided)
+- Sign in with Privy: Google and/or a wallet. Privy proves identity only. Bind keeps its own account records, workspace memberships and roles, and enforces authorization in code. The Privy token is verified on the server and swapped for a short-lived Bind session. Verify against the current Privy docs before building (the older server-auth library is deprecated in favour of @privy-io/node).
+- Workspace tokens stay for the SDK, MCP and agents. Builders get an "Use an access key" door on the sign-in page.
+- A Privy app id and secret are credentials the owner supplies through environment config. They never go in the repository. Local tests use a fake verifier; live sign-in is NOT_RUN until run against the owner's Privy app.
+- A wallet sign-in is identity only and never grants payment authority.
+- Browser storage: signed-in people hold no long-lived key in the browser; the short-lived Bind session lives in memory and refreshes. Only a pasted access key gets "remember this device", default tab-only.
+- Demo: a throwaway sandbox, four hours, a demo banner on every page, a Reset button, no sign-in, limits per browser and address. "Make this yours" asks for sign-in and starts a fresh workspace.
+- Staff join by a single-use, expiring invite link or QR, then sign in and join as staff. Email invitations come later when a provider exists.
+- One person can belong to several workspaces, with a workspace switcher.
+- Google and a wallet can be linked to one account in Settings, only after signing in with both in one session and an explicit confirm.
+- Several owners per workspace, with the last owner always protected (as the API behaves today). An owner-plus-admins role is a later idea.
+- First sign-in with no workspace: "Start a workspace" or "I have an invite link" (recommended; awaiting confirmation).
+
 ## Suggested, awaiting a yes
 - Headline "Connect once. Get back to work." with a specific subline ("Bind connects your tools to agents that can actually use them, and you decide what they are allowed to do.").
 - Main button: "Try a demo workspace" (simulated, labelled, throwaway, capped lifetime), secondary "Start your own workspace".
