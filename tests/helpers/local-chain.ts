@@ -21,6 +21,11 @@ export interface LocalChain {
   request: (args: LocalChainRequest) => Promise<unknown>;
   advanceTime(seconds: number): void;
   blockNumber(): bigint;
+  /**
+   * The clock as the next transaction will see it, minus one: a transaction mined now gets `currentTime() + 1`, and
+   * eth_call runs at `currentTime() + 1`. Added for the property tests, which model the clock.
+   */
+  currentTime(): number;
 }
 
 export interface LocalChainOptions {
@@ -215,5 +220,6 @@ export async function createLocalChain(opts: LocalChainOptions = {}): Promise<Lo
       time += BigInt(seconds);
     },
     blockNumber: () => number,
+    currentTime: () => Number(time),
   };
 }

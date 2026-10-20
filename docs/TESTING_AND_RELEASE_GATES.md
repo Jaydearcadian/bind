@@ -110,6 +110,8 @@ Before testnet:
 - `VERIFIED_REMOTE`: an actual remote mutation was completed and independently verified. Do not use this status without explicit authorization.
 - `NOT_RUN`: no test has run.
 - `BLOCKED`: execution was attempted or required, but an external blocker prevented verification.
+- `FAILED`: the call ran, but its output did not match the expectation (for example a revert gate whose call succeeded,
+  or a read that returned a different value). Added by Task 13b for `scripts/verify-live-arc.ts`. It is neither a pass nor a blocker.
 - `NOT_APPLICABLE`: a documented architectural reason makes a gate irrelevant; provide the substitute boundary test.
 
 Never promote a simulator or mock to a live pass. Report exact commands, counts, coverage, known failures, and skipped tests in `docs/RELEASE_EVIDENCE.md`.

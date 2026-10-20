@@ -1,4 +1,5 @@
-// Compiles contracts/src/BindSettlement.sol with the pinned solc and writes contracts/artifacts/BindSettlement.json.
+// Compiles contracts/src/BindSettlement.sol with the pinned solc and writes contracts/artifacts/BindSettlement.json,
+// the ABI module, and one contracts/artifacts/helpers/<Name>.json per contracts/test/helpers/<Name>.sol.
 // Run through `npm run contract:artifact`. The output is committed; a unit test checks sourceSha256 against the source.
 import fs from "node:fs";
 import path from "node:path";
@@ -69,3 +70,56 @@ const abiModule =
   `export const BIND_SETTLEMENT_SOURCE_SHA256 = "${sourceSha256}";\n`;
 fs.writeFileSync(abiModulePath, abiModule);
 process.stdout.write(`wrote ${path.relative(repoRoot, abiModulePath)}\n`);
+
+// Test helper contracts (contracts/test/helpers/*.sol). Each file is compiled on its own and must not import anything:
+// the source key is the file name and the only contract written is the one named like the file. Output:
+// contracts/artifacts/helpers/<Name>.json, the same shape as BindSettlement.json. Nothing else is written.
+const helperDir = path.join(repoRoot, "contracts/test/helpers");
+const helperOutDir = path.join(repoRoot, "contracts/artifacts/helpers");
+const helperFiles = fs.existsSync(helperDir)
+  ? fs.readdirSync(helperDir).filter((f) => f.endsWith(".sol")).sort()
+  : [];
+for (const file of helperFiles) {
+  const name = path.basename(file, ".sol");
+  const bytes = fs.readFileSync(path.join(helperDir, file));
+  const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+  const helperInput = {
+    language: "Solidity",
+    sources: { [file]: { content: bytes.toString("utf8") } },
+    settings: {
+      evmVersion,
+      optimizer: { enabled: false },
+      outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
+    },
+  };
+  const helperOutput = JSON.parse(solc.compile(JSON.stringify(helperInput)));
+  const helperDiagnostics = helperOutput.errors ?? [];
+  const helperErrors = helperDiagnostics.filter((e) => e.severity === "error");
+  for (const warning of helperDiagnostics.filter((e) => e.severity !== "error")) {
+    process.stderr.write(`${warning.formattedMessage ?? warning.message}\n`);
+  }
+  if (helperErrors.length > 0) {
+    for (const error of helperErrors) {
+      process.stderr.write(`${error.formattedMessage ?? error.message}\n`);
+    }
+    process.stderr.write(`solc reported ${helperErrors.length} error(s) for helper ${file}; no artifact written.\n`);
+    process.exit(1);
+  }
+  const compiledHelper = helperOutput.contracts?.[file]?.[name];
+  if (!compiledHelper) {
+    process.stderr.write(`solc output has no contract ${name} in ${file}; no artifact written.\n`);
+    process.exit(1);
+  }
+  const helperArtifact = {
+    contractName: name,
+    solcVersion: solc.version(),
+    evmVersion,
+    sourceSha256: sha256,
+    abi: compiledHelper.abi,
+    bytecode: `0x${compiledHelper.evm.bytecode.object}`,
+  };
+  fs.mkdirSync(helperOutDir, { recursive: true });
+  const helperOutPath = path.join(helperOutDir, `${name}.json`);
+  fs.writeFileSync(helperOutPath, `${JSON.stringify(helperArtifact, null, 2)}\n`);
+  process.stdout.write(`wrote ${path.relative(repoRoot, helperOutPath)} (sha256 ${sha256})\n`);
+}

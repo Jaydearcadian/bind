@@ -94,7 +94,48 @@ Local result is what happened in this container. CI is what `.github/workflows/q
 | Slither | `slither .` in `contracts/` (unverified invocation); CI uses `crytic/slither-action@v0.4.0` (unverified tag) | BLOCKED (slither not installed) | `contracts` job and `verify-local` job (which installs Slither unpinned) | NOT_RUN |
 | Anvil deployment and client suite | `ANVIL_RPC_URL=<node> npx vitest run tests/integration/anvil-settlement.test.ts` | BLOCKED (anvil not installed; the suite also skips without `ANVIL_RPC_URL`) | `contracts` job (Anvil on 8545) and `verify-local` job (Anvil on 18545) | NOT_RUN |
 | In-process EVM: client, ABI, events, artifact hash | `npx vitest run tests/unit/contract-artifact.test.ts tests/integration/local-chain.test.ts tests/integration/arc-settlement-evm.test.ts tests/integration/arc-find-transfer.test.ts` | LOCAL_PASS (4 files, 32 tests) | `contracts` job | LOCAL_PASS (in-process EVM, not Anvil) |
-| Live Arc reads and recorded transactions | `ARC_RPC_URL=<arc-rpc-url-with-token> npx tsx scripts/verify-live-arc.ts` | NOT_RUN (no network, no token, no `cast`) | not configured (no secret in CI) | UNVERIFIED_CLAIM (earlier session) |
+| In-process property tests (I1 to I7, six seeds of 60 steps, the daily-window named tests) | `npx vitest run tests/integration/bind-settlement-properties.test.ts` | LOCAL_PASS (1 file, 9 tests: six seeds of 60 steps, one coverage check, two named tests) | not in CI | LOCAL_PASS (in-process EVM, not Forge invariant testing, not a proof) |
+| In-process reentrancy (six attacker modes, swallowed and bubbled) | `npx vitest run tests/integration/bind-settlement-reentrancy.test.ts` | LOCAL_PASS (1 file, 13 tests: six modes, each swallowed and bubbled, plus one extra test for a second order) | not in CI | LOCAL_PASS (in-process EVM, not Forge) |
+| Helper artifact hash guard (`ReentrantSupplier`) | `npx vitest run tests/unit/helper-artifacts.test.ts` | LOCAL_PASS (1 file, 5 tests) | not in CI | LOCAL_PASS |
+| Forge invariant suite (`BindSettlementInvariantTest`, I1 to I6 as Solidity invariants) | `cd contracts && forge test --match-contract BindSettlementInvariantTest` | NOT_RUN (forge not installed). COMPILES (solc-js 0.8.37, with `forge-std` from `contracts/lib`); it was not executed | `contracts` job (configured, never run) | NOT_RUN |
+| Forge reentrancy suite (`BindSettlementReentrancyTest`, uses `ReentrantSupplier`) | `cd contracts && forge test --match-contract BindSettlementReentrancyTest` | NOT_RUN (forge not installed). COMPILES (solc-js 0.8.37); it was not executed | `contracts` job (configured, never run) | NOT_RUN |
+| Live Arc reads and recorded transactions | `ARC_RPC_URL=<arc-rpc-url-with-token> npx tsx scripts/verify-live-arc.ts [--write-evidence <new-file>]` | NOT_RUN (no network, no token, no `cast`). The script is read-only and writes only the file named by `--write-evidence`. Without a configured URL every gate is BLOCKED. | not configured (no secret in CI) | UNVERIFIED_CLAIM (earlier session); the rewritten checks are unit-tested: LOCAL_PASS (`npx vitest run tests/unit/verify-live-arc.test.ts`, injected cast and RPC) |
 | Browser E2E | `npm run test:e2e` | BLOCKED (UI orphaned, ADR 0016); accepted as NOT_RUN only through `BIND_ACCEPT_NOT_RUN=test:e2e` | `verify-local` job, recorded as NOT_RUN_ACCEPTED | NOT_RUN (ADR 0016) |
 
 The in-process EVM rows and the Anvil row are different evidence. The in-process EVM is `LOCAL_PASS` for the client boundary. It is not a deployment or a live-chain result, and it does not satisfy the Anvil gate.
+
+## 7. Known issues: the daily window (Task 13b)
+
+These entries come from the property tests in `tests/integration/bind-settlement-properties.test.ts` (LOCAL_PASS, in-process
+EVM) and from reading `contracts/src/BindSettlement.sol`. The contract is deployed on Arc Testnet, so the source is not
+changed here. Each behaviour is asserted as it is, with a comment that names this section.
+
+1. **A refund after the window reset reduces the current window's spent amount (KNOWN ISSUE).**
+   `refundEscrow` subtracts the refunded amount from `dailySpent` whenever `dailySpent >= amount`. It does not check that
+   the escrow was made in the current window. Example: deposit 4 USDC on day 1; on day 2 settle 5 USDC (the window resets, so
+   `dailySpent` is 5); refund the day-1 escrow. `dailySpent` falls to 1. A further 9 USDC settles against the 10 USDC limit.
+   The window then holds 14 USDC of real settlements against a 10 USDC limit, so the limit is exceeded.
+   Asserted as current behaviour by `a refund after the daily window reset reduces today's spent amount (known issue)`.
+   `LOCAL_PASS (npx vitest run tests/integration/bind-settlement-properties.test.ts -t "known issue")`. Not fixed: a fix changes
+   deployed behaviour, so it is a product decision.
+2. **The daily limit is a fixed window, not a rolling window.** The window starts at `lastDayReset` (deployment, then the
+   first spend at or after `lastDayReset + 1 day`). A spend stops counting at that reset, not 24 hours after it was made.
+   Example: 9 USDC settled at 86,000 seconds into the window does not count after the reset at 86,400 seconds, so a further
+   9 USDC settles at 87,000 seconds. A rolling window would refuse it. Asserted by
+   `the daily limit is a fixed window reset, not a rolling window`. The NatSpec of `_checkAndUpdateDailyLimit` and of
+   `setDailyLimit` in the contract says "rolling"; the code is a fixed window.
+3. **A stranger on a settled escrow gets `EscrowAlreadySettled`, not `Unauthorized`.** `releaseEscrow` and `refundEscrow`
+   check the escrow status before the caller. The stranger rule therefore holds for open escrows only. The property model
+   encodes the actual order. `LOCAL_PASS` (property suite, I5).
+4. **Forge invariant and reentrancy suites are `NOT_RUN`.** `contracts/test/BindSettlement.invariant.t.sol` and
+   `contracts/test/BindSettlement.reentrancy.t.sol` compile with solc-js, but no `forge test` has run them here. Their
+   results are unknown until a Forge run is recorded in `docs/RELEASE_EVIDENCE.md`.
+5. **Corrections to earlier text in this document (Task 13b).** Section 4 says "No invariant tests" and the Forge gate row says
+   "no invariant tests in the file". Both are now true only for the committed `BindSettlement.t.sol`: the new invariant file
+   exists and is `NOT_RUN`. Section 2 says a gate-4 row can be `VERIFIED_REMOTE`. The rewritten script never produces that
+   status, because every check is read-only (`LIVE_READ_PASS`, `BLOCKED` or `FAILED`). Section 5 item 1 (the catch branch
+   that treats every `cast` failure as a revert) and item 3 (the script appends to `RELEASE_EVIDENCE.md`) are fixed in the
+   script, but the script has not been run against the network here.
+6. **Test-chain gas price (a test-harness observation, not a contract issue).** The in-process chain's receipts report
+   `effectiveGasPrice` of 1 gwei, but it charges 1.2 gwei (viem's estimate) to the sender. Tests that check the payer's gas
+   read the charged amount from balances and do not use the receipt price (`tests/integration/bind-settlement-properties.test.ts`).
