@@ -38,27 +38,47 @@ export interface ViemClients {
   account: Account;
 }
 
-/** viem public and wallet clients whose transport is the in-process chain. */
-export function viemClients(chain: LocalChain, privateKey: Hex): ViemClients {
-  const transport = custom({ request: chain.request as any });
+/**
+ * Where a client talks to: a chain id and a viem transport. The in-process chain and a real node (Anvil over HTTP)
+ * both fit this shape, so the same deployment code runs against either.
+ */
+export interface ChainTarget {
+  chainId: number;
+  transport: Transport;
+  /** viem polling interval in milliseconds. Defaults to 5, the in-process value. */
+  pollingInterval?: number;
+}
+
+/** viem public and wallet clients for any chain target. */
+export function viemClientsOn(target: ChainTarget, privateKey: Hex): ViemClients {
   const chainDef = defineChain({
-    id: chain.chainId,
+    id: target.chainId,
     name: "local",
     nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
     rpcUrls: { default: { http: [] } },
   });
   const account = privateKeyToAccount(privateKey);
-  const publicClient = createPublicClient({ chain: chainDef, transport, pollingInterval: 5 });
-  const walletClient = createWalletClient({ account, chain: chainDef, transport });
+  const publicClient = createPublicClient({
+    chain: chainDef,
+    transport: target.transport,
+    pollingInterval: target.pollingInterval ?? 5,
+  });
+  const walletClient = createWalletClient({ account, chain: chainDef, transport: target.transport });
   return { publicClient, walletClient, account };
 }
 
-export async function deployBindSettlement(
-  chain: LocalChain,
+/** viem public and wallet clients whose transport is the in-process chain. */
+export function viemClients(chain: LocalChain, privateKey: Hex): ViemClients {
+  return viemClientsOn({ chainId: chain.chainId, transport: custom({ request: chain.request as any }) }, privateKey);
+}
+
+/** Deploys the committed BindSettlement artifact to any chain target, signed by a funded key. */
+export async function deployBindSettlementOn(
+  target: ChainTarget,
   privateKey: Hex
 ): Promise<ViemClients & { address: Address; abi: Abi }> {
   const artifact = loadArtifact();
-  const { publicClient, walletClient, account } = viemClients(chain, privateKey);
+  const { publicClient, walletClient, account } = viemClientsOn(target, privateKey);
   const hash = await walletClient.deployContract({
     abi: artifact.abi,
     bytecode: artifact.bytecode,
@@ -69,4 +89,12 @@ export async function deployBindSettlement(
     throw new Error(`BindSettlement deployment failed (status ${receipt.status})`);
   }
   return { address: receipt.contractAddress, abi: artifact.abi, publicClient, walletClient, account };
+}
+
+/** Deploys to the in-process chain. Behaviour is unchanged; the Anvil suite uses deployBindSettlementOn. */
+export async function deployBindSettlement(
+  chain: LocalChain,
+  privateKey: Hex
+): Promise<ViemClients & { address: Address; abi: Abi }> {
+  return deployBindSettlementOn({ chainId: chain.chainId, transport: custom({ request: chain.request as any }) }, privateKey);
 }

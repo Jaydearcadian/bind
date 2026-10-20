@@ -1,3 +1,10 @@
+# NOT_RUN: this workflow has never been executed on GitHub. It was written in an environment with no GitHub runner,
+# no Foundry, no Anvil and no Slither (docs/decisions/0038). The first run on GitHub is its evidence. Until then every
+# job here is NOT_RUN, not a pass.
+#
+# Gate commands mirror `bash scripts/verify-local.sh --list`. tests/unit/verify-local-script.test.ts checks that each
+# listed command appears in the job that owns it. Slither runs through crytic/slither-action in CI, and the aggregate
+# verify-local job runs the script itself with the same acceptance rule.
 name: Bind quality gates
 
 on:
@@ -8,6 +15,10 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # The only NOT_RUN gate that may be accepted: browser E2E for the orphaned UI (ADR 0016). Read by verify-local.sh.
+  BIND_ACCEPT_NOT_RUN: test:e2e
 
 jobs:
   quality:
@@ -34,43 +45,133 @@ jobs:
       CHAIN_ID: "31337"
       RPC_URL: http://127.0.0.1:8545
       SUPPLIER_ADAPTER_MODE: simulated
-      ALLOW_NO_CONTRACTS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Install package manager and dependencies
-        shell: bash
+          cache: npm
+      - name: clean dependency install
+        run: npm ci
+      - name: lint
+        run: npm run lint
+      - name: typecheck
+        run: npm run typecheck
+      - name: unit
+        run: npm run test:unit
+      - name: integration
+        run: npm run test:integration
+      - name: build
+        run: npm run build
+      - name: sdk:build
+        run: npm run sdk:build
+      - name: mcp:build
+        run: npm run mcp:build
+      - name: audit (high and critical)
+        run: npm audit --audit-level=high
+      - name: spec drift (docs/openapi.json)
         run: |
-          set -euo pipefail
-          if [[ -f pnpm-lock.yaml ]]; then
-            corepack enable
-            pnpm install --frozen-lockfile
-          elif [[ -f bun.lock || -f bun.lockb ]]; then
-            npm install --global bun
-            bun install --frozen-lockfile
-          elif [[ -f package-lock.json ]]; then
-            npm ci
-          elif [[ -f yarn.lock ]]; then
-            corepack enable
-            yarn install --immutable
-          else
-            echo "No lockfile found. Reproducible dependency installs are mandatory." >&2
-            exit 1
-          fi
+          npm run api:spec
+          git diff --exit-code docs/openapi.json
+      - name: sdk drift (sdk/src/generated)
+        run: |
+          npm run sdk:generate
+          git diff --exit-code sdk/src/generated
+      - name: map drift (docs/CODEBASE_MAP.md)
+        run: |
+          npm run map:functions
+          git diff --exit-code docs/CODEBASE_MAP.md
+
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: clean dependency install
+        run: npm ci
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-      - name: Start local Anvil
+      - name: forge fmt --check
+        working-directory: contracts
+        run: forge fmt --check
+      - name: forge build
+        working-directory: contracts
+        run: forge build
+      - name: forge test -vvv
+        working-directory: contracts
+        run: forge test -vvv
+      - name: forge coverage
+        working-directory: contracts
+        run: forge coverage
+      # UNVERIFIED: the action tag and its default fail-on threshold were not checked in the authoring environment.
+      - name: slither (crytic/slither-action, unverified)
+        uses: crytic/slither-action@v0.4.0
+        with:
+          target: contracts/
+      - name: contract in-process suite
+        run: npx vitest run tests/unit/contract-artifact.test.ts tests/integration/local-chain.test.ts tests/integration/arc-settlement-evm.test.ts tests/integration/arc-find-transfer.test.ts
+      - name: Start local Anvil on 8545 (chain 31337)
         shell: bash
         run: |
-          anvil --chain-id 31337 --host 127.0.0.1 --port 8545 > /tmp/bind-anvil.log 2>&1 &
+          anvil --chain-id 31337 --host 127.0.0.1 --port 8545 > "$RUNNER_TEMP/anvil.log" 2>&1 &
           for i in $(seq 1 40); do
             if cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then exit 0; fi
             sleep 1
           done
-          cat /tmp/bind-anvil.log
+          cat "$RUNNER_TEMP/anvil.log"
           exit 1
-      - name: Run required application and contract gates
-        shell: bash
+      - name: anvil integration
+        env:
+          ANVIL_RPC_URL: http://127.0.0.1:8545
+        run: npx vitest run tests/integration/anvil-settlement.test.ts
+
+  verify-local:
+    # The same aggregate script developers run. It starts its own Anvil on 18545, so it does not depend on the job above.
+    needs: [quality, contracts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: bind_local
+          POSTGRES_USER: bind_local
+          POSTGRES_PASSWORD: bind_local_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bind_local -d bind_local"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://bind_local:bind_local_only@127.0.0.1:5432/bind_local
+      SETTLEMENT_MODE: local
+      CHAIN_ID: "31337"
+      RPC_URL: http://127.0.0.1:8545
+      SUPPLIER_ADAPTER_MODE: simulated
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: clean dependency install
+        run: npm ci
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+      # UNPINNED: slither-analyzer is installed at the latest release because no version was verified offline. Pin it
+      # to the version the first GitHub run reports.
+      - name: Install Slither for the aggregate script
+        run: |
+          pipx install slither-analyzer
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Aggregate local gates (scripts/verify-local.sh)
         run: bash scripts/verify-local.sh
