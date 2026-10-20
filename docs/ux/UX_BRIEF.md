@@ -15,6 +15,20 @@ Status: draft. No UI has been built. `src/ui/` stays untouched (ADR 0016). This 
 - References to steer by: Cloudflare (diagrams that explain), Stripe (decision-maker clarity, no hype). The owner will look for more sites; they are collected in the list below.
 - App: approvals are "open, read, confirm". Agents' names are the owner's choice (plain roles by default, renamable). Nudges: in app first, with a per-event channel choice in Settings.
 
+## Landing page, round 2 (decided)
+- Suggestions above are accepted.
+- Diagram: scroll-driven, with a finished still for reduced motion and a simpler version on small screens. The owner also wants a throwaway preview of an interactive diagram to judge the feel before deciding whether to add it.
+- Copy: short with detail on demand; voice plain with warmth.
+- Builders: a short block on the landing page plus a fuller "For builders" page behind it.
+- FAQ: what Bind is in plain words; can agents spend my money; who sees my data and keys; what can I connect (general, with a growing ready/coming list); what if an agent gets it wrong; is it really free; do I need to be technical; which agents does it work with; can I stop everything; can my staff use it; can I take my data with me; how do I know a connection is real; does it replace my software; what happens when an agent needs me. "How long does it take to start" waits until onboarding is timed.
+- What is ready today (for the FAQ): messaging apps send signed events in, bound to roles; text from documents becomes a draft an owner confirms; feedback comes in as data; the ledger exports as CSV. Not built: social posting, direct PDF or image reading, charts.
+- Footer: product and builders links; security and trust; status and changelog; privacy, terms, contact; plus an accessibility statement and a plain "what we have tested, and what we have not" page drawn from the release evidence.
+- First load: a brief mark reveal on the first visit of a session, and the quiet loader whenever the page is slow.
+- Section order: hero; problem; how it works; who it is for; trust; integrations; builders; pricing; FAQ; final call; footer.
+- Who it is for: a switcher (Studio, Clinic, Shop, Food, Social) showing a labelled "An example day"; the bead ring moves between states as it changes. Examples are illustrative and never claim a connector that does not exist.
+- Problem: four short statements in large type, each with a small broken link that clicks into the ring in the how-it-works scroll.
+- Final call: the line "Get back to work." with two buttons, "Try a demo workspace" and "Start your own workspace".
+
 ## Suggested, awaiting a yes
 - Headline "Connect once. Get back to work." with a specific subline ("Bind connects your tools to agents that can actually use them, and you decide what they are allowed to do.").
 - Main button: "Try a demo workspace" (simulated, labelled, throwaway, capped lifetime), secondary "Start your own workspace".
