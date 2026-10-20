@@ -201,7 +201,7 @@ Key source:
 - Any live Arc read or transaction (`NOT_RUN`). The earlier-session deployment, transaction and revert claims are unverified and listed in the appendix of `docs/RELEASE_EVIDENCE.md`.
 - Forge, Anvil and Slither (`BLOCKED`). The Forge invariant and reentrancy suites are written but have not been run.
 - The browser E2E (`BLOCKED`; the UI is orphaned). CI (never executed). The hosted deployment.
-- The LLM agent path, a real model client against the MCP server, and any live supplier, messaging, accounting or payment service.
+- The Bind agent harness's own model path, a long-running or adversarial model session against the MCP server (a short local run is in `docs/RELEASE_EVIDENCE.md` section 4.1), and any live supplier, messaging, accounting or payment service.
 
 **Action needed from the owner**:
 

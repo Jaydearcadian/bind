@@ -153,6 +153,16 @@ Also run in this task (LOCAL_PASS, dev entry): `npx tsx src/index.ts` (the entry
 ran its migration and the demo workspace check, listened, and shut down cleanly on SIGTERM (the `timeout` kill is the stop).
 `npm run db:migrate:dev` exited 0. `npm run dev` itself, in watch mode, was not run.
 
+### 4.1 Model-driven check of the MCP server (2026-10-20)
+
+Class: LOCAL_PASS (a usability check, not a gate). A real model, through the `claude` CLI, used the packaged stdio MCP server
+against the built API and a throwaway `kitchen-v1` workspace with a staff token. Four runs (two prompts, each twice) all finished
+without a tool error. Observed: a replenishment over the approval threshold was held with an approval id and a repeat returned the
+same ids (database check: one workflow, one pending approval); the model could not and did not try to approve; an injected
+instruction in feedback text was stored as data and not followed. It found one tool description that understated the effect of a
+replenishment under the threshold; that is fixed (ADR 0042). Reproduce with `bash scripts/mcp-model-check.sh`. Simulated
+suppliers and settlement; one model family; not a security proof. The workspaces were deleted.
+
 ## 5. Capabilities
 
 One row per capability. "Proving files" are the test files that assert the behaviour. All files named here were run in the gates
@@ -190,8 +200,8 @@ above, except where the class column says otherwise.
 - **Accounting.** A local journal in PostgreSQL (`src/accounting/journal.ts`). No accounting service is connected.
 - **Settlement.** The default is the in-memory local simulator, in which no money moves. The Arc adapter is tested only against the
   in-process EVM. Its live path is `NOT_RUN`.
-- **LLM.** No model key is set. The deterministic offline path is what runs. The paths that need `NEBIUS_API_KEY` are NOT_RUN. A real model
-  client against the MCP server is NOT_RUN.
+- **LLM.** No model key is set. The deterministic offline path is what runs. The paths that need `NEBIUS_API_KEY` are NOT_RUN. The agent harness's own model path is NOT_RUN. A real model was
+  driven through the MCP server once, locally (section 4.1, LOCAL_PASS).
 - **Market benchmarks.** Without `PARALLEL_API_KEY` or `TAVILY_API_KEY`, a labelled offline reference (`OFFLINE_DETERMINISTIC_FALLBACK`)
   is returned. It is not a market price.
 - **Arc live.** NOT_RUN. No network to the chain, no token, no `cast`. The live script (`scripts/verify-live-arc.ts`) was not run.

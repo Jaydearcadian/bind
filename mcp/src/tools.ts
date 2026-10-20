@@ -331,7 +331,7 @@ export const TOOLS: readonly ToolSpec[] = [
     name: "request_replenishment",
     title: "Request replenishment",
     description:
-      "Starts the normal replenishment workflow for one SKU. Effect class: commercial commitment requested. The server decides: its policy gate, approval threshold and spending limits may hold the purchase for an owner's approval (the answer then has an approvalId and the state awaiting_approval), or refuse it. A successful call is a request, not a purchase.",
+      "Starts the normal replenishment workflow for one SKU. Effect class: commercial commitment requested. The server decides: its policy gate, approval threshold and spending limits may hold the purchase for an owner's approval (the answer then has an approvalId and the state awaiting_approval), or refuse it. The answer's state says which happened: awaiting_approval means nothing was bought and the owner must decide; confirmed means the purchase was within policy and the supplier order was placed and confirmed, which is a real commitment (payment and delivery are reported separately by list_orders and list_workflows, not by this call).",
     effect: "commercial_commitment",
     operationId: "replenish",
     inputSchema: REPLENISH,

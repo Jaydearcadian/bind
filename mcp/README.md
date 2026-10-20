@@ -77,6 +77,13 @@ owner or refuse them.
 | `submit_feedback` | external request | Stores customer or staff feedback. A repeat is a duplicate. |
 | `propose_menu_change` | external request | Creates a menu proposal. It stays `proposed` until an owner acts. |
 
+## Reading `get_workspace`
+
+The agent roles in the workspace carry an `allowed_tools` list (for example `create_replenishment_proposal`). Those are the
+platform's internal role capabilities, not the names of the MCP tools below. Use the tool table here to see what you can call.
+`request_replenishment` answers `awaiting_approval` when the owner must decide (nothing was bought) and `confirmed` when the
+purchase was within policy and the supplier order was placed, which is a real commitment.
+
 ## Reading the results
 
 Every successful result is JSON with `source`, `workspaceId`, `untrustedTextFields` and `data`. The text in

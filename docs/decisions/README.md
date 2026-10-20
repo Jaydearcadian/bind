@@ -54,3 +54,5 @@ a live system: `docs/RELEASE_EVIDENCE.md` is the place for that.
 | [0038](0038-contract-gates-and-ci.md) | Contract gates, CI layout, and what has not run | Accepted | Records what could not run here (Forge, Anvil, Slither, CI, live Arc) as BLOCKED or NOT_RUN. |
 | [0039](0039-contract-properties-and-live-check.md) | Contract property tests, reentrancy, and an honest live check | Accepted | In-process property and reentrancy tests. The Forge invariant files and the live check have not been run. |
 | [0040](0040-cleanup-round-13c.md) | Cleanup round for known defects | Accepted | The ledger GET is read-only, typed pause and restock codes, atomic approval decisions, and a restock key fix. |
+| [0041](0041-api-casing.md) | API field casing is frozen as it is; new fields are camelCase | Accepted | The API is already mixed. No rename now. Any future unification is versioned, and a UI should go through the SDK. |
+| [0042](0042-model-driven-mcp-check.md) | A real model drives the MCP server | Accepted | A real model used the tools correctly and resisted an injected note. One tool description was wrong and is fixed. |
