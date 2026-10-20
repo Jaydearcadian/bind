@@ -89,7 +89,7 @@ describe("verify-local.sh gate list", () => {
       "forge test -vvv",
       "forge coverage",
       "anvil integration",
-      "slither (unverified invocation)",
+      "slither (--fail-medium)",
       "test:e2e",
     ];
     expect(labels).toEqual(expect.arrayContaining(required));
@@ -142,7 +142,7 @@ describe("test:e2e acceptance", () => {
       "forge build",
       "forge test -vvv",
       "anvil integration",
-      "slither (unverified invocation)",
+      "slither (--fail-medium)",
       "forge",
       "anvil",
       "slither",
@@ -167,7 +167,7 @@ describe("forge, anvil and slither are required", () => {
     const labels = listGates().map((gate) => gate.label);
     expect(labels.filter((label) => label.startsWith("forge ")).length).toBe(4);
     expect(labels).toContain("anvil integration");
-    expect(labels).toContain("slither (unverified invocation)");
+    expect(labels).toContain("slither (--fail-medium)");
 
     const text = fs.readFileSync(SCRIPT, "utf8");
     for (const tool of ["forge", "anvil", "slither"]) {
@@ -195,7 +195,7 @@ describe("CI workflow parity", () => {
 
     for (const gate of listGates()) {
       if (gate.label === "test:e2e") continue; // covered by the verify-local job below
-      if (gate.label === "slither (unverified invocation)") {
+      if (gate.label === "slither (--fail-medium)") {
         expect(jobText.contracts, "Slither runs through crytic/slither-action in CI").toContain("crytic/slither-action");
         continue;
       }

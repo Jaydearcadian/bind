@@ -14,8 +14,11 @@
 # tree so the diff can be read; the script does not restore it. Either revert it (`git checkout -- <file>`) after fixing
 # the source, or commit it when the change is intended.
 #
-# The Slither invocation (`slither .` in contracts/) is UNVERIFIED: it has not been checked against a Slither release
-# in the environment that wrote it. CI runs crytic/slither-action for the same gate.
+# The Slither invocation is `slither . --fail-medium` in contracts/. It reads contracts/slither.config.json (remaps, and
+# lib and test paths excluded). Checked locally with Slither 0.11.6 and solc 0.8.28: it exits 0 on the contract as it is
+# (low and informational findings only) and 255 when an arbitrary-send function is added. Without the config, `slither .`
+# analysed 0 contracts and exited 0, which would have been a false pass. CI runs crytic/slither-action for the same gate,
+# and that action has not run.
 #
 # Forge steps run in contracts/ (the Bind-owned Foundry workspace, docs/CONTRACT_SCOPE.md).
 set -u
@@ -50,7 +53,7 @@ list_gates() {
   gate 'forge test -vvv' 'forge test -vvv'
   gate 'forge coverage' 'forge coverage'
   gate 'anvil integration' 'npx vitest run tests/integration/anvil-settlement.test.ts'
-  gate 'slither (unverified invocation)' 'slither .'
+  gate 'slither (--fail-medium)' 'slither . --fail-medium'
   gate 'test:e2e' 'none: UI orphaned (ADR 0016); accepted only through BIND_ACCEPT_NOT_RUN'
 }
 
@@ -250,9 +253,9 @@ else
   fi
 
   if have slither; then
-    run 'slither (unverified invocation)' bash -c 'cd "$1" && slither .' _ "$CONTRACTS_DIR"
+    run 'slither (--fail-medium)' bash -c 'cd "$1" && slither . --fail-medium' _ "$CONTRACTS_DIR"
   else
-    block 'slither not installed (skipped: slither (unverified invocation))'
+    block 'slither not installed (skipped: slither (--fail-medium))'
   fi
 fi
 
