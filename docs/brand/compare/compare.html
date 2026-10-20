@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bind logo comparison: dovetail or ring</title>
+<title>Bind logo comparison: dovetail, ring or pearl ring</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: #F2F2EE; color: #161812; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .wrap { max-width: 1240px; margin: 0 auto; padding: 24px 20px 80px; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 24px 20px 80px; }
   h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin: 8px 0 6px; letter-spacing: -.02em; }
   h2 { font-size: 1.35rem; margin: 48px 0 6px; letter-spacing: -.01em; }
   p.lede { max-width: 70ch; color: #4a4f44; margin: 0 0 8px; }
-  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 14px; }
+  .cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: 14px; }
   .col { border-radius: 18px; padding: 20px; border: 1px solid #D7D9D0; background: #fff; }
   .col h3 { margin: 0 0 4px; font-size: 1rem; text-transform: uppercase; letter-spacing: .06em; }
   .tag { display: inline-block; font: 600 11px/1 ui-monospace, Menlo, monospace; letter-spacing: .06em; padding: 4px 8px; border-radius: 99px; background: #161812; color: #fff; margin-left: 6px; vertical-align: middle; }
@@ -28,83 +28,35 @@
   th { background: #EEF0E8; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
   td:first-child { font-weight: 600; width: 22%; }
   .note { background: #FFF8D6; border: 1px solid #E8D98A; border-radius: 12px; padding: 12px 14px; margin-top: 14px; max-width: 80ch; }
-  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+  @media (max-width: 1100px) { .cols { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Bind logo: dovetail or ring?</h1>
-  <p class="lede">The left column is the dovetail study (<code>../board.html</code>). The right column is the earlier ring draft, rebuilt so it has the same parts: lockup, states, animated logo, loader, swipe and a hero. Same tagline copy and demo text on both hero studies. Everything is shown at the same size.</p>
-  <div class="note"><b>Fairness note.</b> The dovetail got more iteration, and its swipe language (tickets, the bump) was designed with it. The ring's swipe, loader and hero were added only for this comparison, with the ring's own palette, fonts and card style. The ring's tagline here is "Connect once. Get back to work."; the dovetail's is "Hand off the busywork."</div>
-
-  <h2>1. Logo and lockup</h2>
-  <div class="cols">
-    <div class="col"><h3>Dovetail <span class="tag">STUDY 1</span></h3>
-      <div class="stage"><img src="../assets/bind-lockup.svg" height="84" alt="Bind dovetail lockup"><img src="../assets/bind-mark.svg" width="84" alt=""></div>
-      <div class="stage"><span class="dark olive"><img src="../assets/bind-lockup-reverse.svg" height="60" alt=""><img src="../assets/bind-mark-reverse.svg" width="60" alt=""></span></div>
-      <div class="stage"><figure><img src="../assets/favicon.svg" width="64" alt="">64</figure><figure><img src="../assets/favicon.svg" width="32" alt="">32</figure><figure><img src="../assets/favicon.svg" width="16" alt="">16</figure><figure><img src="../assets/bind-mark-mono.svg" width="48" style="color:#161812" alt="">mono</figure></div></div>
-    <div class="col"><h3>Ring <span class="tag">EARLIER DRAFT</span></h3>
-      <div class="stage"><img src="ring/assets/bind-lockup.svg" height="84" alt="Bind ring lockup"><img src="ring/assets/bind-mark.svg" width="84" alt=""></div>
-      <div class="stage"><span class="dark"><img src="ring/assets/bind-lockup-reverse.svg" height="60" alt=""><img src="ring/assets/bind-mark-reverse.svg" width="60" alt=""></span></div>
-      <div class="stage"><figure><img src="ring/assets/favicon.svg" width="64" alt="">64</figure><figure><img src="ring/assets/favicon.svg" width="32" alt="">32</figure><figure><img src="ring/assets/favicon.svg" width="16" alt="">16</figure><figure><img src="ring/assets/bind-mark-mono.svg" width="48" style="color:#161812" alt="">mono</figure></div></div>
-  </div>
-
-  <h2>2. As a status light</h2>
-  <p class="lede">Both marks double as a status indicator, with a label always beside them. Dovetail: the yolk piece's distance from the seat. Ring: the latch's position.</p>
-  <div class="cols">
-    <div class="col"><h3>Dovetail</h3><div class="stage">
-      <figure><img src="../assets/bind-state-working.svg" width="96" alt="">On it</figure><figure><img src="../assets/bind-state-done.svg" width="96" alt="">Done</figure><figure><img src="../assets/bind-state-held.svg" width="96" alt="">Paused</figure><figure><img src="../assets/bind-state-failed.svg" width="96" alt="">Needs you</figure></div></div>
-    <div class="col"><h3>Ring</h3><div class="stage">
-      <figure><img src="ring/assets/bind-state-pending.svg" width="96" alt="">Waiting</figure><figure><img src="ring/assets/bind-state-approved.svg" width="96" alt="">Done</figure><figure><img src="ring/assets/bind-state-held.svg" width="96" alt="">Paused</figure><figure><img src="ring/assets/bind-state-refused.svg" width="96" alt="">Refused</figure></div></div>
-  </div>
-
-  <h2>3. Animated logo (press replay)</h2>
-  <div class="cols">
-    <div class="col"><h3>Dovetail: slide and seat, 0.75 s mark, about 1 s lockup</h3>
-      <div class="stage"><img id="d1" src="../assets/bind-mark-animated.svg" width="120" alt=""><img id="d2" src="../assets/bind-lockup-animated.svg" height="84" alt=""></div>
-      <button data-r="d1,d2" type="button">Replay</button></div>
-    <div class="col"><h3>Ring: draws, latch drops, settles, 1.5 s</h3>
-      <div class="stage"><img id="r1" src="ring/assets/bind-mark-animated.svg" width="120" alt=""></div>
-      <button data-r="r1" type="button">Replay</button></div>
-  </div>
-
-  <h2>4. Loading icon</h2>
-  <div class="cols">
-    <div class="col"><h3>Dovetail: tick-tock, 1.4 s</h3><div class="stage"><figure><img src="../assets/bind-loader.svg" width="16" height="16" alt="">16</figure><figure><img src="../assets/bind-loader.svg" width="24" height="24" alt="">24</figure><figure><img src="../assets/bind-loader.svg" width="48" height="48" alt="">48</figure><figure><img src="../assets/bind-loader.svg" width="96" height="96" alt="">96</figure><span class="dark olive"><img src="../assets/bind-loader-reverse.svg" width="64" alt=""></span></div></div>
-    <div class="col"><h3>Ring: latch lifts and seats, 1.4 s</h3><div class="stage"><figure><img src="ring/assets/bind-loader.svg" width="16" height="16" alt="">16</figure><figure><img src="ring/assets/bind-loader.svg" width="24" height="24" alt="">24</figure><figure><img src="ring/assets/bind-loader.svg" width="48" height="48" alt="">48</figure><figure><img src="ring/assets/bind-loader.svg" width="96" height="96" alt="">96</figure><span class="dark"><img src="ring/assets/bind-loader-reverse.svg" width="64" alt=""></span></div></div>
-  </div>
-
-  <h2>5. Landing hero, live (scroll inside each frame, or open the full boards)</h2>
-  <div class="cols">
-    <div class="col"><h3>Dovetail</h3><div class="frame" data-scale><iframe src="../board.html" title="Dovetail board"></iframe></div><p><a href="../board.html">Open the full dovetail board</a></p></div>
-    <div class="col"><h3>Ring</h3><div class="frame" data-scale><iframe src="ring/board.html" title="Ring board"></iframe></div><p><a href="ring/board.html">Open the full ring board</a></p></div>
-  </div>
-
+  <h1>Bind logo: dovetail, ring or pearl ring?</h1>
+  <p class="lede">Three directions, each with the same parts: lockup, states, animated logo, loader, swipe and a hero. The third is the ring made ownable, keeping the Newsreader and Geist type and the ring's smoothness. Everything is shown at the same size.</p>
+  <div class="note"><b>Fairness note.</b> The dovetail got the most iteration. The ring's loader, swipe and hero were added only for this comparison. The pearl ring is new and had one round of iteration. The dovetail's tagline is "Hand off the busywork."; the ring and pearl heroes use "Connect once. Get back to work."</div>
+<h2>1. Logo and lockup</h2><div class="cols"><div class="col"><h3>Dovetail <span class="tag">STUDY 1</span></h3><div class="stage"><img src="../assets/bind-lockup.svg" height="76" alt=""><img src="../assets/bind-mark.svg" width="76" alt=""></div><div class="stage"><span class="dark olive"><img src="../assets/bind-lockup-reverse.svg" height="56" alt=""><img src="../assets/bind-mark-reverse.svg" width="56" alt=""></span></div><div class="stage"><figure><img src="../assets/favicon.svg" width="64" alt="">64</figure><figure><img src="../assets/favicon.svg" width="32" alt="">32</figure><figure><img src="../assets/favicon.svg" width="16" alt="">16</figure><figure><img src="../assets/bind-mark-mono.svg" width="48" style="color:#161812" alt="">mono</figure></div></div><div class="col"><h3>Ring <span class="tag">EARLIER DRAFT</span></h3><div class="stage"><img src="ring/assets/bind-lockup.svg" height="76" alt=""><img src="ring/assets/bind-mark.svg" width="76" alt=""></div><div class="stage"><span class="dark "><img src="ring/assets/bind-lockup-reverse.svg" height="56" alt=""><img src="ring/assets/bind-mark-reverse.svg" width="56" alt=""></span></div><div class="stage"><figure><img src="ring/assets/favicon.svg" width="64" alt="">64</figure><figure><img src="ring/assets/favicon.svg" width="32" alt="">32</figure><figure><img src="ring/assets/favicon.svg" width="16" alt="">16</figure><figure><img src="ring/assets/bind-mark-mono.svg" width="48" style="color:#161812" alt="">mono</figure></div></div><div class="col"><h3>Pearl ring <span class="tag">THE RING, MADE OWNABLE</span></h3><div class="stage"><img src="ring-v2/pearl/assets/bind-lockup.svg" height="76" alt=""><img src="ring-v2/pearl/assets/bind-mark.svg" width="76" alt=""></div><div class="stage"><span class="dark "><img src="ring-v2/pearl/assets/bind-lockup-reverse.svg" height="56" alt=""><img src="ring-v2/pearl/assets/bind-mark-reverse.svg" width="56" alt=""></span></div><div class="stage"><figure><img src="ring-v2/pearl/assets/favicon.svg" width="64" alt="">64</figure><figure><img src="ring-v2/pearl/assets/favicon.svg" width="32" alt="">32</figure><figure><img src="ring-v2/pearl/assets/favicon.svg" width="16" alt="">16</figure><figure><img src="ring-v2/pearl/assets/bind-mark-mono.svg" width="48" style="color:#161812" alt="">mono</figure></div></div></div><h2>2. As a status light</h2><p class="lede">Each mark doubles as a status indicator, with a label always beside it.</p><div class="cols"><div class="col"><h3>Dovetail <span class="tag">STUDY 1</span></h3><div class="stage"><figure><img src="../assets/bind-state-working.svg" width="84" alt="">On it</figure><figure><img src="../assets/bind-state-done.svg" width="84" alt="">Done</figure><figure><img src="../assets/bind-state-held.svg" width="84" alt="">Paused</figure><figure><img src="../assets/bind-state-failed.svg" width="84" alt="">Needs you</figure></div></div><div class="col"><h3>Ring <span class="tag">EARLIER DRAFT</span></h3><div class="stage"><figure><img src="ring/assets/bind-state-pending.svg" width="84" alt="">Waiting</figure><figure><img src="ring/assets/bind-state-approved.svg" width="84" alt="">Done</figure><figure><img src="ring/assets/bind-state-held.svg" width="84" alt="">Paused</figure><figure><img src="ring/assets/bind-state-refused.svg" width="84" alt="">Refused</figure></div></div><div class="col"><h3>Pearl ring <span class="tag">THE RING, MADE OWNABLE</span></h3><div class="stage"><figure><img src="ring-v2/pearl/assets/bind-state-working.svg" width="84" alt="">Waiting</figure><figure><img src="ring-v2/pearl/assets/bind-state-done.svg" width="84" alt="">Done</figure><figure><img src="ring-v2/pearl/assets/bind-state-held.svg" width="84" alt="">Paused</figure><figure><img src="ring-v2/pearl/assets/bind-state-failed.svg" width="84" alt="">Refused</figure></div></div></div><h2>3. Animated logo (plays when it scrolls into view; press replay)</h2><div class="cols"><div class="col"><h3>Dovetail <span class="tag">STUDY 1</span></h3><div class="stage"><img id="a0" src="../assets/bind-mark-animated.svg" width="120" alt=""></div><button data-r="a0" type="button">Replay</button></div><div class="col"><h3>Ring <span class="tag">EARLIER DRAFT</span></h3><div class="stage"><img id="a1" src="ring/assets/bind-mark-animated.svg" width="120" alt=""></div><button data-r="a1" type="button">Replay</button></div><div class="col"><h3>Pearl ring <span class="tag">THE RING, MADE OWNABLE</span></h3><div class="stage"><img id="a2" src="ring-v2/pearl/assets/bind-mark-animated.svg" width="120" alt=""></div><button data-r="a2" type="button">Replay</button></div></div><h2>4. Loading icon</h2><div class="cols"><div class="col"><h3>Dovetail <span class="tag">STUDY 1</span></h3><div class="stage"><figure><img src="../assets/bind-loader.svg" width="16" height="16" alt="">16</figure><figure><img src="../assets/bind-loader.svg" width="24" height="24" alt="">24</figure><figure><img src="../assets/bind-loader.svg" width="48" height="48" alt="">48</figure><figure><img src="../assets/bind-loader.svg" width="96" height="96" alt="">96</figure><span class="dark olive"><img src="../assets/bind-loader-reverse.svg" width="64" alt=""></span></div></div><div class="col"><h3>Ring <span class="tag">EARLIER DRAFT</span></h3><div class="stage"><figure><img src="ring/assets/bind-loader.svg" width="16" height="16" alt="">16</figure><figure><img src="ring/assets/bind-loader.svg" width="24" height="24" alt="">24</figure><figure><img src="ring/assets/bind-loader.svg" width="48" height="48" alt="">48</figure><figure><img src="ring/assets/bind-loader.svg" width="96" height="96" alt="">96</figure><span class="dark "><img src="ring/assets/bind-loader-reverse.svg" width="64" alt=""></span></div></div><div class="col"><h3>Pearl ring <span class="tag">THE RING, MADE OWNABLE</span></h3><div class="stage"><figure><img src="ring-v2/pearl/assets/bind-loader.svg" width="16" height="16" alt="">16</figure><figure><img src="ring-v2/pearl/assets/bind-loader.svg" width="24" height="24" alt="">24</figure><figure><img src="ring-v2/pearl/assets/bind-loader.svg" width="48" height="48" alt="">48</figure><figure><img src="ring-v2/pearl/assets/bind-loader.svg" width="96" height="96" alt="">96</figure><span class="dark "><img src="ring-v2/pearl/assets/bind-loader-reverse.svg" width="64" alt=""></span></div></div></div><h2>5. Landing hero, live (scroll inside each frame, or open the full boards)</h2><div class="cols"><div class="col"><h3>Dovetail <span class="tag">STUDY 1</span></h3><div class="frame" data-scale><iframe src="../board.html" title="Dovetail board"></iframe></div><p><a href="../board.html">Open the full board</a></p></div><div class="col"><h3>Ring <span class="tag">EARLIER DRAFT</span></h3><div class="frame" data-scale><iframe src="ring/board.html" title="Ring board"></iframe></div><p><a href="ring/board.html">Open the full board</a></p></div><div class="col"><h3>Pearl ring <span class="tag">THE RING, MADE OWNABLE</span></h3><div class="frame" data-scale><iframe src="ring-v2/pearl/board.html" title="Pearl ring board"></iframe></div><p><a href="ring-v2/pearl/board.html">Open the full board</a></p></div></div>
   <h2>6. Side by side, assessed</h2>
   <p class="lede">My assessment, not a measurement. Where a row says "tested", I ran it in a browser here.</p>
   <table>
-    <tr><th>Question</th><th>Dovetail</th><th>Ring</th></tr>
-    <tr><td>What it says</td><td>Two things joined cleanly; work changes hands. Matches "connectivity layer" and "hand off the busywork".</td><td>A loop that closes: a connection made. Clear and friendly, but the richer story (open means a request, closed means committed) is about approvals, the framing you moved away from.</td></tr>
-    <tr><td>Distinctiveness</td><td>High. Interlocking two-tone block is unusual for software; reads as joinery. Risk: some will read it as a clapperboard or an "H" before the dovetail.</td><td>Lower. A ring with an accent is a common shape. Elegant, easy to forget.</td></tr>
-    <tr><td>Small sizes</td><td>Holds at 16 px (tested): two flat colour blocks.</td><td>Holds at 16 px (tested), but the latch becomes a speck, so the idea nearly disappears.</td></tr>
-    <tr><td>Animation</td><td>Strong: a piece slides and seats, a done-knock, a tick-tock loader. All translate-only.</td><td>Good: stroke-draw and latch drop. Fewer distinct moments; the loader is a latch bob.</td></tr>
-    <tr><td>Status as a light</td><td>Position and colour; "On it" and "Paused" offsets are close (10 vs 4 units). Needs a colour-blind user test.</td><td>Position and colour; "waiting" and "refused" both lift the latch (refused is askew). Same caveat.</td></tr>
-    <tr><td>Palette and type</td><td>Olive, stainless sage, one yolk. Bricolage Grotesque, Instrument Sans, Plex Mono. Loud, kitchen-ticket feel. Yolk on light fails contrast as text, so it is never text.</td><td>Bone, ink, copper, status colours. Newsreader, Geist, Geist Mono. Quiet, editorial, premium. Copper passes as text (4.82).</td></tr>
-    <tr><td>Tone</td><td>Confident, a little playful, craft. Could feel too bold for a conservative buyer.</td><td>Calm and refined. Could feel generic or "fintech-adjacent".</td></tr>
-    <tr><td>Build effort</td><td>Mark and tokens are done; tickets and the bump need building. Fonts are bundled.</td><td>Mark and tokens are done; cards are ordinary. Fonts are bundled.</td></tr>
-    <tr><td>My recommendation</td><td><b>Dovetail.</b> It is the more distinctive idea (I did not run a market or trademark search to confirm that), and it carries the loader, swipe and status system with it.</td><td>The safer pick if you prefer a quieter, more premium tone. It would need its own gesture and loader story to match.</td></tr>
+    <tr><th>Question</th><th>Dovetail</th><th>Ring</th><th>Pearl ring</th></tr>
+    <tr><td>What it says</td><td>Two things joined cleanly; work changes hands.</td><td>A loop that closes: a connection made.</td><td>A ring that is closed by a single bead. The bead is also the dot of the i, so the logo and the name are one idea.</td></tr>
+    <tr><td>Ownable?</td><td>High. An interlocking two-tone block is unusual in software. Some will see a clapperboard or an "H" first.</td><td>Low. A ring with an accent is a common shape.</td><td>Medium to high. It is a serif "o" with stroke contrast, which is rare for a mark, and it is built from the font you chose. Risk: a ring with a stone can read as jewellery.</td></tr>
+    <tr><td>Smoothness</td><td>Soft corners, but hard geometry.</td><td>Very smooth: one even round-capped stroke.</td><td>Smooth and elegant: curves with thick and thin, no hard joins.</td></tr>
+    <tr><td>Small sizes</td><td>Holds at 16 px (tested).</td><td>Holds at 16 px (tested), the latch becomes a speck.</td><td>The hairline top and bottom thin out at 16 px (tested): it reads as a narrow "o" with a dot. Fine at 24 px and up. This is its weakest point.</td></tr>
+    <tr><td>Fit with the type</td><td>Different voice (Bricolage Grotesque).</td><td>Geometric mark beside a serif wordmark: slightly mismatched.</td><td>Best: the mark and the Newsreader wordmark are the same drawing language.</td></tr>
+    <tr><td>Status as a light</td><td>Piece offset and colour.</td><td>Latch position and colour.</td><td>Pearl lifted, seated or off to the side, with colour. A pearl is easier to see than a thin latch, but "waiting" and "refused" differ mainly by colour and a small sideways shift. Needs a colour-blind user test.</td></tr>
+    <tr><td>My recommendation</td><td>The boldest and most distinctive. Different type and palette, so adopting it means leaving the font you like.</td><td>The baseline.</td><td><b>Pearl ring</b>, if you want the font and the smoothness and an ownable mark. Dovetail if you would rather have the most distinctive mark and can change the type.</td></tr>
   </table>
-  <p class="lede" style="margin-top:14px">Not tested for either: other operating systems' font rendering, colour-blind users, device performance, trademark clearance.</p>
+  <p class="lede" style="margin-top:14px">Not tested for any of them: other operating systems' font rendering, colour-blind users, device performance, trademark clearance. The pearl ring has had less iteration than the dovetail.</p>
 </div>
 <script>
-  // Replay: reload the <img> so its animation restarts.
-  document.querySelectorAll("button[data-r]").forEach(function (b) { b.onclick = function () { b.dataset.r.split(",").forEach(function (id) { var i = document.getElementById(id), s = i.getAttribute("src"); i.setAttribute("src", ""); setTimeout(function () { i.setAttribute("src", s); }, 30); }); }; });
-  // Play the animated images when they scroll into view, so the first run is seen.
+  document.querySelectorAll("button[data-r]").forEach(function (b) { b.onclick = function () { var i = document.getElementById(b.dataset.r), s = i.getAttribute("src"); i.setAttribute("src", ""); setTimeout(function () { i.setAttribute("src", s); }, 30); }; });
   if ("IntersectionObserver" in window) {
     var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { io.unobserve(e.target); var s = e.target.getAttribute("src"); e.target.setAttribute("src", ""); setTimeout(function () { e.target.setAttribute("src", s); }, 30); } }); }, { threshold: 0.6 });
-    ["d1", "d2", "r1"].forEach(function (id) { io.observe(document.getElementById(id)); });
+    ["a0", "a1", "a2"].forEach(function (id) { io.observe(document.getElementById(id)); });
   }
-  // Scale the 1280 px frames to fit their boxes.
   function fit() { document.querySelectorAll(".frame[data-scale]").forEach(function (f) { f.querySelector("iframe").style.transform = "scale(" + (f.clientWidth / 1280) + ")"; }); }
   addEventListener("resize", fit); fit();
 </script>
