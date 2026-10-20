@@ -5,8 +5,13 @@ import { PolicyDecision } from "../policy/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
 import { authorizeCommitment, describeCommitmentDecision, type CommitmentDecision } from "../policy/commitment-gate.js";
 import { getSupplierAdapter } from "../adapters/suppliers/index.js";
+import {
+  SupplierResponseInvalidError,
+  validateOrderResponse,
+  validateQuoteResponse,
+} from "../adapters/suppliers/validate.js";
 import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.js";
-import type { OrderRequest, OrderResponse, QuoteResponse, SupplierAdapter } from "../adapters/suppliers/types.js";
+import type { OrderRequest, OrderResponse, QuoteRequest, QuoteResponse, SupplierAdapter } from "../adapters/suppliers/types.js";
 import { EffectInDoubtError, runEffect } from "../effects/ledger.js";
 import {
   PROCUREMENT_ACTOR_ROLE,
@@ -176,14 +181,36 @@ export class ProcurementWorkflowRunner {
         );
       }
     }
-    const quoteRes = await this.requestQuote({
-      workspaceId,
-      workflowId,
-      sku,
-      quantity: reorderQty,
-      rfqId: `rfq_${workflowId}`,
-      supplierId,
-    });
+    let quoteRes: QuoteResponse;
+    try {
+      quoteRes = await this.requestQuote({
+        workspaceId,
+        workflowId,
+        sku,
+        quantity: reorderQty,
+        rfqId: `rfq_${workflowId}`,
+        supplierId,
+      });
+    } catch (err) {
+      if (!(err instanceof SupplierResponseInvalidError)) throw err;
+      // The supplier's answer was refused. The workflow fails with the code only: no quote is stored and no approval follows.
+      await this.workflowEngine.transition(workflowId, {
+        fromState: WorkflowState.REQUEST_SENT,
+        toState: WorkflowState.FAILED,
+        errorMessage: err.message,
+      });
+      await this.workflowEngine.recordAudit(
+        workspaceId,
+        workflowId,
+        "system",
+        "system:supplier-response",
+        EffectClass.EXTERNAL_REQUEST,
+        "suppliers.request_quote.response_invalid",
+        PolicyDecision.DENY,
+        { code: err.code, sku, quantity: reorderQty }
+      );
+      return { workflowId, state: WorkflowState.FAILED };
+    }
 
     // 5. Transition to QUOTE_RECEIVED
     await this.workflowEngine.transition(workflowId, {
@@ -265,7 +292,8 @@ export class ProcurementWorkflowRunner {
       await tools.getStockSnapshotTool.invoke({ sku });
       const quotesRaw = await tools.getApprovedSupplierQuotesTool.invoke({ sku });
       const parsed = JSON.parse(quotesRaw);
-      const validQuotes = (parsed.quotes || []).filter((q: any) => !q.isExpired);
+      // Only a quote for the quantity being ordered can be chosen. The gate refuses any other (QUOTE_CHANGED).
+      const validQuotes = (parsed.quotes || []).filter((q: any) => !q.isExpired && Number(q.quoteQuantity) === reorderQty);
       const chosen = validQuotes[0] || {
         quoteId: quoteRes.quoteId,
         supplierId: quoteRes.supplierId,
@@ -430,6 +458,13 @@ export class ProcurementWorkflowRunner {
     rfqId: string;
   }): Promise<QuoteResponse> {
     const supplierAdapter = this.supplierFor(input.supplierId);
+    const quoteRequest: QuoteRequest = {
+      workspaceId: input.workspaceId,
+      sku: input.sku,
+      quantity: input.quantity,
+      rfqId: input.rfqId,
+      supplierId: input.supplierId,
+    };
     const { result: quoteRes } = await runEffect(
       {
         workspaceId: input.workspaceId,
@@ -440,14 +475,14 @@ export class ProcurementWorkflowRunner {
         request: { sku: input.sku, quantity: input.quantity, supplierId: input.supplierId, rfqId: input.rfqId },
         externalDedupes: true,
       },
-      () =>
-        supplierAdapter.requestQuote({
-          workspaceId: input.workspaceId,
-          sku: input.sku,
-          quantity: input.quantity,
-          rfqId: input.rfqId,
-          supplierId: input.supplierId,
-        })
+      async () => {
+        const quote = await supplierAdapter.requestQuote(quoteRequest);
+        // A supplier's answer is untrusted (Task 11): it must answer this request and stay within bounds, or it is refused
+        // here, before it is recorded or stored.
+        const check = validateQuoteResponse(quoteRequest, quote);
+        if (!check.valid) throw new SupplierResponseInvalidError(check.reason);
+        return quote;
+      }
     );
 
     // Record the quote with 24h validity. A replayed quote carries the same id, so the row is written once.
@@ -569,20 +604,43 @@ export class ProcurementWorkflowRunner {
             idempotencyKey,
           },
         },
-        () => supplierAdapter.submitOrder(request),
+        async () => {
+          const response = await supplierAdapter.submitOrder(request);
+          const check = validateOrderResponse(request, response);
+          if (!check.valid) throw new SupplierResponseInvalidError(check.reason);
+          return response;
+        },
         {
           reconcile: lookupOrder
             ? async () => {
                 const found = await lookupOrder({ workspaceId, orderId, idempotencyKey });
-                return found
-                  ? { found: true, result: found, externalRef: found.externalOrderRef }
-                  : { found: false };
+                if (!found) return { found: false };
+                const check = validateOrderResponse(request, found);
+                if (!check.valid) throw new SupplierResponseInvalidError(check.reason);
+                return { found: true, result: found, externalRef: found.externalOrderRef };
               }
             : undefined,
           externalRef: (r) => r.externalOrderRef,
         }
       ));
     } catch (err) {
+      if (err instanceof SupplierResponseInvalidError) {
+        // The supplier answered in a form Bind cannot trust. The outcome is unknown: the order and the workflow stay
+        // submitted, the ledger effect is not completed, nothing is cancelled or confirmed, and nothing is resent.
+        const effectRes = await query(`SELECT id FROM effects WHERE idempotency_key = $1;`, [`${workspaceId}:order:${orderId}`]);
+        const effectId: string = effectRes.rows[0]?.id ?? "";
+        await this.workflowEngine.recordAudit(
+          workspaceId,
+          workflowId,
+          "system",
+          "system:order-submission",
+          EffectClass.COMMERCIAL_COMMITMENT,
+          "orders.submit.response_invalid",
+          PolicyDecision.ALLOW,
+          { orderId, orderNumber: request.orderNumber, effectId, code: err.code }
+        );
+        return { workflowId, state: WorkflowState.SUBMITTED, orderId, inDoubt: true, effectId };
+      }
       if (err instanceof EffectInDoubtError) {
         // The money may already be committed. Keep the order and the workflow submitted, and never resend.
         await this.workflowEngine.recordAudit(

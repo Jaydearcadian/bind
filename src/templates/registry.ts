@@ -10,9 +10,12 @@ const BASE_TEMPLATES: Record<string, WorkspaceTemplate> = {
 };
 
 export function getTemplate(templateId: string): WorkspaceTemplate | undefined {
-  if (BASE_TEMPLATES[templateId]) return BASE_TEMPLATES[templateId];
-  if (templateId === "kitchen-ops") return BASE_TEMPLATES["kitchen-v1"];
-  return BASE_TEMPLATES[templateId];
+  // Only the template table's own keys count: "constructor" or "__proto__" name no template (Task 11).
+  const own = (id: string): WorkspaceTemplate | undefined =>
+    Object.prototype.hasOwnProperty.call(BASE_TEMPLATES, id) ? BASE_TEMPLATES[id] : undefined;
+  if (own(templateId)) return own(templateId);
+  if (templateId === "kitchen-ops") return own("kitchen-v1");
+  return own(templateId);
 }
 
 export function listTemplates(): WorkspaceTemplate[] {

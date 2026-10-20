@@ -13,40 +13,44 @@ export const SupportedSurfaceEnum = z.enum([
   "web_ui",
 ]);
 
+/** The largest stock count a surface may report. The inventory column is NUMERIC(12,4). */
+export const MAX_OBSERVED_QUANTITY = 1_000_000;
+
 export const SocialSurfaceEventSchema = z.discriminatedUnion("eventType", [
   // 1. Staff or POS reports a stock count from WhatsApp, Telegram, Instagram, Slack, Email, or POS
   z.object({
     eventType: z.literal("SURFACE_STOCK_OBSERVED"),
-    eventId: z.string().min(4),
-    workspaceId: z.string(),
+    eventId: z.string().min(4).max(120),
+    workspaceId: z.string().min(1).max(64),
     surface: SupportedSurfaceEnum,
-    actorId: z.string().min(2),
+    actorId: z.string().min(2).max(120),
     actorRole: z.enum(["owner", "staff"]),
-    sku: z.string().min(1),
-    observedQuantity: z.number().int().nonnegative(),
-    note: z.string().optional(),
+    sku: z.string().min(1).max(120),
+    // Bounded to what the inventory column holds (NUMERIC(12,4)). A larger count is refused, not stored.
+    observedQuantity: z.number().int().nonnegative().max(MAX_OBSERVED_QUANTITY),
+    note: z.string().max(500).optional(),
   }),
 
   // 2. Owner approves or rejects a held request from a messaging card or magic link
   z.object({
     eventType: z.literal("SURFACE_OWNER_APPROVAL_DECISION"),
-    eventId: z.string().min(4),
-    workspaceId: z.string(),
+    eventId: z.string().min(4).max(120),
+    workspaceId: z.string().min(1).max(64),
     surface: SupportedSurfaceEnum,
-    actorId: z.string().min(2),
+    actorId: z.string().min(2).max(120),
     actorRole: z.enum(["owner", "staff"]),
-    approvalId: z.string().min(2),
+    approvalId: z.string().min(2).max(120),
     decision: z.enum(["approve", "reject"]),
-    reason: z.string().optional(),
+    reason: z.string().max(500).optional(),
   }),
 
   // 3. Owner pauses or resumes autonomous agent execution remotely
   z.object({
     eventType: z.literal("SURFACE_AGENT_PAUSE_TOGGLE"),
-    eventId: z.string().min(4),
-    workspaceId: z.string(),
+    eventId: z.string().min(4).max(120),
+    workspaceId: z.string().min(1).max(64),
     surface: SupportedSurfaceEnum,
-    actorId: z.string().min(2),
+    actorId: z.string().min(2).max(120),
     actorRole: z.enum(["owner", "staff"]),
     paused: z.boolean(),
   }),

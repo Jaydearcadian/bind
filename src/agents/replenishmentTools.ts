@@ -236,6 +236,13 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         );
       }
 
+      // 2b. The quantity is the stored quote's. A model-supplied quantity that differs is refused, never used (Task 11).
+      if (Number(quote.quantity) !== proposal.quantity) {
+        throw new Error(
+          `Quantity ${proposal.quantity} does not match the stored quote quantity ${Number(quote.quantity)} for quote '${proposal.quoteId}'.`
+        );
+      }
+
       // 3. Verify quote is not expired
       if (new Date(quote.valid_until) < new Date()) {
         throw new Error(
@@ -609,8 +616,10 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
   const getRequestStatusTool = tool(
     async ({ requestId }: { requestId: string }) => {
       const targetWorkflowId = requestId || workflowId;
-      const wfRes = await query(`SELECT * FROM workflows WHERE id = $1;`, [
+      // Scoped to this workspace: another workspace's workflow is "not found", as a missing one is (Task 11).
+      const wfRes = await query(`SELECT * FROM workflows WHERE id = $1 AND workspace_id = $2;`, [
         targetWorkflowId,
+        workspaceId,
       ]);
       if (wfRes.rows.length === 0) {
         throw new Error(`Workflow '${targetWorkflowId}' not found.`);

@@ -75,6 +75,7 @@ import {
   rotateWebhookSecret,
 } from "../studio/workspaceControls.js";
 import { newId } from "../utils/ids.js";
+import { publicErrorMessage, rejectNulInput, requestErrorHandler, wrapAsyncHandlers } from "./errors.js";
 import {
   SAFE_AGENT_TOOLS,
   FORBIDDEN_AGENT_CAPABILITIES,
@@ -107,7 +108,7 @@ function sendApprovalError(res: Response, err: any) {
       ...(err.reasonCodes ? { reasonCodes: err.reasonCodes } : {}),
     });
   }
-  return res.status(400).json({ error: err.message });
+  return res.status(400).json({ error: publicErrorMessage(err) });
 }
 
 /** Owner cancel failures (ADR 0030). The messages are fixed texts; a reason is never echoed. */
@@ -255,7 +256,7 @@ function sendCredentialError(res: Response, err: unknown) {
     return res.status(503).json({ error: "Credential store is not configured" });
   }
   if (err instanceof CredentialInputError) {
-    return res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: publicErrorMessage(err) });
   }
   if (err instanceof CredentialNotFoundError) {
     return res.status(404).json({ error: "Connector credential not found" });
@@ -327,6 +328,8 @@ function requestSignatureValid(req: Request, secret: string): boolean {
 
 export function createApp(options: CreateAppOptions = {}): express.Express {
   const app = express();
+  // Before any route: a rejected promise from a route reaches the central error handler, never an unhandled rejection.
+  wrapAsyncHandlers(app);
   const procurementRunner = new ProcurementWorkflowRunner();
   const recoveryRunner = new WorkflowCrashRecoveryRunner();
   const corsOrigins = options.corsOrigins ?? parseCorsOrigins(config.BIND_CORS_ORIGINS);
@@ -342,13 +345,18 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   if (corsOrigins.length > 0) {
     app.use(cors({ origin: corsOrigins }));
   }
+  // The body limit is explicit (256kb). Over it, the error handler answers 413 with a JSON code. The raw bytes are kept
+  // so a signature is checked over what was sent.
   app.use(
     express.json({
+      limit: "256kb",
       verify: (req, _res, buf) => {
         (req as RawBodyRequest).rawBody = buf;
       },
     })
   );
+  // A NUL character anywhere in the body, query or path is refused here, before any route reads it (docs/decisions/0031).
+  app.use(rejectNulInput);
 
   // Serve static UI assets with no-store cache headers so updates are always fresh
   const staticPath = path.resolve(__dirname, "../../src/ui/public");
@@ -370,7 +378,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       await query("SELECT 1;");
       res.json({ status: "ok", postgres: "connected", timestamp: new Date() });
     } catch (err: any) {
-      res.status(500).json({ status: "error", error: err.message });
+      res.status(500).json({ status: "error", error: publicErrorMessage(err) });
     }
   });
 
@@ -409,13 +417,13 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       }
       res.status(201).json(jsonSafe({ ...(outcome.result as object), ownerToken: outcome.ownerToken }));
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
 
   app.post("/api/workspaces", async (req: Request, res: Response) => {
-    const { id, name, templateId } = req.body;
-    if (!id || !name || !templateId) {
+    const { id, name, templateId } = req.body ?? {};
+    if (typeof id !== "string" || typeof name !== "string" || typeof templateId !== "string" || !id || !name || !templateId) {
       return res.status(400).json({ error: "id, name, and templateId are required" });
     }
     try {
@@ -427,7 +435,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
         jsonSafe({ message: "Workspace provisioned", template: outcome.result, ownerToken: outcome.ownerToken })
       );
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: publicErrorMessage(err) });
     }
   });
 
@@ -457,10 +465,16 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     const approvalThresholdCents = Number(req.body.approvalThresholdCents);
     const settlementAddress = req.body.settlementAddress;
 
-    if (!Number.isInteger(budgetDailyLimitCents) || budgetDailyLimitCents <= 0) {
+    // A provided address must be an EVM address. It is stored checksummed (the same normalizer as a supplier payee).
+    const hasSettlementAddress = settlementAddress !== undefined && settlementAddress !== null && settlementAddress !== "";
+    const storedSettlementAddress = hasSettlementAddress ? normalizePaymentAddress(settlementAddress) : null;
+    if (hasSettlementAddress && storedSettlementAddress === null) {
+      return res.status(400).json({ error: "settlementAddress must be a valid EVM address" });
+    }
+    if (!Number.isSafeInteger(budgetDailyLimitCents) || budgetDailyLimitCents <= 0) {
       return res.status(400).json({ error: "budgetDailyLimitCents must be a positive integer." });
     }
-    if (!Number.isInteger(approvalThresholdCents) || approvalThresholdCents < 0) {
+    if (!Number.isSafeInteger(approvalThresholdCents) || approvalThresholdCents < 0) {
       return res.status(400).json({ error: "approvalThresholdCents must be a non-negative integer." });
     }
     if (approvalThresholdCents > budgetDailyLimitCents) {
@@ -476,7 +490,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
              updated_at = NOW()
          WHERE id = $4
          RETURNING *;`,
-        [budgetDailyLimitCents, approvalThresholdCents, settlementAddress || null, id]
+        [budgetDailyLimitCents, approvalThresholdCents, storedSettlementAddress, id]
       );
       if (upd.rows.length === 0) {
         return res.status(404).json({ error: "Workspace not found." });
@@ -484,7 +498,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       await syncWorkspaceDerivedTemplateFiles(id);
       res.json({ workspace: upd.rows[0], provenance: "OWNER_CONFIRMED" });
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
 
@@ -533,7 +547,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       );
       res.status(201).json(ins.rows[0]);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
 
@@ -548,7 +562,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       const result = await procurementRunner.startReplenishment(id, sku, "owner_manual_trigger");
       res.json(result);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
 
@@ -622,7 +636,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
         res.status(status).json({ error: err.message, code: err.code });
         return;
       }
-      res.status(400).json({ error: err.message });
+      res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
 
@@ -638,7 +652,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
         res.status(status).json({ error: err.message, code: err.code });
         return;
       }
-      res.status(400).json({ error: err.message });
+      res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
 
@@ -896,12 +910,9 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   });
 
   // What needs the owner's attention (ADR 0030). Ids, codes and enum values only: no customer, supplier or feedback text.
+  // A failure here is answered by the central error handler (500 Internal error): no route-level text.
   app.get("/api/workspaces/:id/needs-attention", ...workspaceMember, async (req: Request, res: Response) => {
-    try {
-      res.json(await listNeedsAttention(req.params.id));
-    } catch {
-      res.status(500).json({ error: "Request could not be completed" });
-    }
+    res.json(await listNeedsAttention(req.params.id));
   });
 
   // Orders & 3-Way Match Status
@@ -965,6 +976,8 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
            is_simulated = EXCLUDED.is_simulated,
            endpoint_url = EXCLUDED.endpoint_url,
            payment_address = COALESCE(EXCLUDED.payment_address, suppliers.payment_address)
+         -- A row of another workspace is never changed: the update is skipped and nothing is returned (Task 11).
+         WHERE suppliers.workspace_id = EXCLUDED.workspace_id
          RETURNING *;`,
         [
           fullSuppId,
@@ -978,9 +991,13 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
           paymentAddress,
         ]
       );
+      if (ins.rows.length === 0) {
+        res.status(409).json({ error: "Supplier id is not available" });
+        return;
+      }
       res.status(201).json(ins.rows[0]);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
 
@@ -1006,9 +1023,9 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       res.status(201).json(result);
     } catch (err: any) {
       if (err instanceof ForbiddenCapabilityError) {
-        return res.status(400).json({ error: err.message, code: "FORBIDDEN_CAPABILITY" });
+        return res.status(400).json({ error: publicErrorMessage(err), code: "FORBIDDEN_CAPABILITY" });
       }
-      res.status(400).json({ error: err.message });
+      res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
 
@@ -1025,7 +1042,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       const binding = await upsertSurfaceBinding(id, req.body, { type: "owner", id: decidedByOf(req.actor!.label) });
       res.status(201).json(binding);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
 
@@ -1043,7 +1060,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       const draft = await extractDocumentDraft(id, req.body, { type: req.actor!.role, id: req.actor!.label });
       res.status(201).json(draft);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
 
@@ -1058,27 +1075,24 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       });
       res.json(confirmed);
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
 
+  // A failure here is answered by the central error handler (500 Internal error): no route-level text.
   app.get("/api/workspaces/:id/accounting/ledger", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
-    try {
-      const entries = await getWorkspaceAccountingLedger(id);
-      if (req.query.format === "csv") {
-        const csv = formatLedgerAsCsv(entries);
-        res.setHeader("Content-Type", "text/csv; charset=utf-8");
-        res.setHeader(
-          "Content-Disposition",
-          `attachment; filename="bind-ledger-${id}.csv"`
-        );
-        return res.send(csv);
-      }
-      res.json(entries);
-    } catch (err: any) {
-      res.status(400).json({ error: err.message });
+    const entries = await getWorkspaceAccountingLedger(id);
+    if (req.query.format === "csv") {
+      const csv = formatLedgerAsCsv(entries);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="bind-ledger-${id}.csv"`
+      );
+      return res.send(csv);
     }
+    res.json(entries);
   });
 
   // Audit Logs
@@ -1097,7 +1111,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       const report = await recoveryRunner.recoverInterruptedWorkflows({ workspaceId: req.params.id });
       res.json(report);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: publicErrorMessage(err) });
     }
   });
 
@@ -1272,7 +1286,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       authMeta = await verifyAndAuthorizeSurfaceEvent(event);
     } catch (err: any) {
       if (err instanceof SurfaceAuthorizationError) {
-        return res.status(403).json({ error: err.message });
+        return res.status(403).json({ error: publicErrorMessage(err) });
       }
       throw err;
     }
@@ -1306,7 +1320,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
               `surface_${event.surface}`
             );
           } catch (err: any) {
-            return res.status(400).json({ error: err.message });
+            return res.status(400).json({ error: publicErrorMessage(err) });
           }
         }
       }
@@ -1405,6 +1419,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     res.status(retryable ? 503 : 200).json(outcome);
   }
 
+  // An unknown API path is a JSON 404, never the page.
+  app.use("/api", (_req: Request, res: Response) => {
+    res.status(404).json({ error: "Not found" });
+  });
+
   // Default SPA route (supports /, /app, /app/workflows/:workflowId)
   app.get("*", (_req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -1412,6 +1431,9 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     res.setHeader("Expires", "0");
     res.sendFile(path.resolve(staticPath, "index.html"));
   });
+
+  // Last: body-parser and routing errors and any unexpected error (docs/decisions/0031). Stacks are never sent.
+  app.use(requestErrorHandler);
 
   return app;
 }

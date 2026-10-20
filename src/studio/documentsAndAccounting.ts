@@ -7,6 +7,7 @@ import { OrderSettlementService } from "../workflows/settlement.js";
 import type { EvidenceLoader } from "../workflows/settlement.js";
 import { recordIdempotentJournalEntry } from "../accounting/journal.js";
 import type { AuditActor } from "../auth/tokens.js";
+import { MAX_AMOUNT_CENTS, MAX_QUANTITY } from "../adapters/suppliers/validate.js";
 export { recordIdempotentJournalEntry } from "../accounting/journal.js";
 
 export const ExtractDocumentInputSchema = z.object({
@@ -23,9 +24,9 @@ export const ConfirmDocumentInputSchema = z.object({
   sku: z.string().optional(),
   supplierId: z.string().optional(),
   supplierName: z.string().optional(),
-  quantity: z.number().positive().optional(),
-  unitPriceCents: z.number().int().nonnegative().optional(),
-  totalPriceCents: z.number().int().nonnegative().optional(),
+  quantity: z.number().positive().max(MAX_QUANTITY).optional(),
+  unitPriceCents: z.number().int().nonnegative().max(Number(MAX_AMOUNT_CENTS)).optional(),
+  totalPriceCents: z.number().int().nonnegative().max(Number(MAX_AMOUNT_CENTS)).optional(),
   billNumber: z.string().optional(),
 });
 
@@ -35,7 +36,12 @@ function parseDollarToCents(raw: string): number | null {
   const parts = cleaned.split(".");
   const dollars = Number(parts[0]);
   const cents = parts[1] ? Number(parts[1].padEnd(2, "0")) : 0;
-  return dollars * 100 + cents;
+  return boundedCents(dollars * 100 + cents);
+}
+
+/** An amount is kept only when it is a safe integer within the supplier bound (Task 11). Anything else is refused. */
+function boundedCents(value: number): number | null {
+  return Number.isSafeInteger(value) && value <= Number(MAX_AMOUNT_CENTS) ? value : null;
 }
 
 /**
@@ -114,6 +120,11 @@ export async function extractDocumentDraft(
   if (qtyMatch) {
     quantity = Number(qtyMatch[1]);
   }
+  if (quantity > MAX_QUANTITY) {
+    // An absurd count is not a quantity. It is flagged and not used (Task 11, docs/decisions/0031).
+    warnings.push(`QUANTITY_OUT_OF_RANGE: The stated quantity is above ${MAX_QUANTITY} and was not used.`);
+    quantity = 0;
+  }
   if (!quantity || quantity <= 0) {
     warnings.push("MISSING_QUANTITY: Quantity could not be parsed with certainty.");
   }
@@ -124,16 +135,21 @@ export async function extractDocumentDraft(
   const unitMatch =
     text.match(/(?:Unit\s*Price|Price|Rate|@)[:\s]*\$?(\d+(?:\.\d{1,2})?)/i);
   if (unitMatch) {
-    unitPriceCents = parseDollarToCents(unitMatch[1]) ?? 0;
+    const parsed = parseDollarToCents(unitMatch[1]);
+    if (parsed === null) warnings.push("AMOUNT_OUT_OF_RANGE: A unit price is above the largest accepted amount and was not used.");
+    unitPriceCents = parsed ?? 0;
   }
   const totalMatch =
     text.match(/(?:Total\s*Price|Total\s*Amount|Total|Amount)[:\s]*\$?(\d+(?:\.\d{1,2})?)/i);
   if (totalMatch) {
-    totalPriceCents = parseDollarToCents(totalMatch[1]) ?? 0;
+    const parsed = parseDollarToCents(totalMatch[1]);
+    if (parsed === null) warnings.push("AMOUNT_OUT_OF_RANGE: A total is above the largest accepted amount and was not used.");
+    totalPriceCents = parsed ?? 0;
   }
 
   if (unitPriceCents > 0 && quantity > 0 && totalPriceCents === 0) {
-    totalPriceCents = Math.round(quantity * unitPriceCents);
+    totalPriceCents = boundedCents(Math.round(quantity * unitPriceCents)) ?? 0;
+    if (totalPriceCents === 0) warnings.push("AMOUNT_OUT_OF_RANGE: The derived total is above the largest accepted amount.");
   } else if (totalPriceCents > 0 && quantity > 0 && unitPriceCents === 0) {
     unitPriceCents = Math.round(totalPriceCents / quantity);
   }
