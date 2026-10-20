@@ -55,6 +55,20 @@ function routesOf(app: any): Array<{ method: string; path: string }> {
   return out;
 }
 
+/**
+ * A long-lived response: the registry documents its 200 as text/event-stream (ADR 0035). Such a route cannot be read to the
+ * end, so the sweeps read its status line and abort the request (docs/decisions/0035, "Test changes").
+ */
+const isEventStream = (spec: Pick<RouteSpec, "responses">): boolean => spec.responses[200]?.contentType === "text/event-stream";
+
+/** The status of a long-lived route, read from its headers only. The request is aborted before any body is read. */
+async function streamStatus(baseUrl: string, url: string, token: string): Promise<number> {
+  const controller = new AbortController();
+  const res = await fetch(`${baseUrl}${url}`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
+  controller.abort();
+  return res.status;
+}
+
 const keyOf = (method: string, p: string) => `${method.toUpperCase()} ${p}`;
 const specKey = (spec: Pick<RouteSpec, "method" | "path">) => keyOf(spec.method, spec.path);
 const specFor = (method: string, template: string): RouteSpec => {
@@ -470,6 +484,11 @@ describe("API contract: one registry, checked against the running server (ADR 00
         expect(staff.status, `${where} with a staff token`).toBe(403);
         expect(staff.body, `${where} with a staff token`).toEqual(OWNER_REQUIRED);
       } else if (spec.access === "member") {
+        if (isEventStream(spec)) {
+          const status = await streamStatus(baseUrl, url, staffA.token);
+          expect([401, 403], `${where} with a staff token`).not.toContain(status);
+          continue;
+        }
         const staff = await send(baseUrl, spec.method, url, { token: staffA.token, body: bodyless ? undefined : {} });
         expect([401, 403], `${where} with a staff token`).not.toContain(staff.status);
       } else if (spec.access === "authenticated") {
@@ -530,7 +549,14 @@ describe("API contract: one registry, checked against the running server (ADR 00
     };
 
     // Every GET route except the UI catch-all is read here.
-    expect(ROUTES.filter((r) => r.method === "get" && !r.contractTested).map((r) => specKey(r))).toEqual(["GET *"]);
+    expect(ROUTES.filter((r) => r.method === "get" && !r.contractTested).map((r) => specKey(r))).toEqual([
+      "GET /api/workspaces/:id/events",
+      "GET *",
+    ]);
+    // The long-lived routes are exactly the routes whose registry 200 is text/event-stream (ADR 0035, "Test changes").
+    expect(ROUTES.filter((r) => r.method === "get" && isEventStream(r)).map((r) => specKey(r))).toEqual([
+      "GET /api/workspaces/:id/events",
+    ]);
 
     for (const spec of ROUTES.filter((r) => r.method === "get" && r.contractTested)) {
       const token = tokenFor(spec);
@@ -735,7 +761,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
 });
 
 /** The number of routes with `contractTested: false`. Raise it only with a recorded reason in the ADR. */
-const MAX_NOT_CONTRACT_TESTED = 1;
+const MAX_NOT_CONTRACT_TESTED = 2;
 
 /** The first key of an object schema, or of the first option of a union. Used to build a wrong-typed body. */
 function firstField(schema: z.ZodTypeAny): string {

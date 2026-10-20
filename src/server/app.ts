@@ -96,6 +96,7 @@ import {
   ReplenishBodySchema,
 } from "../api/schemas.js";
 import { createMetricsHandler, DEFAULT_METRICS_CACHE_MS } from "../observability/metrics-route.js";
+import { eventPollHandler, eventStreamHandler, resolveEventsOptions, type EventsOptions } from "../api/event-routes.js";
 import {
   SAFE_AGENT_TOOLS,
   FORBIDDEN_AGENT_CAPABILITIES,
@@ -298,6 +299,11 @@ export interface CreateAppOptions {
    * BIND_TRUST_PROXY. The header is read only through Express's own req.ip, never by the application.
    */
   trustProxy?: number;
+  /**
+   * The event stream and its poll fallback (docs/decisions/0035): the intervals and the caps. Omitted means the defaults.
+   * Tests shorten the intervals and lower the caps.
+   */
+  events?: EventsOptions;
 }
 
 const WEBHOOK_UNAUTHORIZED = { error: "Invalid signature or expired timestamp" };
@@ -337,6 +343,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     app.locals.rateLimits = scopes;
     app.use(rateLimitGate(scopes));
   }
+  const eventSettings = resolveEventsOptions(options.events);
   const procurementRunner = new ProcurementWorkflowRunner();
   const recoveryRunner = new WorkflowCrashRecoveryRunner();
   const corsOrigins = options.corsOrigins ?? parseCorsOrigins(config.BIND_CORS_ORIGINS);
@@ -1145,6 +1152,10 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     );
     res.json(auditRes.rows);
   });
+
+  // The event stream and its poll fallback (docs/decisions/0035). Member routes; the token is read from the header only.
+  app.get("/api/workspaces/:id/events", ...workspaceMember, eventStreamHandler(eventSettings));
+  app.get("/api/workspaces/:id/events/poll", ...workspaceMember, eventPollHandler());
 
   // Crash Recovery
   app.post("/api/workspaces/:id/recover", ...workspaceOwner, async (req: Request, res: Response) => {

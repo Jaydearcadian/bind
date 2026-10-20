@@ -267,6 +267,13 @@ CREATE INDEX IF NOT EXISTS idx_orders_workspace ON orders(workspace_id, status);
 CREATE INDEX IF NOT EXISTS idx_approvals_pending ON approvals(workspace_id, status);
 CREATE INDEX IF NOT EXISTS idx_workflows_state ON workflows(workspace_id, state);
 CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_logs(workspace_id, created_at DESC);
+-- The event stream (docs/decisions/0035, src/api/events.ts). Each audit row gets a sequence number and the id of the
+-- transaction that wrote it. A reader orders by (txid, seq) and sees only rows whose transaction has finished, so a
+-- transaction that commits late is never skipped. Existing rows take this migration's transaction id, which is harmless:
+-- a new stream starts from the latest event, not from the start of the table.
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS seq BIGSERIAL;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS txid xid8 NOT NULL DEFAULT pg_current_xact_id();
+CREATE INDEX IF NOT EXISTS idx_audit_events ON audit_logs(workspace_id, txid, seq);
 CREATE INDEX IF NOT EXISTS idx_surface_bindings_ws ON surface_bindings(workspace_id, surface);
 CREATE INDEX IF NOT EXISTS idx_staged_docs_ws ON staged_documents(workspace_id, status);
 CREATE INDEX IF NOT EXISTS idx_journal_ws ON accounting_journal_entries(workspace_id, created_at DESC);

@@ -268,6 +268,20 @@ export const rateLimited = registry.counter(
   "Requests answered 429 by a rate limit, by scope.",
   ["scope"]
 );
+/** Open event streams in this process (docs/decisions/0035). No tenant label: the count is aggregate. */
+export const sseStreams = registry.gauge("bind_sse_streams", "Open event streams in this process.");
+/** Events written to event streams (docs/decisions/0035). Heartbeats are not events and are not counted. */
+export const sseEventsSent = registry.counter("bind_sse_events_sent_total", "Events written to event streams.");
+/** Streams refused by a cap, by reason: token, workspace or global (docs/decisions/0035). */
+export const sseStreamsRejected = registry.counter(
+  "bind_sse_streams_rejected_total",
+  "Event streams refused by a cap, by reason.",
+  ["reason"]
+);
+// A family with no sample renders no sample line. These start at zero, so a scrape always shows them.
+sseStreams.set({}, 0);
+sseEventsSent.inc({}, 0);
+for (const reason of ["token", "workspace", "global"]) sseStreamsRejected.inc({ reason }, 0);
 export const workerLag = registry.gauge(
   "bind_worker_lag_seconds",
   "Seconds since the last worker tick finished, -1 before the first tick."

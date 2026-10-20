@@ -3,7 +3,8 @@ import { log as defaultLog } from "../observability/logger.js";
 
 /**
  * Graceful shutdown (docs/decisions/0032). The order is fixed:
- *   1. stop accepting connections (server.close), at once and synchronously;
+ *   0. beforeClose, if given (docs/decisions/0035): ends the open event streams, so a long stream never holds the shutdown;
+ *   1. stop accepting connections (server.close), at once;
  *   2. stop the background worker, which waits for a tick in progress;
  *   3. wait for in-flight requests to finish, up to timeoutMs; after that, close every connection (forced);
  *   4. wait for the worker to finish, then close the database pool, once.
@@ -21,6 +22,11 @@ export interface ShutdownOptions {
   /** The background worker, or null when none runs. Its stop resolves when a tick in progress has finished. */
   worker: { stop(): Promise<void> } | null;
   closePool: () => Promise<void>;
+  /**
+   * Runs first, before the server stops accepting connections (docs/decisions/0035). index.ts ends the event streams here.
+   * A failure is logged and the shutdown goes on.
+   */
+  beforeClose?: () => void | Promise<void>;
   /** How long in-flight requests may run before their connections are closed. Default 20 seconds. */
   timeoutMs?: number;
   log?: ShutdownLog;
@@ -40,6 +46,15 @@ export function createShutdown(options: ShutdownOptions): (signal: string) => Pr
 
   async function run(signal: string): Promise<ShutdownResult> {
     logger.info("shutdown.started", { signal });
+
+    // 0. Hooks that must run before the server stops (the event streams end with a shutdown event).
+    if (options.beforeClose) {
+      try {
+        await options.beforeClose();
+      } catch (err) {
+        logger.error("shutdown.before_close_failed", { error: err });
+      }
+    }
 
     // 1. Stop accepting. The callback runs when the last connection has closed.
     const drained = new Promise<void>((resolve) => {

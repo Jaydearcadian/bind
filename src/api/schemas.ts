@@ -394,6 +394,47 @@ export const AuditEntrySchema = z
   })
   .passthrough();
 
+// ---------------------------------------------------------------------------------------------------------------------
+// The event stream (docs/decisions/0035)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** An event id: "<txid>.<seq>", the transaction id and the sequence number of an audit row. */
+const EventCursorText = z.string().regex(/^\d{1,19}\.\d{1,19}$/);
+
+/** GET /api/workspaces/:id/events and /events/poll: the cursor is taken from Last-Event-ID, or from lastEventId (stream). */
+export const EventStreamQuerySchema = z.object({
+  lastEventId: EventCursorText.optional(),
+});
+
+/** GET /api/workspaces/:id/events/poll. after is an event id; limit is 1 to 200 (default 50). Validated by the route. */
+export const EventPollQuerySchema = z.object({
+  after: EventCursorText.optional(),
+  limit: z.string().regex(/^\d{1,3}$/).optional(),
+});
+
+/** One event: the audit action as its type, the redacted evidence allowlist as data (docs/EVENTS.md). */
+export const EventEnvelopeSchema = z
+  .object({
+    id: EventCursorText,
+    type: z.string(),
+    at: IsoDateTime,
+    effectClass: z.string(),
+    decision: z.string(),
+    actor: z.object({ type: z.string(), id: z.string() }).passthrough(),
+    workflowId: z.string().optional(),
+    data: z.record(z.unknown()),
+  })
+  .passthrough();
+
+/** GET /api/workspaces/:id/events/poll. nextCursor is the cursor to pass as after; hasMore is true when rows remain. */
+export const EventPollSchema = z
+  .object({
+    events: z.array(EventEnvelopeSchema),
+    nextCursor: EventCursorText,
+    hasMore: z.boolean(),
+  })
+  .passthrough();
+
 export const TokenSummarySchema = z
   .object({
     id: z.string(),

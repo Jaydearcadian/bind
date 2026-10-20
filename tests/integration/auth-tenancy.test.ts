@@ -63,6 +63,9 @@ const ANY_ROLE_ROUTES: Array<[string, string]> = [
   ["POST", "/api/workspaces/:id/documents/extract"],
   ["GET", "/api/workspaces/:id/accounting/ledger"],
   ["GET", "/api/workspaces/:id/audit"],
+  // The event stream (docs/decisions/0035) and its poll fallback. Both take the Authorization header only.
+  ["GET", "/api/workspaces/:id/events"],
+  ["GET", "/api/workspaces/:id/events/poll"],
   ["GET", "/api/workspaces/:id/customer-orders"],
   ["POST", "/api/workspaces/:id/customer-orders"],
   ["GET", "/api/workspaces/:id/customer-orders/:orderId"],

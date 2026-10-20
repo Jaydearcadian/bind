@@ -112,6 +112,20 @@ Each prints `db.migrate.started`, `db.migrate.completed` and `db.migrate.cli_com
 after copying them to `three_way_matches_archive`, so the unique index can be created. It changes nothing once no duplicates
 remain. Take a backup (section 13) before the first start of a version that changes that statement.
 
+**The first start of the event-stream schema rewrites `audit_logs` once** (ADR 0035). The statement
+`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS txid xid8 NOT NULL DEFAULT pg_current_xact_id()` has a volatile default, so
+PostgreSQL rewrites every existing row, under an exclusive lock on `audit_logs`. On a small database this is immediate. On a
+large audit table it blocks reads and writes of that table for as long as the rewrite runs. Before that first start:
+
+```
+# Size of the table (the rewrite takes about as long as a full read and write of it):
+psql "$DATABASE_URL" -c "SELECT pg_size_pretty(pg_total_relation_size('audit_logs'));"
+# Take a backup (section 13.1), then run the migration alone, in a maintenance window, before any instance starts:
+npm run db:migrate
+```
+
+Later starts do nothing for these columns.
+
 ### 3.2 Migration lock
 
 Migrations take the session advisory lock `migrations` on a dedicated connection. Two instances that start together run the DDL
@@ -550,3 +564,28 @@ The rate-limit state and the metrics are not in the database. Nothing to restore
 - **No live Arc run here.** Settlement against the Arc testnet was not exercised in this check; the unit and integration tests use
   the simulator and a local EVM.
 - **No dashboards or alert rules are shipped.** The suggestions in section 4 are not configured anywhere in this repository.
+
+## 15. The workspace event stream
+
+`GET /api/workspaces/:id/events` (text/event-stream) and `GET /api/workspaces/:id/events/poll` (JSON pages) send a workspace's
+finished audit events, in order, with ids a client resumes from (ADR 0035, `docs/EVENTS.md`). Both take the token in the
+`Authorization` header only. Caps per process: 5 open streams per token, 50 per workspace, 500 in all (a refused stream is
+`429 TOO_MANY_STREAMS` with `Retry-After: 5`). A stream ends after one hour, on a revoked token, or when its client stops
+reading; the client reconnects with its last id. At shutdown every stream gets `event: shutdown` before the server closes.
+
+**The global horizon.** A stream sends an event only when every transaction that started before it has finished, anywhere in
+the database. A transaction left open (`idle in transaction`) therefore holds back the events of every workspace, not one.
+The symptom is that writes happen and no stream or poll returns new events. Find the session:
+
+```
+psql "$DATABASE_URL" -c "SELECT pid, usename, application_name, client_addr, now() - state_change AS idle_for,
+  now() - xact_start AS transaction_age, left(query, 120) AS last_query
+  FROM pg_stat_activity WHERE state = 'idle in transaction' ORDER BY state_change;"
+```
+
+Decide before acting. `SELECT pg_terminate_backend(<pid>);` ends that connection and rolls back its transaction, so any work
+in it is lost. A database setting bounds the problem for the future; it is not set by this repository:
+`ALTER DATABASE <name> SET idle_in_transaction_session_timeout = '60s';` (an operator decision, made per database).
+
+The poll route is the way for a client that cannot hold a connection (serverless). It shares the same horizon.
+

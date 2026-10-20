@@ -33,6 +33,9 @@ import {
   DocumentConfirmSchema,
   DocumentDraftSchema,
   ErrorBody,
+  EventPollQuerySchema,
+  EventPollSchema,
+  EventStreamQuerySchema,
   ExtractDocumentInputSchema,
   FeedbackBodySchema,
   FeedbackIngestSchema,
@@ -875,6 +878,46 @@ export const ROUTES: RouteSpec[] = [
     tags: ["Audit"],
     summary: "The 100 newest audit rows. Evidence holds ids and decisions, never secrets.",
     responses: { 200: ok("Audit rows.", list(AuditEntrySchema)) },
+    contractTested: true,
+  }),
+
+  // -------------------------------------------------------------------------------------------------------------------
+  // The workspace event stream and its poll fallback (docs/decisions/0035). Authorization header only.
+  // -------------------------------------------------------------------------------------------------------------------
+  withGenericErrors({
+    operationId: "streamEvents",
+    method: "get",
+    path: "/api/workspaces/:id/events",
+    access: "member",
+    tags: ["Events"],
+    summary:
+      "Live stream (text/event-stream) of the workspace's finished audit events. Each event: id (<txid>.<seq>), event (the audit action) and data (the envelope). Resumes after Last-Event-ID (header) or lastEventId (query); with neither, starts after the latest event.",
+    query: EventStreamQuerySchema,
+    responses: {
+      200: {
+        description:
+          "An event stream. Frames: `id`, `event`, `data`; `: ping` comments while idle; `event: shutdown` when the server stops; the stream also ends after an hour, when its token is revoked, or on a cap.",
+        contentType: "text/event-stream",
+      },
+      400: err("Invalid cursor (INVALID_CURSOR): Last-Event-ID or lastEventId is not <txid>.<seq>."),
+      429: err("Too many event streams (TOO_MANY_STREAMS): the per-token, per-workspace or per-process cap is reached. Retry-After is 5 seconds."),
+    },
+    contractTested: false,
+    notTestedReason: "long-lived stream; covered by tests/integration/events.test.ts",
+  }),
+  withGenericErrors({
+    operationId: "pollEvents",
+    method: "get",
+    path: "/api/workspaces/:id/events/poll",
+    access: "member",
+    tags: ["Events"],
+    summary:
+      "The same events as the stream, as JSON pages, for clients that cannot hold a stream (serverless). Without after: the newest events, ascending.",
+    query: EventPollQuerySchema,
+    responses: {
+      200: ok("Events after the cursor, with nextCursor and hasMore.", EventPollSchema),
+      400: err("Invalid cursor (INVALID_CURSOR), or a limit that is not an integer from 1 to 200 (INVALID_LIMIT)."),
+    },
     contractTested: true,
   }),
   withGenericErrors({

@@ -121,4 +121,30 @@ describe("graceful shutdown", () => {
 
     expect(closePool).toHaveBeenCalledTimes(1);
   });
+
+  it("beforeClose runs first, before the server stops accepting connections (docs/decisions/0035)", async () => {
+    const { server } = await startServer((_req, res) => res.end("idle"));
+    const order: string[] = [];
+    const realClose = server.close.bind(server);
+    server.close = ((callback?: (err?: Error) => void) => {
+      order.push("server-close");
+      return realClose(callback);
+    }) as typeof server.close;
+    const shutdown = createShutdown({
+      server,
+      worker: null,
+      closePool: async () => {
+        order.push("pool-closed");
+      },
+      timeoutMs: 5000,
+      log: silentLog,
+      beforeClose: () => {
+        order.push("before-close");
+      },
+    });
+
+    await shutdown("SIGTERM");
+
+    expect(order).toEqual(["before-close", "server-close", "pool-closed"]);
+  });
 });

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { createApp } from "../../src/server/app.js";
+import { ROUTES } from "../../src/api/registry.js";
 import { query, closePool } from "../../src/db/client.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import { provisionWorkspace } from "../../src/templates/registry.js";
@@ -215,6 +216,12 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
       const bodyIgnored = new Set(["POST /api/workspaces/:id/recover", "POST /api/workspaces/:id/webhook-secret/rotate"]);
       const pathHostile = ["%00", "a".repeat(5000), "%27%20OR%201%3D1%20--", '%22quoted%22'];
 
+      // A long-lived route (its registry 200 is text/event-stream, ADR 0035) gets no query variants here: a valid request
+      // would stay open. Its hostile input is tested by tests/integration/events.test.ts. Keyed on the registry, not a path.
+      const longLivedGet = (path: string) =>
+        ROUTES.some((r) => r.method === "get" && r.path === path && r.responses[200]?.contentType === "text/event-stream");
+      const skippedQueryRoutes: string[] = [];
+
       for (const route of routes) {
         if (route.path === "*") continue;
         const label = `${route.method} ${route.path}`;
@@ -243,12 +250,16 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
             expect(r.status, `${label} [path ${hostile.slice(0, 12)}]`).toBeGreaterThanOrEqual(400);
           }
         } else {
-          const queries = [
-            // Long, but under Node's 16KB request-line and header limit, which answers a longer URL with an empty 431.
-            `?since=${"9".repeat(8000)}`,
-            "?format=%00",
-            "?x[__proto__][polluted]=1&constructor[prototype][polluted]=1",
-          ];
+          const skipQueries = route.method === "GET" && longLivedGet(route.path);
+          if (skipQueries) skippedQueryRoutes.push(label);
+          const queries = skipQueries
+            ? []
+            : [
+                // Long, but under Node's 16KB request-line and header limit, which answers a longer URL with an empty 431.
+                `?since=${"9".repeat(8000)}`,
+                "?format=%00",
+                "?x[__proto__][polluted]=1&constructor[prototype][polluted]=1",
+              ];
           for (const q of queries) {
             const r = await send(baseUrl, route.method, fillPath(route.path, wsA.id) + q, { token: wsA.owner.token });
             expectSafe(r, `${label} [query ${q.slice(0, 14)}]`);
@@ -262,6 +273,10 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
           }
         }
       }
+      // The skipped set is exactly the long-lived GET routes of the registry, and nothing else is skipped.
+      expect(skippedQueryRoutes).toEqual(
+        ROUTES.filter((r) => r.method === "get" && r.responses[200]?.contentType === "text/event-stream").map((r) => `GET ${r.path}`)
+      );
       expectNoPollution();
     });
 

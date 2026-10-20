@@ -6,6 +6,7 @@ import { provisionDemoWorkspace } from "./server/demo.js";
 import { createShutdown } from "./server/shutdown.js";
 import { startWorker, type Worker } from "./workers/runner.js";
 import { log } from "./observability/logger.js";
+import { closeAllEventStreams } from "./api/event-streams.js";
 
 /** In-flight requests and the worker get this long to finish on shutdown (docs/decisions/0032). */
 const SHUTDOWN_TIMEOUT_MS = 20_000;
@@ -66,6 +67,10 @@ async function main() {
     closePool,
     timeoutMs: SHUTDOWN_TIMEOUT_MS,
     log,
+    // Open event streams end first, with a shutdown event, so they do not hold the shutdown (docs/decisions/0035).
+    beforeClose: () => {
+      closeAllEventStreams("shutdown");
+    },
   });
 
   process.on("SIGTERM", () => stopAndExit("SIGTERM", false));
