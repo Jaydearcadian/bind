@@ -70,6 +70,7 @@ const ANY_ROLE_ROUTES: Array<[string, string]> = [
   ["POST", "/api/workspaces/:id/menu-proposals"],
   ["GET", "/api/workspaces/:id/menu-proposals"],
   ["GET", "/api/workspaces/:id/menu"],
+  ["GET", "/api/workspaces/:id/needs-attention"],
 ];
 
 /** Owner of the workspace in the path, or of the approval or order whose workspace the service checks. */
@@ -90,6 +91,7 @@ const OWNER_ROUTES: Array<[string, string]> = [
   ["POST", "/api/workspaces/:id/menu-proposals/:proposalId/reject"],
   ["POST", "/api/workspaces/:id/menu-proposals/:proposalId/cancel"],
   ["POST", "/api/workspaces/:id/menu-proposals/:proposalId/publish"],
+  ["POST", "/api/workspaces/:id/workflows/:workflowId/cancel"],
   ["GET", "/api/workspaces/:id/webhook-secret"],
   ["POST", "/api/workspaces/:id/webhook-secret/rotate"],
   ["GET", "/api/workspaces/:id/connectors"],

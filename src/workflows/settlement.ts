@@ -10,6 +10,7 @@ import { SettlementRejectedError } from "../adapters/settlement/errors.js";
 import { evaluateThreeWayMatch, MatchStatus } from "../accounting/three-way-match.js";
 import { recordIdempotentJournalEntry } from "../accounting/journal.js";
 import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
+import { newId } from "../utils/ids.js";
 
 /**
  * Why an order is not paid or not yet final. RECONCILE_IN_PROGRESS means another caller holds the claim.
@@ -474,6 +475,54 @@ export class OrderSettlementService {
     });
   }
 
+  /**
+   * The claim was lost after the transfer went out (ADR 0030). The stuck-claim step moved the order to `payment_hold`
+   * with no hash, while this settle was still in flight. The hash and the payment record are attached to that hold,
+   * and the order goes to `settlement_submitted`, so the worker's confirmation poll finishes it. Nothing is paid here.
+   * Any other state is left alone: this call changes nothing and reports the reconciliation as in progress.
+   */
+  private async reattachLostTransfer(
+    order: any,
+    transfer: TransferResult,
+    status: MatchStatus,
+    payment: { amountCents: bigint; receiptId: string; billId: string }
+  ): Promise<ReconcileResult> {
+    const current = await query(`SELECT status, tx_hash FROM orders WHERE id = $1;`, [order.id]);
+    const row = current.rows[0];
+    if (!row || row.status !== "payment_hold" || row.tx_hash !== null) {
+      return { status, reconciled: false, hold: "RECONCILE_IN_PROGRESS" };
+    }
+    // The guard is repeated in the write, so a hold that changes between the read and the write is not touched.
+    const attached = await withTransaction(async (client) => {
+      const upd = await client.query(
+        `UPDATE orders
+         SET status = 'settlement_submitted', tx_hash = $2, settled_amount_cents = $3, settled_receipt_id = $4,
+             settled_bill_id = $5, updated_at = NOW()
+         WHERE id = $1 AND status = 'payment_hold' AND tx_hash IS NULL
+         RETURNING id;`,
+        [order.id, transfer.txHash, payment.amountCents, payment.receiptId, payment.billId]
+      );
+      if (upd.rowCount !== 1) return false;
+      await client.query(
+        `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at)
+         VALUES ($1, $2, NULL, 'system', 'settlement_engine', $3, 'settlement.reattached', $4, $5, $6, NOW());`,
+        [
+          newId("audit"),
+          order.workspace_id,
+          EffectClass.COMMERCIAL_COMMITMENT,
+          PolicyDecision.ALLOW,
+          JSON.stringify({ orderId: order.id, txHash: transfer.txHash }),
+          transfer.txHash,
+        ]
+      );
+      return true;
+    });
+    if (!attached) {
+      return { status, reconciled: false, hold: "RECONCILE_IN_PROGRESS" };
+    }
+    return { status, reconciled: false, txHash: transfer.txHash, pending: "AWAITING_SETTLEMENT_CONFIRMATION" };
+  }
+
   private async settleClaimedOrder(
     order: any,
     loadEvidence: EvidenceLoader,
@@ -673,12 +722,20 @@ export class OrderSettlementService {
     // Make the transfer durable on the claimed row before anything else, so a failure from here on
     // leaves the order `settling` with the hash recorded. The payment record (amount and the receipt and bill
     // it was matched against) is written in the same statement, so confirmation finishes this payment as made.
-    await query(
+    // The row count is checked: zero means the claim was lost after the money moved (ADR 0030).
+    const recorded = await query(
       `UPDATE orders
        SET tx_hash = $1, settled_amount_cents = $3, settled_receipt_id = $4, settled_bill_id = $5, updated_at = NOW()
        WHERE id = $2 AND status = 'settling';`,
       [transfer.txHash, order.id, matchResult.payableAmountCents, receipt.receiptId, bill.billId]
     );
+    if (recorded.rowCount !== 1) {
+      return this.reattachLostTransfer(order, transfer, matchResult.status, {
+        amountCents: matchResult.payableAmountCents,
+        receiptId: receipt.receiptId,
+        billId: bill.billId,
+      });
+    }
 
     let outcome = outcomeOf(transfer);
     if (outcome.kind === "unconfirmed") {

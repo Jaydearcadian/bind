@@ -68,6 +68,8 @@ const envSchema = z.object({
   BIND_CREDENTIAL_KEY_PREVIOUS: optionalCredentialKey("BIND_CREDENTIAL_KEY_PREVIOUS"),
   // The background worker (ADR 0029) runs in the server process. Only the exact value "false" disables it.
   BIND_WORKER_ENABLED: z.string().optional(),
+  // The restock sweep (ADR 0030) runs in the worker unless this is exactly "false".
+  BIND_RESTOCK_SWEEP: z.string().optional(),
   ALLOW_NO_CONTRACTS: z.string().optional().default("1"),
   PARALLEL_API_KEY: z.string().optional(),
   NEBIUS_API_KEY: z.string().optional(),

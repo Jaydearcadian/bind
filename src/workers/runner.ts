@@ -9,18 +9,19 @@ import { redactText } from "../utils/redact.js";
 import { newId } from "../utils/ids.js";
 
 /**
- * The background worker (ADR 0029). One tick runs four steps in order, each bounded by a batch size:
+ * The background worker (ADR 0029, ADR 0030). One tick runs five steps in order, each bounded by a batch size:
  *   1. approval expiry, 2. interrupted-workflow recovery, 3. settlement confirmation polling,
- *   4. recovery of orders left in `settling`.
+ *   4. recovery of orders left in `settling`, 5. the restock sweep (off unless enabled).
  * Every step first takes a non-blocking session lock named `worker:<step>`. A step whose lock is busy is skipped
  * and reported as skipped. The operations are idempotent regardless, so the locks only avoid duplicate work.
  *
  * A tick never throws. A step's error is caught, redacted, bounded, recorded in the report, and the other steps
- * still run. Nothing here sends money: the stuck-claim step never sends a transfer, and confirmation only asks
- * the adapter for an outcome.
+ * still run. Nothing here sends money: the stuck-claim step never sends a transfer, confirmation only asks the
+ * adapter for an outcome, and the sweep only starts replenishments, which go through the commitment gate and
+ * approvals like a manual one.
  */
 
-export type WorkerStep = "expiry" | "recovery" | "settlement_poll" | "stuck_settling";
+export type WorkerStep = "expiry" | "recovery" | "settlement_poll" | "stuck_settling" | "restock_sweep";
 
 export interface TickError {
   step: WorkerStep;
@@ -32,6 +33,8 @@ export interface TickReport {
   recovery: { skipped: boolean; recovered: number; failed: number; inDoubt: number };
   settlementPoll: { skipped: boolean; polled: number; finished: number; pending: number; held: number; failed: number };
   stuckSettling: { skipped: boolean; toSubmitted: number; toHold: number; failed: number };
+  /** `skipped` is true when the sweep did not run: it is off, or its lock was busy. */
+  restockSweep: { skipped: boolean; started: number; failed: number };
   errors: TickError[];
 }
 
@@ -48,6 +51,12 @@ export interface TickOptions {
   maxPollAgeMs?: number;
   /** An order in `settling` this long without an update is treated as left by a dead process. */
   stuckSettlingAfterMs?: number;
+  /** Runs the restock sweep (step 5). Off by default, so a bare tick does not start replenishments (ADR 0030). */
+  restockSweep?: boolean;
+  /** The sweep looks only at these workspaces. Unset means every workspace that is not paused. */
+  restockWorkspaceIds?: string[];
+  /** A sku with any workflow created this recently is not swept again (default 6 hours). */
+  restockCooldownMs?: number;
 }
 
 export interface WorkerOptions extends TickOptions {
@@ -68,13 +77,19 @@ const DEFAULT_CONFIRM_AFTER_MS = 30_000;
 const DEFAULT_MAX_POLL_AGE_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_STUCK_SETTLING_AFTER_MS = 10 * 60 * 1000;
 const DEFAULT_INTERVAL_MS = 15_000;
+const DEFAULT_RESTOCK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const ERROR_LIMIT = 200;
+/** startReplenishment refuses a paused workspace with a message that starts with this tag (ADR 0023). */
+const PAUSED_TAG = "[AGENTS_PAUSED]";
+/** The actor on the sweep's audit rows. */
+const SWEEP_ACTOR = "system:restock-sweep";
 
 const STEP_KEY: Record<WorkerStep, keyof Omit<TickReport, "errors">> = {
   expiry: "expiry",
   recovery: "recovery",
   settlement_poll: "settlementPoll",
   stuck_settling: "stuckSettling",
+  restock_sweep: "restockSweep",
 };
 
 function emptyReport(): TickReport {
@@ -83,6 +98,7 @@ function emptyReport(): TickReport {
     recovery: { skipped: false, recovered: 0, failed: 0, inDoubt: 0 },
     settlementPoll: { skipped: false, polled: 0, finished: 0, pending: 0, held: 0, failed: 0 },
     stuckSettling: { skipped: false, toSubmitted: 0, toHold: 0, failed: 0 },
+    restockSweep: { skipped: false, started: 0, failed: 0 },
     errors: [],
   };
 }
@@ -102,6 +118,9 @@ function resolved(opts: TickOptions) {
     confirmAfterMs: opts.confirmAfterMs ?? DEFAULT_CONFIRM_AFTER_MS,
     maxPollAgeMs: opts.maxPollAgeMs ?? DEFAULT_MAX_POLL_AGE_MS,
     stuckSettlingAfterMs: opts.stuckSettlingAfterMs ?? DEFAULT_STUCK_SETTLING_AFTER_MS,
+    restockSweep: opts.restockSweep ?? false,
+    restockWorkspaceIds: opts.restockWorkspaceIds,
+    restockCooldownMs: opts.restockCooldownMs ?? DEFAULT_RESTOCK_COOLDOWN_MS,
   };
 }
 
@@ -250,7 +269,68 @@ async function recoverStuckOrder(orderId: string, staleBefore: Date): Promise<"s
   });
 }
 
-/** Runs one tick: the four steps in order. Never throws. */
+/**
+ * Starts a replenishment for each low sku that is not already covered (ADR 0030). A sku is low when its available
+ * quantity (on hand less active reservations, as ADR 0027) is below par. It is skipped when any workflow for it was
+ * created within the cooldown, or when one is still active. Paused workspaces are not looked at. The oldest deficit
+ * (the stock row unchanged the longest) comes first, and at most batchSize skus are tried per tick.
+ * A failing sku is audited and counted; the others still run.
+ */
+async function restockSweepStep(cfg: Resolved, report: TickReport): Promise<void> {
+  const cooldownStart = new Date(cfg.now.getTime() - cfg.restockCooldownMs);
+  const candidates = await query(
+    `WITH levels AS (
+       SELECT i.workspace_id, i.sku, i.updated_at,
+              i.par_level::float8 AS par,
+              (i.current_quantity - COALESCE((SELECT SUM(r.quantity) FROM stock_reservations r
+                                              WHERE r.workspace_id = i.workspace_id AND r.sku = i.sku AND r.status = 'active'), 0))::float8 AS available
+       FROM inventory_items i
+       JOIN workspaces w ON w.id = i.workspace_id
+       WHERE w.agents_paused = FALSE
+         AND ($1::text[] IS NULL OR i.workspace_id = ANY($1::text[]))
+     )
+     SELECT l.workspace_id, l.sku, l.available
+     FROM levels l
+     WHERE l.available < l.par
+       AND NOT EXISTS (
+         SELECT 1 FROM workflows wf
+         WHERE wf.workspace_id = l.workspace_id
+           AND wf.context_data->>'sku' = l.sku
+           AND (wf.created_at > $2 OR wf.state NOT IN ('reconciled', 'failed', 'cancelled'))
+       )
+     ORDER BY l.updated_at ASC, l.workspace_id ASC, l.sku ASC
+     LIMIT $3;`,
+    [cfg.restockWorkspaceIds ?? null, cooldownStart, cfg.batchSize]
+  );
+
+  const procurement = new ProcurementWorkflowRunner(cfg.deps);
+  const engine = new WorkflowEngine();
+  for (const row of candidates.rows) {
+    try {
+      await procurement.startReplenishment(row.workspace_id, row.sku, "worker_sweep", {
+        availableQuantity: Number(row.available),
+      });
+      report.restockSweep.started += 1;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.startsWith(PAUSED_TAG)) {
+        // The pause was set after the candidates were read. The sweep does not retry it (ADR 0023).
+        await engine.recordAudit(row.workspace_id, null, "system", SWEEP_ACTOR, EffectClass.READ, "replenishment.sweep_skipped", PolicyDecision.DENY, {
+          sku: row.sku,
+          reason: "AGENTS_PAUSED",
+        });
+      } else {
+        report.restockSweep.failed += 1;
+        await engine.recordAudit(row.workspace_id, null, "system", SWEEP_ACTOR, EffectClass.READ, "replenishment.sweep_failed", PolicyDecision.ALLOW, {
+          sku: row.sku,
+          error: boundedMessage(err),
+        });
+      }
+    }
+  }
+}
+
+/** Runs one tick: the steps in order. Never throws. The restock sweep runs only when it is enabled. */
 export async function runTick(opts: TickOptions = {}): Promise<TickReport> {
   const cfg = resolved(opts);
   const report = emptyReport();
@@ -258,6 +338,11 @@ export async function runTick(opts: TickOptions = {}): Promise<TickReport> {
   await runStep("recovery", report, () => recoveryStep(cfg, report));
   await runStep("settlement_poll", report, () => settlementPollStep(cfg, report));
   await runStep("stuck_settling", report, () => stuckSettlingStep(cfg, report));
+  if (cfg.restockSweep) {
+    await runStep("restock_sweep", report, () => restockSweepStep(cfg, report));
+  } else {
+    report.restockSweep.skipped = true;
+  }
   return report;
 }
 

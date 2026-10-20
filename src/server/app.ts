@@ -42,6 +42,8 @@ import {
 } from "../workflows/menu.js";
 import { SettlementOrderError } from "../workflows/settlement.js";
 import { WorkflowCrashRecoveryRunner } from "../workflows/recovery.js";
+import { cancelWorkflow, CANCEL_REASON_MAX_CHARACTERS, WorkflowCancelError } from "../workflows/cancel.js";
+import { listNeedsAttention } from "../workflows/needs-attention.js";
 import { WebhookReceiver } from "../adapters/web2/webhook-receiver.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import {
@@ -107,6 +109,25 @@ function sendApprovalError(res: Response, err: any) {
   }
   return res.status(400).json({ error: err.message });
 }
+
+/** Owner cancel failures (ADR 0030). The messages are fixed texts; a reason is never echoed. */
+function sendCancelError(res: Response, err: unknown) {
+  if (err instanceof WorkflowCancelError) {
+    const status = err.code === "WORKFLOW_NOT_FOUND" ? 404 : 409;
+    return res.status(status).json({
+      error: err.message,
+      code: err.code,
+      ...(err.state !== undefined ? { state: err.state } : {}),
+      ...(err.nextAction !== undefined ? { nextAction: err.nextAction } : {}),
+    });
+  }
+  return res.status(500).json({ error: "Request could not be completed" });
+}
+
+const CancelWorkflowBodySchema = z.object({
+  // Owner text. Stored as data by the service, never echoed in an error and never written to the audit row.
+  reason: z.string().max(CANCEL_REASON_MAX_CHARACTERS).optional(),
+});
 
 /** Customer order failures (ADR 0026). The message is the service's own text: it never echoes a customer's note. */
 function sendFulfilmentError(res: Response, err: unknown) {
@@ -852,6 +873,35 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       [id]
     );
     res.json(wfRes.rows);
+  });
+
+  // Owner cancel (ADR 0030). A pause does not block it. It never orders, pays or contacts a supplier.
+  app.post("/api/workspaces/:id/workflows/:workflowId/cancel", ...workspaceOwner, async (req: Request, res: Response) => {
+    const parsed = CancelWorkflowBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid request body", fields: parsed.error.issues.map((i) => i.path.join(".")) });
+      return;
+    }
+    try {
+      const result = await cancelWorkflow(
+        req.params.id,
+        req.params.workflowId,
+        { type: "owner", label: req.actor!.label },
+        parsed.data.reason
+      );
+      res.json(result);
+    } catch (err) {
+      sendCancelError(res, err);
+    }
+  });
+
+  // What needs the owner's attention (ADR 0030). Ids, codes and enum values only: no customer, supplier or feedback text.
+  app.get("/api/workspaces/:id/needs-attention", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      res.json(await listNeedsAttention(req.params.id));
+    } catch {
+      res.status(500).json({ error: "Request could not be completed" });
+    }
   });
 
   // Orders & 3-Way Match Status
