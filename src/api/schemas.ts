@@ -249,6 +249,18 @@ export const WorkspaceRowSchema = z
   })
   .passthrough();
 
+/** GET /api/me (ADR 0058): who the bearer token is. Closed on purpose: no secret, hash or token id can appear in it. */
+export const MeSchema = z
+  .object({
+    workspaceId: z.string(),
+    workspaceName: z.string(),
+    role: z.enum(["owner", "staff"]),
+    label: z.string(),
+    credential: z.enum(["workspace_token", "account_session"]),
+    agentsPaused: z.boolean(),
+  })
+  .strict();
+
 export const AgentRoleRowSchema = z
   .object({
     id: z.string(),

@@ -529,6 +529,28 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     }
   });
 
+  // Who the bearer token is (ADR 0058). A workspace token and an account session both resolve to req.actor. The answer is
+  // built field by field, so no token, session, hash or token id can leave through it.
+  app.get("/api/me", ...authenticated, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const actor = req.actor!;
+    try {
+      const wsRes = await query("SELECT name, agents_paused FROM workspaces WHERE id = $1;", [actor.workspaceId]);
+      const ws = wsRes.rows[0];
+      if (!ws) return res.status(404).json({ error: "Workspace not found" });
+      res.json({
+        workspaceId: actor.workspaceId,
+        workspaceName: String(ws.name),
+        role: actor.role,
+        label: actor.label,
+        credential: actor.tokenId.startsWith("ses_") ? "account_session" : "workspace_token",
+        agentsPaused: ws.agents_paused === true,
+      });
+    } catch {
+      res.status(500).json({ error: "Identity unavailable" });
+    }
+  });
+
   // Flow A: Onboard genuinely blank or owner-configured workspace. Public: creating a workspace issues its owner token.
   app.post("/api/workspaces/onboard", async (req: Request, res: Response) => {
     try {
