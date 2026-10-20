@@ -3,6 +3,7 @@ import { WorkflowRecord, WorkflowState, WorkflowType, TransitionOptions } from "
 import { EffectClass } from "../policy/effect-classifier.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { newId } from "../utils/ids.js";
+import { redactDeep } from "../utils/redact.js";
 
 function safeJsonStringify(obj: any): string {
   return JSON.stringify(obj, (_key, value) =>
@@ -136,7 +137,7 @@ export class WorkflowEngine {
   ): Promise<void> {
     const auditId = newId("audit");
     // Redact any potential private keys or sensitive tokens before logging
-    const sanitizedEvidence = this.sanitizeEvidence(evidence);
+    const sanitizedEvidence = redactDeep(evidence);
 
     await query(
       `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at)
@@ -273,22 +274,5 @@ export class WorkflowEngine {
       "APPROVAL_NOT_PENDING",
       `Approval '${approvalId}' is '${status}' and cannot be decided.`
     );
-  }
-
-  private sanitizeEvidence(obj: any): any {
-    // Arrays (for example reason codes) stay arrays; turning them into index-keyed objects loses their shape.
-    if (Array.isArray(obj)) return obj.map((item) => this.sanitizeEvidence(item));
-    if (!obj || typeof obj !== "object") return obj;
-    const clean: Record<string, any> = {};
-    for (const [k, v] of Object.entries(obj)) {
-      if (/secret|token|password|private_key|key/i.test(k) && typeof v === "string") {
-        clean[k] = "[REDACTED]";
-      } else if (typeof v === "object") {
-        clean[k] = this.sanitizeEvidence(v);
-      } else {
-        clean[k] = v;
-      }
-    }
-    return clean;
   }
 }

@@ -20,6 +20,7 @@
     "db:migrate:dev": "tsx src/db/migrate.ts",
     "map:functions": "tsx scripts/map-functions.ts",
     "token:issue": "tsx scripts/issue-owner-token.ts",
+    "credentials:rotate-key": "tsx scripts/rotate-credential-key.ts",
     "contract:artifact": "npm --prefix tools/compile-contract ci && node tools/compile-contract/generate.mjs"
   },
   "dependencies": {

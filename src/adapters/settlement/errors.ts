@@ -1,3 +1,5 @@
+import { redactText, redactUrls } from "../../utils/redact.js";
+
 /**
  * Typed settlement failures. Messages name configuration variables and error codes only.
  * They never include a private key, and they are not built from request payloads.
@@ -70,18 +72,12 @@ export class SettlementTransportError extends Error {
   }
 }
 
-const URL_PATTERN = /https?:\/\/[^\s"'<>)]+/gi;
-
 /**
- * Removes URLs and known secrets from text. Every URL becomes [redacted-url]; every occurrence of a
- * non-empty secret becomes [redacted]. Pure: it does not read configuration.
+ * Removes URLs and known secrets from text. Every URL becomes [redacted-url], then the one redaction module (ADR 0024)
+ * replaces every occurrence of each secret in `secrets` and every configured secret.
  */
 export function redactSecrets(text: string, secrets: readonly string[]): string {
-  let out = text.replace(URL_PATTERN, "[redacted-url]");
-  for (const secret of secrets) {
-    if (secret) out = out.split(secret).join("[redacted]");
-  }
-  return out;
+  return redactText(redactUrls(text), secrets);
 }
 
 /** Builds the transport error for a failed viem call, using the error's short message and redacting it. */

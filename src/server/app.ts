@@ -29,6 +29,16 @@ import {
 } from "../adapters/socialSurface.js";
 import { verifySignature, workspaceWebhookSecret } from "../webhooks/signing.js";
 import {
+  setCredential,
+  listConnectors,
+  revokeCredential,
+  verifyCredential,
+  CredentialInputError,
+  CredentialNotFoundError,
+  CredentialStoreDisabledError,
+  type CredentialActor,
+} from "../credentials/admin.js";
+import {
   setAgentsPaused,
   viewWebhookSecret,
   rotateWebhookSecret,
@@ -97,6 +107,25 @@ function sendTokenError(res: Response, err: unknown) {
     return res.status(status).json({ error: err.message, code: err.code });
   }
   return res.status(500).json({ error: "Token operation failed" });
+}
+
+/** The audit actor for a credential change: the owner token's label, never the token. */
+function credentialActorOf(req: Request): CredentialActor {
+  return { type: "owner", id: req.actor!.label };
+}
+
+/** Maps a credential failure to its status. Messages name rules only; any other failure gets a generic body. */
+function sendCredentialError(res: Response, err: unknown) {
+  if (err instanceof CredentialStoreDisabledError) {
+    return res.status(503).json({ error: "Credential store is not configured" });
+  }
+  if (err instanceof CredentialInputError) {
+    return res.status(400).json({ error: err.message });
+  }
+  if (err instanceof CredentialNotFoundError) {
+    return res.status(404).json({ error: "Connector credential not found" });
+  }
+  return res.status(500).json({ error: "Credential operation failed" });
 }
 
 type CreateOutcome<T> =
@@ -757,6 +786,49 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       res.json(rotated);
     } catch {
       res.status(500).json({ error: "Webhook secret could not be rotated" });
+    }
+  });
+
+  // Connector credentials (owner only, ADR 0024). A secret is accepted once, encrypted at rest, and never returned: every
+  // response is a summary. The store is disabled (503) until BIND_CREDENTIAL_KEY is configured.
+  app.get("/api/workspaces/:id/connectors", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      res.json(await listConnectors(req.params.id));
+    } catch (err) {
+      sendCredentialError(res, err);
+    }
+  });
+
+  app.put("/api/workspaces/:id/connectors/:connectorId", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      const summary = await setCredential({
+        workspaceId: req.params.id,
+        connectorId: req.params.connectorId,
+        kind: req.body?.kind,
+        secret: req.body?.secret,
+        actor: credentialActorOf(req),
+      });
+      res.json(summary);
+    } catch (err) {
+      sendCredentialError(res, err);
+    }
+  });
+
+  app.delete("/api/workspaces/:id/connectors/:connectorId", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      const revoked = await revokeCredential(req.params.id, req.params.connectorId, credentialActorOf(req));
+      if (revoked === null) return res.status(404).json({ error: "Connector credential not found" });
+      res.json(revoked);
+    } catch (err) {
+      sendCredentialError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/connectors/:connectorId/verify", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      res.json(await verifyCredential(req.params.id, req.params.connectorId, credentialActorOf(req)));
+    } catch (err) {
+      sendCredentialError(res, err);
     }
   });
 

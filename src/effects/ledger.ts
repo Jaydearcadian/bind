@@ -1,8 +1,7 @@
 import crypto from "crypto";
 import { query } from "../db/client.js";
-import { config } from "../config/env.js";
 import { acquireAdvisoryLock, type AdvisoryLock } from "../db/advisory-lock.js";
-import { redactSecrets } from "../adapters/settlement/errors.js";
+import { redactText, redactUrls } from "../utils/redact.js";
 import { EffectClass, classifyOperation } from "../policy/effect-classifier.js";
 import { encodeResult, decodeResult, requestHash } from "./serialize.js";
 import { takeEffectFault } from "./faults.js";
@@ -126,25 +125,13 @@ function validateSpec(spec: EffectSpec): void {
   }
 }
 
-/** Secrets that must never reach effects.error_message. Read from configuration at call time. */
-function knownSecrets(): string[] {
-  return [
-    config.DATABASE_URL,
-    config.RPC_URL,
-    config.ARC_RPC_URL,
-    config.ARC_SIGNER_PRIVATE_KEY,
-    config.PARALLEL_API_KEY,
-    config.NEBIUS_API_KEY,
-    config.GEMINI_API_KEY,
-    config.LANGSMITH_API_KEY,
-    config.SESSION_SECRET,
-  ].filter((secret): secret is string => typeof secret === "string" && secret.length > 0);
-}
-
-/** The error text as it may be stored or audited: secrets redacted, at most 500 characters. */
+/**
+ * The error text as it may be stored or audited: every URL and every known secret redacted (ADR 0024), at most 500
+ * characters. The text is redacted before it is cut, so a secret is never left half-visible at the cut.
+ */
 export function boundedErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
-  return redactSecrets(raw || "unknown error", knownSecrets()).slice(0, ERROR_MESSAGE_LIMIT);
+  return redactText(redactUrls(raw || "unknown error")).slice(0, ERROR_MESSAGE_LIMIT);
 }
 
 function assertSameRequest(row: StoredEffect, spec: EffectSpec, hash: string): void {

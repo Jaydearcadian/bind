@@ -331,3 +331,21 @@ CREATE TABLE IF NOT EXISTS workspace_tokens (
   revoked_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_workspace_tokens_ws ON workspace_tokens(workspace_id) WHERE revoked_at IS NULL;
+
+-- Connector credentials (src/credentials, ADR 0024). The secret is stored only as AES-256-GCM ciphertext under a key the
+-- database does not hold. A revoked row keeps its id and status and loses every secret-bearing column.
+CREATE TABLE IF NOT EXISTS connector_credentials (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  connector_id TEXT NOT NULL CHECK (connector_id ~ '^[a-z][a-z0-9_.:-]{1,63}$'),
+  kind TEXT NOT NULL CHECK (kind IN ('messaging','supplier','accounting','llm','other')),
+  ciphertext BYTEA, nonce BYTEA, auth_tag BYTEA,          -- all three NULL once revoked
+  key_id TEXT,                                            -- which key encrypted it
+  fingerprint TEXT,                                       -- HMAC(key, secret), first 12 hex; identifies without revealing
+  status TEXT NOT NULL CHECK (status IN ('configured_unverified','verified','revoked')),
+  last_verified_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ,
+  UNIQUE (workspace_id, connector_id)
+);

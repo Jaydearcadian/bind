@@ -16,6 +16,9 @@ export default defineConfig({
       SESSION_SECRET: "test-only-session-secret-0123456789abcdef",
       BIND_MASTER_SECRET: "test-only-master-secret-0123456789abcdef0123456789",
       BIND_WEBHOOK_SECRET: "test-only-webhook-secret-0123456789abcdef0123456789",
+      // Test-only credential keys (ADR 0024). Fixed values committed here, used by no other environment.
+      BIND_CREDENTIAL_KEY: "yv+iVFPKAg5AWuP0Hik+sGLxJ8aEqSMH7JRHkQWWEHs=",
+      BIND_CREDENTIAL_KEY_PREVIOUS: "vC2I5yIpQ3IT+gxqq4yvaWv1AcoUVK6hZ5AVmAp8ON4=",
     },
     coverage: {
       provider: "v8",

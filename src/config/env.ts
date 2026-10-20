@@ -13,6 +13,27 @@ function optionalSecret(name: string) {
   );
 }
 
+/**
+ * The bytes of a credential key: base64 of exactly 32 bytes (AES-256), or null. Never throws and never reports the value.
+ * An empty string is handled by the caller as unset.
+ */
+export function credentialKeyBytes(value: string): Buffer | null {
+  if (!/^[A-Za-z0-9+/]{43}=$/.test(value)) return null;
+  const bytes = Buffer.from(value, "base64");
+  return bytes.length === 32 ? bytes : null;
+}
+
+/** An optional credential key (ADR 0024). Unset or empty is undefined; otherwise base64 of exactly 32 bytes. */
+function optionalCredentialKey(name: string) {
+  return z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z
+      .string()
+      .refine((v) => credentialKeyBytes(v) !== null, `${name} must be base64 of exactly 32 bytes`)
+      .optional()
+  );
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(3000),
@@ -41,6 +62,10 @@ const envSchema = z.object({
   // nothing. An empty value counts as unset. When set, at least 32 characters.
   BIND_MASTER_SECRET: optionalSecret("BIND_MASTER_SECRET"),
   BIND_WEBHOOK_SECRET: optionalSecret("BIND_WEBHOOK_SECRET"),
+  // Connector credential encryption (ADR 0024). Unset: the credential store is disabled and its routes answer 503.
+  // BIND_CREDENTIAL_KEY_PREVIOUS is decrypt-only, for rotation (npm run credentials:rotate-key).
+  BIND_CREDENTIAL_KEY: optionalCredentialKey("BIND_CREDENTIAL_KEY"),
+  BIND_CREDENTIAL_KEY_PREVIOUS: optionalCredentialKey("BIND_CREDENTIAL_KEY_PREVIOUS"),
   ALLOW_NO_CONTRACTS: z.string().optional().default("1"),
   PARALLEL_API_KEY: z.string().optional(),
   NEBIUS_API_KEY: z.string().optional(),
