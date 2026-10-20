@@ -1,3 +1,5 @@
+> ARCHIVED (ADR 0045): the original ring draft. The chosen direction is the bead ring in docs/brand/ (same wordmark, type and palette).
+
 # Bind brand direction, draft 1
 
 Status: a proposal written on 2026-10-20 for the owner to accept or change. It is not a finished identity and nothing in the product uses it yet (the UI is orphaned, ADR 0016, and has not been rebuilt). `src/ui/` is not touched. Everything here is reproducible: `node docs/brand/build-assets.mjs` regenerates the SVGs, and `docs/brand/board.html` shows the system live.
