@@ -3,19 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bind brand study, pearl ring</title>
+<title>Bind brand study, bead ring</title>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../../ring/tokens.css">
 <script src="assets/mark-paths.js"></script>
 <style>
-  /* The pearl mark is filled shapes, not strokes. */
-  .bind-mark .ring { fill: var(--text); stroke: none; }
+  /* The bead is a filled circle that slides on the line from the ring's centre through it. */
   .bind-mark .clasp { fill: var(--accent); stroke: none; transform-box: view-box; transition: transform var(--dur-slow) var(--ease-standard), fill var(--dur-base) var(--ease-standard); }
-  .bind-mark[data-state="pending"] .clasp { fill: var(--status-pending); stroke: none; transform: translateY(-10px); }
+  .bind-mark[data-state="pending"] .clasp { fill: var(--status-pending); stroke: none; transform: translate(5.5px, -9.5px); animation: none; }
   .bind-mark[data-state="approved"] .clasp { fill: var(--status-approved); stroke: none; transform: none; }
-  .bind-mark[data-state="held"] .clasp { fill: var(--status-held); stroke: none; transform: translateY(-4px); }
-  .bind-mark[data-state="refused"] .clasp { fill: var(--status-refused); stroke: none; transform: translate(8px,-10px); }
-  .bind-mark .ring { animation: none !important; }
+  .bind-mark[data-state="held"] .clasp { fill: var(--status-held); stroke: none; transform: translate(2px, -3.5px); }
+  .bind-mark[data-state="refused"] .clasp { fill: var(--status-refused); stroke: none; transform: translate(12.5px, -5.5px); }
+  .bind-mark[data-state="approved"] .ring { animation: none; }
 </style>
 <style>
   @font-face { font-family: "Geist"; src: url("../../ring/fonts/Geist-var.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
@@ -93,7 +92,7 @@
 </style>
 </head>
 <body>
-<div class="study">Pearl ring: the ring made ownable. Same tests as the others. Card text is demo data.</div>
+<div class="study">Bead ring: the ring made ownable. The ring's own wordmark and type are unchanged. Card text is demo data.</div>
 
 <header class="hero">
   <div class="wrap">
@@ -133,7 +132,7 @@
       </div>
       <div class="card" style="padding:22px">
         <h3 style="font-size:1.5rem;margin-bottom:10px">Status light</h3>
-        <p class="small">The pearl is the status. Lifted and amber is waiting, seated and green is done, lifted a little and blue is paused, lifted and off to the side in red is refused.</p>
+        <p class="small">The bead is the status. Out and amber is waiting, seated and green is done, out a little and blue is paused, out and to the side in red is refused.</p>
         <div class="status">
           <svg id="stMark" class="bind-mark" data-state="pending" viewBox="-8 -12 80 80" role="img" aria-label="Status mark"></svg>
           <div><p><span class="chip" id="stChip" data-state="pending">Waiting for you</span></p><div class="actions" id="stBtns" style="margin-top:6px"></div></div>
@@ -146,7 +145,7 @@
 <section class="block" id="loading">
   <div class="wrap">
     <h2>Loading</h2>
-    <p class="lede">The pearl lifts out, seats, dwells, and lifts again. With reduced motion it holds still, 5 units up. No made-up percentage.</p>
+    <p class="lede">The bead slides out of the ring, seats, dwells, and slides out again. With reduced motion it holds still, a little way out. No made-up percentage.</p>
     <div class="loadrow">
       <div><img src="assets/bind-loader.svg" width="16" height="16" alt="Loading"><br>16</div>
       <div><img src="assets/bind-loader.svg" width="24" height="24" alt="Loading"><br>24</div>
@@ -160,8 +159,8 @@
 
 <section class="block" id="system">
   <div class="wrap">
-    <h2>The mark: a serif ring with a pearl</h2>
-    <p class="lede">A ring drawn with the stroke contrast of the Newsreader o, with a copper pearl that seats in its top hairline. The pearl is also the dot of the i. The pearl is the only part that moves.</p>
+    <h2>The mark: a ring with a bead</h2>
+    <p class="lede">The ring's own even, rounded stroke, with a copper bead seated in it. The bead is the same shape and colour as the dot of the i. The bead is the only part that moves.</p>
     <div class="card" style="margin-top:24px;padding:24px">
       <div style="display:flex;gap:40px;flex-wrap:wrap;align-items:center">
         <img src="assets/bind-lockup.svg" alt="Bind" height="84"><img src="assets/bind-mark.svg" alt="" width="84">
@@ -194,13 +193,13 @@
 
 <script>
 (function () {
-  var M = window.BIND_PEARL;
-  function mark(svg) { svg.innerHTML = '<path class="ring" fill-rule="evenodd" d="' + M.pr + '"/><path class="clasp" d="' + M.pl + '"/>'; }
+  var M = window.BIND_V2, mid = 0;
+  function mark(svg) { var id = 'mb' + (++mid); svg.innerHTML = '<defs><mask id="' + id + '" maskUnits="userSpaceOnUse" x="-12" y="-12" width="88" height="88"><rect x="-12" y="-12" width="88" height="88" fill="#fff"/><circle cx="' + M.bx + '" cy="' + M.by + '" r="' + (M.br + 1.7) + '" fill="#000"/></mask></defs><path class="ring" d="' + M.ring + '" fill="none" stroke-width="' + M.sw + '" stroke-linecap="round" pathLength="100" mask="url(#' + id + ')"/><circle class="clasp" cx="' + M.bx + '" cy="' + M.by + '" r="' + M.br + '"/>'; }
   var hero = document.getElementById("heroMark"); mark(hero); mark(document.getElementById("stMark"));
   if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     var ring = hero.querySelector(".ring"), clasp = hero.querySelector(".clasp");
-    ring.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: "cubic-bezier(.2,0,0,1)", fill: "backwards" });
-    clasp.animate([{ transform: "translateY(-28px)", opacity: 0, easing: "cubic-bezier(.45,0,.2,1)" }, { opacity: 1, offset: .18 }, { transform: "translateY(1.4px)", offset: .82, easing: "cubic-bezier(.3,.9,.2,1)" }, { transform: "translateY(0)" }], { duration: 560, delay: 140, fill: "backwards" });
+    ring.animate([{ strokeDasharray: 100, strokeDashoffset: 100 }, { strokeDasharray: 100, strokeDashoffset: 0 }], { duration: 700, easing: "cubic-bezier(.2,0,0,1)", fill: "backwards" });
+    clasp.animate([{ transform: "translate(" + (M.dx * 30) + "px," + (M.dy * 30) + "px)", opacity: 0, easing: "cubic-bezier(.45,0,.2,1)" }, { opacity: 1, offset: .2 }, { transform: "translate(" + (-M.dx * 1.6) + "px," + (-M.dy * 1.6) + "px)", offset: .8, easing: "cubic-bezier(.3,.9,.2,1)" }, { transform: "translate(0,0)" }], { duration: 520, delay: 560, fill: "backwards" });
   }
 
   var data = [{ k: "Delivery", t: "Flour arrived", d: "10 bags logged by staff, 14:05." }, { k: "Feedback", t: "3 new reviews", d: "Two mention the croissants." }, { k: "Stock", t: "Espresso beans checked", d: "12 bags, above par." }];
