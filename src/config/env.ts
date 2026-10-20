@@ -74,6 +74,17 @@ const envSchema = z.object({
   LOG_LEVEL: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["debug", "info", "warn", "error"]).optional()),
   // Bearer token for GET /metrics (ADR 0032). Not a workspace token. Unset: /metrics answers 404. At least 32 characters.
   BIND_METRICS_TOKEN: optionalSecret("BIND_METRICS_TOKEN"),
+  // Client address behind a proxy (docs/decisions/0033): how many proxy hops are trusted to set X-Forwarded-For. 0, the
+  // default, means the socket address. Only a non-negative integer is accepted; anything else stops startup.
+  BIND_TRUST_PROXY: z
+    .preprocess(
+      (v) => (v === "" ? undefined : v),
+      z.string().regex(/^\d+$/, "BIND_TRUST_PROXY must be a non-negative integer (the number of proxy hops)").optional()
+    )
+    .transform((v) => (v === undefined ? 0 : Number(v))),
+  // Rate limits (docs/decisions/0033). The only accepted value is "off", which turns the default off. It is for local
+  // development only. Unset: the default (on, except in tests).
+  BIND_RATE_LIMITS: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["off"]).optional()),
   ALLOW_NO_CONTRACTS: z.string().optional().default("1"),
   PARALLEL_API_KEY: z.string().optional(),
   NEBIUS_API_KEY: z.string().optional(),
@@ -81,6 +92,18 @@ const envSchema = z.object({
   LANGSMITH_API_KEY: z.string().optional(),
 });
 
+/**
+ * The production database rule (docs/decisions/0033). The DATABASE_URL default names a local development database with a
+ * known password, so a production start without DATABASE_URL is refused. The message names the variable and never a value.
+ * Other environments keep the local default.
+ */
+export function databaseUrlRule(input: { nodeEnv: string | undefined; databaseUrl: string | undefined }): void {
+  if (input.nodeEnv === "production" && (input.databaseUrl === undefined || input.databaseUrl === "")) {
+    throw new Error("DATABASE_URL must be set when NODE_ENV is production (the default is a local development database)");
+  }
+}
+
 export type EnvConfig = z.infer<typeof envSchema>;
 
+databaseUrlRule({ nodeEnv: process.env.NODE_ENV, databaseUrl: process.env.DATABASE_URL });
 export const config: EnvConfig = envSchema.parse(process.env);

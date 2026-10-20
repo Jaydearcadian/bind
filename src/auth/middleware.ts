@@ -1,5 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { resolveToken, type Actor, type WorkspaceRole } from "./tokens.js";
+import { tokenRateLimit } from "../security/rate-limit-middleware.js";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -78,11 +79,12 @@ export function requireRole(role: WorkspaceRole) {
   };
 }
 
+// Each composition applies the per-token limit right after authentication (docs/decisions/0033).
 /** Owner or staff of the workspace in the path. */
-export const workspaceMember: RequestHandler[] = [authenticate, scopeToWorkspace];
+export const workspaceMember: RequestHandler[] = [authenticate, tokenRateLimit, scopeToWorkspace];
 /** Owner of the workspace in the path. */
-export const workspaceOwner: RequestHandler[] = [authenticate, scopeToWorkspace, requireRole("owner")];
+export const workspaceOwner: RequestHandler[] = [authenticate, tokenRateLimit, scopeToWorkspace, requireRole("owner")];
 /** Owner of some workspace, for routes whose path names an approval or an order. The service checks the workspace. */
-export const anyWorkspaceOwner: RequestHandler[] = [authenticate, requireRole("owner")];
+export const anyWorkspaceOwner: RequestHandler[] = [authenticate, tokenRateLimit, requireRole("owner")];
 /** Any valid token. The route itself scopes the answer to the caller's workspace. */
-export const authenticated: RequestHandler[] = [authenticate];
+export const authenticated: RequestHandler[] = [authenticate, tokenRateLimit];

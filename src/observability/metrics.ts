@@ -262,6 +262,12 @@ export const workerStepErrors = registry.counter(
   "Worker step errors, by step.",
   ["step"]
 );
+/** Requests answered 429 by a rate limit, by scope (docs/decisions/0033). The label is the scope name only. */
+export const rateLimited = registry.counter(
+  "bind_rate_limited_total",
+  "Requests answered 429 by a rate limit, by scope.",
+  ["scope"]
+);
 export const workerLag = registry.gauge(
   "bind_worker_lag_seconds",
   "Seconds since the last worker tick finished, -1 before the first tick."

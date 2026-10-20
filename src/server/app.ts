@@ -78,6 +78,8 @@ import { newId } from "../utils/ids.js";
 import { publicErrorMessage, rejectNulInput, requestErrorHandler, wrapAsyncHandlers } from "./errors.js";
 import { log } from "../observability/logger.js";
 import { requestContext } from "../observability/request-context.js";
+import { buildRateLimitScopes, rateLimitsEnabled, type RateLimitOptions } from "../security/rate-limit.js";
+import { rateLimitGate } from "../security/rate-limit-middleware.js";
 import { checkReadiness } from "../observability/readiness.js";
 import { createMetricsHandler, DEFAULT_METRICS_CACHE_MS } from "../observability/metrics-route.js";
 import {
@@ -313,6 +315,16 @@ export interface CreateAppOptions {
    * a database snapshot is reused by a scrape. Tests use this to run with a known token and no cache.
    */
   metrics?: { token?: string | null; cacheMs?: number };
+  /**
+   * Rate limits (docs/decisions/0033). `enabled` decides when given. Omitted, the default is on, except in tests and when
+   * BIND_RATE_LIMITS is "off". Each scope's window and maximum can be overridden. Tests pass a fake clock here.
+   */
+  rateLimits?: RateLimitOptions;
+  /**
+   * How many proxy hops are trusted to set X-Forwarded-For (docs/decisions/0033). 0 is the socket address. Omitted means
+   * BIND_TRUST_PROXY. The header is read only through Express's own req.ip, never by the application.
+   */
+  trustProxy?: number;
 }
 
 const WEBHOOK_UNAUTHORIZED = { error: "Invalid signature or expired timestamp" };
@@ -342,6 +354,16 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   // First of all: every response, including errors and static files, carries x-request-id, and each request is logged
   // once on finish with its route pattern and no URL, query, header or body (docs/decisions/0032).
   app.use(requestContext);
+  // The client address (docs/decisions/0033): the socket address, unless a number of trusted proxy hops is configured.
+  app.set("trust proxy", options.trustProxy ?? config.BIND_TRUST_PROXY);
+  // Rate limits run before body parsing, so a flood of large or malformed bodies is refused before it is read.
+  const rateLimitOptions: RateLimitOptions = options.rateLimits ?? {};
+  if (rateLimitsEnabled({ nodeEnv: config.NODE_ENV, option: rateLimitOptions.enabled, envFlag: config.BIND_RATE_LIMITS })) {
+    const scopes = buildRateLimitScopes(rateLimitOptions);
+    // The per-token limit, applied after authentication in the route middleware, reads these from the app.
+    app.locals.rateLimits = scopes;
+    app.use(rateLimitGate(scopes));
+  }
   const procurementRunner = new ProcurementWorkflowRunner();
   const recoveryRunner = new WorkflowCrashRecoveryRunner();
   const corsOrigins = options.corsOrigins ?? parseCorsOrigins(config.BIND_CORS_ORIGINS);

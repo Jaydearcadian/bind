@@ -48,8 +48,16 @@ export async function runMigrations(options: MigrationOptions = {}): Promise<voi
   }
 }
 
-// Allow direct execution
-if (process.argv[1] && process.argv[1].endsWith("migrate.ts")) {
+/**
+ * True when `file` is the program that was started: `node dist/db/migrate.js` (npm run db:migrate) or
+ * `tsx src/db/migrate.ts` (npm run db:migrate:dev). An import from the server or from a test is not a direct run.
+ */
+export function isDirectRun(argv1: string | undefined, file: string): boolean {
+  return argv1 !== undefined && path.resolve(argv1) === path.resolve(file);
+}
+
+// Allow direct execution (both the compiled and the source file, see isDirectRun).
+if (isDirectRun(process.argv[1], __filename)) {
   runMigrations()
     .then(() => {
       log.info("db.migrate.cli_completed");
