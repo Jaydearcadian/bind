@@ -56,3 +56,4 @@ templates/ws-*/
 .ua/config.json
 .ua/function-map.json
 .ua/.trash-*/
+.claude/worktrees/
