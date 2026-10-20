@@ -9,6 +9,7 @@ import { notificationEmitter } from "../../src/adapters/web2/notifications.js";
 import type { NotificationPayload } from "../../src/adapters/web2/types.js";
 import { sendApprovalNotification } from "../../src/notifications/dispatch.js";
 import { setEffectFault } from "../../src/effects/faults.js";
+import { upsertSurfaceBinding } from "../../src/adapters/socialSurface.js";
 
 const run = Date.now();
 const SKU = "FOOD-FLOUR-50LB";
@@ -43,6 +44,13 @@ describe("Approval notifications are sent through the effects ledger", () => {
     const wsId = `ws-notify-${run}-${counter}`;
     wsIds.push(wsId);
     await provisionWorkspace(wsId, "Notify Kitchen", "kitchen-v1");
+    // Fixture only: the owner's WhatsApp binding, so an approval request has a recipient (docs/decisions/0025).
+    // The actor id is unique per workspace.
+    await upsertSurfaceBinding(
+      wsId,
+      { surface: "whatsapp", actorId: `+1555${run % 1000000}${String(counter).padStart(3, "0")}`, actorRole: "owner" },
+      { type: "owner", id: "test-owner" }
+    );
     return wsId;
   }
 

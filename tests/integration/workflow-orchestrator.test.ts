@@ -6,6 +6,7 @@ import { ProcurementWorkflowRunner } from "../../src/workflows/procurement.js";
 import { WorkflowState } from "../../src/workflows/types.js";
 import { MatchStatus } from "../../src/accounting/three-way-match.js";
 import { notificationEmitter } from "../../src/adapters/web2/notifications.js";
+import { upsertSurfaceBinding } from "../../src/adapters/socialSurface.js";
 
 describe("Workflow Orchestrator & End-to-End Kitchen Slice", () => {
   const wsId = "ws-integration-kitchen-01";
@@ -54,6 +55,8 @@ describe("Workflow Orchestrator & End-to-End Kitchen Slice", () => {
 
   it("pauses in AWAITING_APPROVAL and notifies owner when order exceeds threshold ($392 > $250)", async () => {
     notificationEmitter.clear();
+    // The owner has a WhatsApp binding in this workspace. Approval requests go only to the owner's own binding.
+    await upsertSurfaceBinding(wsId, { surface: "whatsapp", actorId: "+15550100001", actorRole: "owner" }, { type: "owner", id: "test-owner" });
 
     // Butter: 4 cases @ $98.00 = $392.00 (Exceeds $250.00 threshold)
     const result = await runner.startReplenishment(wsId, "FOOD-BUTTER-36LB");

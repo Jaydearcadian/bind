@@ -7,6 +7,8 @@ import { EffectClass } from "../policy/effect-classifier.js";
 import { authorizeCommitment, describeCommitmentDecision } from "../policy/commitment-gate.js";
 import { WorkflowEngine } from "../workflows/engine.js";
 import { sendApprovalNotification } from "../notifications/dispatch.js";
+import { resolveOwnerRecipient } from "../notifications/recipients.js";
+import { approvalLink } from "../notifications/links.js";
 import { boundedErrorMessage } from "../effects/ledger.js";
 import { newId } from "../utils/ids.js";
 import { CANONICAL_ARC_LOCK } from "./antiDriftWriter.js";
@@ -479,21 +481,37 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         const displayItemName = proposal.itemName || proposal.sku;
         // The owner can still decide in the app if the message fails, so a notification problem never fails the
         // approval. The send goes through the effects ledger, at most once (see docs/decisions/0020).
+        // The recipient is the owner's own surface binding, never a fixed number (docs/decisions/0025). With no
+        // binding nothing is sent, and the skip is audited.
         try {
-          await sendApprovalNotification({
-            workspaceId,
-            workflowId: targetWorkflowId,
-            approvalId,
-            payload: {
+          const owner = await resolveOwnerRecipient(workspaceId);
+          if (!owner) {
+            await workflowEngine.recordAudit(
               workspaceId,
-              channel: "whatsapp",
-              recipient: "+12125550199",
-              title: "⚠️ Bind Alert: Ingredient Restock Approval Required",
-              message: `Low stock detected on ${displayItemName}. Best quote from ${proposal.supplierName} is $${(Number(amountCents) / 100).toFixed(2)} USDC.`,
-              actionUrl: `http://127.0.0.1:3000/api/approvals/${approvalId}/approve`,
-              approvalToken: approvalId,
-            },
-          });
+              targetWorkflowId,
+              "system",
+              "system:notifications",
+              EffectClass.EXTERNAL_REQUEST,
+              "notification.skipped_no_recipient",
+              PolicyDecision.ALLOW,
+              { approvalId }
+            );
+          } else {
+            await sendApprovalNotification({
+              workspaceId,
+              workflowId: targetWorkflowId,
+              approvalId,
+              payload: {
+                workspaceId,
+                channel: owner.channel,
+                recipient: owner.recipient,
+                title: "⚠️ Bind Alert: Ingredient Restock Approval Required",
+                message: `Low stock detected on ${displayItemName}. Best quote from ${proposal.supplierName} is $${(Number(amountCents) / 100).toFixed(2)} USDC.`,
+                // A plain page link. It carries no token and decides nothing (docs/decisions/0025).
+                actionUrl: approvalLink(approvalId),
+              },
+            });
+          }
         } catch (err) {
           await workflowEngine.recordAudit(
             workspaceId,
