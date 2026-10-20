@@ -45,7 +45,7 @@ const lift = ' transform="translate(0 -9)"';
 const jam = ' transform="rotate(16 32 32)"';
 const askew = ' transform="translate(0 -9) rotate(-18 32 32)"';
 write("bind-state-pending.svg", svg("0 0 64 64", "Bind: waiting for you", markBody(C.ink, C.pending, lift)));
-write("bind-state-approved.svg", svg("0 0 64 64", "Bind: committed", markBody(C.ink, C.approved)));
+write("bind-state-approved.svg", svg("0 0 64 64", "Bind: done", markBody(C.ink, C.approved)));
 write("bind-state-held.svg", svg("0 0 64 64", "Bind: paused", markBody(C.ink, C.held, jam)));
 write("bind-state-refused.svg", svg("0 0 64 64", "Bind: refused", markBody(C.ink, C.refused, askew)));
 

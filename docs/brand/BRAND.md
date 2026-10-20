@@ -7,20 +7,20 @@ The brief was the "Chief Brand Designer" prompt. Sections it asked for that were
 ## A. Brand core
 
 - **Name.** Keep **Bind**. It already means three useful things: a binding commitment, the thing that holds a sauce together in a kitchen, and a clasp. No rename is worth the cost.
-- **Positioning, one line.** Bind connects a business once and gives it an agent team that can use real tools, while rules the model cannot change decide what actually happens.
-- **Tagline (recommended).** **Agents propose. Rules decide.** It is the product's central safety rule (`AGENTS.md`, `docs/BIND_MISSION_AND_ARCHITECTURE.md` section 2) said in four words. Two alternatives I would not use: "Your business, agent-ready" (generic, every AI product says it) and "Open ring, closed deal" (clever, but it explains the logo instead of the product).
-- **Personality.** Calm, exact, a little dry. The tone of a head chef who has seen a supplier invoice go wrong. Never excited about money, never vague about what happened.
+- **Positioning, one line.** Bind is the connectivity layer that brings agents into a business: connect once, and a team of agents works inside your real tools so the owner and staff can spend their time on the work itself.
+- **Tagline (recommended).** **Connect once. Get back to work.** It says what Bind is (a connection, made once) and what the owner gets (their time back), and it matches the build brief word for word: a business "connects once". Alternatives: "Agents that fit your business" (accurate, a little flat) and "Your business, with agents in the room" (warm, but longer and vaguer). An earlier draft used "Agents propose. Rules decide." It was dropped: that line describes a safety layer, and Bind is a connectivity layer. Control still matters, but it is a supporting proof point on the page, not the headline.
+- **Personality.** Calm, capable, a little dry. The tone of a good sous chef who takes things off your plate and tells you plainly what got done.
 - **Target user.** A kitchen owner or operator who is not technical and does not want to learn agent infrastructure. They approve things from a phone, often between tasks.
-- **Emotional hook.** Relief with control: "the agents ask, I say yes, and nothing happens behind my back."
-- **What makes it memorable.** The mark is a status light. An open ring means a request is waiting. A closed ring means it is committed. The brand and the product's main rule are the same picture.
+- **Emotional hook.** Time back. "The ordering, the chasing, the paperwork is handled, and I can get on with the food and the people."
+- **What makes it memorable.** The mark is a ring being closed. A loop that clasps shut is a connection made, and "bind" is the verb. The same picture doubles as a status light in the product: open means something is waiting for the owner, closed means it is done.
 
 ## B. Direction (opinion, with the reasons)
 
 1. **Warm and physical, not fintech.** The category defaults to neon on near-black with gradients. Bind sits in a kitchen: bone paper, ink, copper, enamel. That is the difference people will notice.
-2. **One idea, used everywhere.** Open versus closed. Not a mascot, not a pattern system. A mascot would add character but cost production time and would dilute the one idea that is true to the product. Recommendation: no mascot.
+2. **One idea, used everywhere.** Connecting: a loop that closes. Not a mascot, not a pattern system. A mascot would add character but cost production time and dilute the one idea. Recommendation: no mascot.
 3. **Neutral by default, colour means state.** The brand is ink on bone with a single copper latch. Saffron, herb, slate and tomato appear only when something has a status. If every card is colourful, status stops reading.
 4. **Quiet motion.** The Corporate archetype from the LottieFiles motion skill (200 to 400 ms, almost no overshoot), which that skill itself lists for financial and enterprise products. One moment of delight: the latch seating.
-5. **Honest copy.** The product says "waiting", "confirming", "committed", "paused", "refused". It never says "approved" or "paid" before the server confirms it. This is a brand rule, not only a UX rule.
+5. **Plain, accurate copy.** The product says "waiting", "confirming", "done", "paused", "refused". It does not say "approved" or "paid" before the system has confirmed it. This is a wording habit that builds trust, not the brand's headline.
 
 What I rejected, and why: a chain-link or knot logo (generic, and a knot does not animate cleanly to a status); a lowercase "b" monogram (every second startup has one); gradients and glass (they fight the bone palette and cost contrast).
 
@@ -51,11 +51,11 @@ The animation is inside `prefers-reduced-motion: no-preference`, so the default 
 | idle | seated | copper | none |
 | pending | lifted 9 px, breathes 3 px | saffron | Waiting for you |
 | confirming | stays lifted | saffron | Confirming |
-| approved | seated, one settle | herb | Committed |
+| approved | seated, one settle | herb | Done |
 | held | seated, turned 16 degrees | slate | Agents paused |
 | refused | lifted and askew | tomato | Refused |
 
-The latch position carries the state, colour agrees, and a text label always sits next to it. `board.html` lets you click through these, including the rule that "Approve" shows "Confirming" for a moment and only then "Committed".
+The latch position carries the state, colour agrees, and a text label always sits next to it. `board.html` lets you click through these, including "Approve" showing "Confirming" for a moment before "Done".
 
 ## E. Colour and type
 
@@ -80,18 +80,18 @@ Status colours (text and tint pairs, all at least 5.0 in light and 6.2 in dark):
 
 A single page, calm, one scroll. No claim that is not true today (see `docs/RELEASE_EVIDENCE.md`).
 
-1. **Hero.** The ring, large, with the latch lifted and breathing. Headline: "Agents propose. Rules decide." Sub-line: "Connect your kitchen once. Your agents ask before they spend." One button, and a small live demo card beside it: a $392 butter request, "Waiting for you", Approve and Refuse. Pressing Approve shows "Confirming" and then "Committed", the board's exact sequence. This is the wow moment and it is also the product's safety rule.
-2. **The rule.** Four short lines, one per law: the model proposes, code decides; no entry without a document; no silent rounding; every effect happens once. Each with its ring state.
-3. **The team.** Three roles (procurement, fulfilment, menu and feedback), what each can ask for and what it can never do.
+1. **Hero.** The ring, large, with the latch lifted and breathing, then closing as the page loads. Headline: "Connect once. Get back to work." Sub-line: "Bind brings a team of agents into your kitchen's real tools, so you and your staff can focus on the food and the people." One button. Beside it, a small live card that shows the agents doing a piece of the job: "Low on butter. Order drafted for Sysco Metro, $392.00. Waiting for you." Approve and Refuse. Pressing Approve shows "Confirming" and then "Done", the board's exact sequence. It shows the work being taken off your plate and you staying in charge, in one gesture.
+2. **How it connects.** Three steps, each with a ring: connect your tools once; tell Bind how you run things (preferences, limits, who approves what); meet your team. Say only what exists today and name what is coming.
+3. **The team.** Three roles (procurement, fulfilment, menu and feedback): what each takes off your hands.
 4. **A day in the kitchen.** Four steps as four rings: stock runs low, agent proposes, owner approves, order is confirmed. The ring changes with scroll position.
-5. **Proof, honestly.** What has been tested and what has not (local tests pass; no live supplier or payment connection yet). A page that says what is not done earns more trust than one that hides it.
+5. **You stay in charge, and proof.** One short block: you set the limits and approve what matters, and the agents work inside them. Then what has been tested and what has not (local tests pass; no live supplier or payment connection yet). A page that says what is not done earns more trust than one that hides it.
 6. **Close.** One button.
 
 Layout: 12 column grid, generous space, content width 960 px, bone background, flour cards, no photography of food in the first version (stock photos would pull it toward every other restaurant-tech site). Sections enter with a 200 ms fade and 12 px rise, staggered 40 ms, once.
 
 ## G. Creative recommendation
 
-Build the brand around one picture: **an open ring is a request, a closed ring is a commitment.** Ship the mark, the status light and the honest wording first, because they carry the product's difference. Treat everything else (landing page, empty states, social) as applications of the same picture. If a design choice does not use the open versus closed idea, state colour, or the honest vocabulary, it is probably decoration and can wait.
+Build the brand around one promise and one picture. The promise: **connect once, get back to work.** The picture: **a ring that closes.** Ship the mark, the status light and the plain wording first. Treat everything else (landing page, empty states, social) as applications of that promise. If a design choice does not say "connected", "handled for you" or "you are in charge", it is probably decoration and can wait.
 
 ## H. Known limits of this draft
 
