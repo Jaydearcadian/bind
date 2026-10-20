@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bind brand board</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="tokens.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 var(--font-ui); }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 16px 96px; }
+  h1, h2 { font-family: var(--font-display); font-weight: 500; letter-spacing: -0.01em; margin: 0; }
+  h1 { font-size: clamp(2rem, 6vw, 3.25rem); line-height: 1.08; margin-bottom: 14px; }
+  h2 { font-size: 1.5rem; margin-bottom: 12px; }
+  section { margin-top: 56px; }
+  p { margin: 0 0 12px; color: var(--text-muted); max-width: 62ch; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  .row { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
+  .sw { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
+  .sw i { display: block; height: 56px; }
+  .sw b { display: block; padding: 8px 10px 0; font-size: 13px; }
+  .sw code { display: block; padding: 0 10px 8px; font: 12px var(--font-mono); color: var(--text-muted); }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px; font-weight: 500; font-size: 14px; transition: background var(--dur-base) var(--ease-standard), color var(--dur-base) var(--ease-standard); }
+  .chip[data-state="pending"]  { background: var(--status-pending-tint);  color: var(--status-pending-text); }
+  .chip[data-state="approved"] { background: var(--status-approved-tint); color: var(--status-approved-text); }
+  .chip[data-state="held"]     { background: var(--status-held-tint);     color: var(--status-held-text); }
+  .chip[data-state="refused"]  { background: var(--status-refused-tint);  color: var(--status-refused-text); }
+  button { font: inherit; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 10px; padding: 10px 16px; min-height: 44px; cursor: pointer; transition: transform var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard); }
+  button:active { transform: scale(0.97); }
+  button.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+  button:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+  button[disabled] { opacity: .55; cursor: default; }
+  .demo { display: grid; grid-template-columns: 120px 1fr; gap: 20px; align-items: center; }
+  .demo svg { width: 120px; height: 120px; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .type-d { font: 500 2.25rem/1.15 var(--font-display); }
+  .type-u { font: 600 1.25rem/1.3 var(--font-ui); }
+  .motion { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .motion td, .motion th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  img { max-width: 100%; }
+  @media (max-width: 520px) { .demo { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header class="row" style="justify-content:space-between">
+    <picture><source media="(prefers-color-scheme: dark)" srcset="assets/bind-lockup-reverse.svg"><img id="logo" src="assets/bind-lockup.svg" alt="Bind" height="44"></picture>
+    <button id="replay" type="button">Replay the mark</button>
+  </header>
+
+  <section>
+    <h1>Agents propose.<br>Rules decide.</h1>
+    <p>An open ring is a request. A closed ring is a commitment. The clasp is the only thing that moves.</p>
+  </section>
+
+  <section aria-labelledby="states">
+    <h2 id="states">The mark as a status light</h2>
+    <div class="card demo">
+      <svg id="mark" class="bind-mark" data-state="idle" viewBox="0 0 64 64" role="img" aria-label="Bind status">
+        <path class="ring" d="M41.39 14.34 A20 20 0 1 1 22.61 14.34" fill="none" stroke-width="6" stroke-linecap="round"/>
+        <path class="clasp" d="M23.87 13.73 A20 20 0 0 1 40.13 13.73" fill="none" stroke-width="6" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <p style="margin-bottom:8px">Purchase request: 4 cases butter, $392.00. Over the $250 approval threshold.</p>
+        <p><span id="chip" class="chip" data-state="pending" role="status">Waiting for you</span></p>
+        <div class="row" style="gap:8px">
+          <button id="propose" type="button">Agent proposes</button>
+          <button id="approve" class="primary" type="button">Owner approves</button>
+          <button id="refuse" type="button">Refuse</button>
+          <button id="hold" type="button">Pause agents</button>
+          <button id="reset" type="button">Reset</button>
+        </div>
+        <p id="note" style="margin-top:12px;font-size:14px">Approving shows "Confirming" until the server answers. It never shows "Committed" first.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="color">
+    <h2 id="color">Colour</h2>
+    <div class="swatches" id="swatches"></div>
+  </section>
+
+  <section aria-labelledby="type">
+    <h2 id="type">Type</h2>
+    <div class="card">
+      <div class="type-d">Newsreader sets the voice.</div>
+      <div class="type-u" style="margin-top:8px">Geist runs the interface.</div>
+      <div class="mono" style="margin-top:8px">Geist Mono keeps money aligned: $1,204.50 &nbsp; $392.00 &nbsp; $0.00</div>
+      <p style="margin-top:12px;font-size:14px">The board falls back to system fonts. Load Newsreader, Geist and Geist Mono (all OFL on Google Fonts; check the licence when adding) in the real UI.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="motion">
+    <h2 id="motion">Motion tokens</h2>
+    <div class="card"><table class="motion">
+      <tr><th>Token</th><th>Value</th><th>Used for</th></tr>
+      <tr><td class="mono">--dur-fast</td><td>120 ms</td><td>press, toggle, hover in</td></tr>
+      <tr><td class="mono">--dur-base</td><td>200 ms</td><td>chip and badge change, row enter</td></tr>
+      <tr><td class="mono">--dur-slow</td><td>320 ms</td><td>clasp travel, panel, dialog</td></tr>
+      <tr><td class="mono">--dur-reveal</td><td>520 ms</td><td>the mark, first load only</td></tr>
+      <tr><td class="mono">--ease-standard</td><td>cubic-bezier(.2, 0, 0, 1)</td><td>almost everything</td></tr>
+      <tr><td class="mono">--stagger</td><td>40 ms, under 400 ms total</td><td>feed rows entering</td></tr>
+    </table></div>
+  </section>
+</main>
+<script>
+(function () {
+  var mark = document.getElementById("mark"), chip = document.getElementById("chip"), note = document.getElementById("note");
+  var labels = { idle: "Idle", pending: "Waiting for you", confirming: "Confirming", approved: "Committed", held: "Agents paused", refused: "Refused" };
+  var timer = null;
+  function set(state, chipState) {
+    mark.setAttribute("data-state", chipState || state);
+    chip.setAttribute("data-state", chipState || state);
+    chip.textContent = labels[state];
+  }
+  document.getElementById("propose").onclick = function () { clearTimeout(timer); set("pending"); };
+  document.getElementById("approve").onclick = function () {
+    clearTimeout(timer); set("confirming", "pending");           // still open, still amber: nothing is confirmed yet
+    note.textContent = "Confirming with the server...";
+    timer = setTimeout(function () { set("approved"); note.textContent = "Committed. The server confirmed it."; }, 900);
+  };
+  document.getElementById("refuse").onclick = function () { clearTimeout(timer); set("refused"); };
+  document.getElementById("hold").onclick = function () { clearTimeout(timer); set("held"); };
+  document.getElementById("reset").onclick = function () { clearTimeout(timer); set("idle"); chip.setAttribute("data-state", "held"); };
+  set("pending");
+
+  document.getElementById("replay").onclick = function () {
+    var img = document.getElementById("logo"); var src = img.getAttribute("src"); img.setAttribute("src", ""); setTimeout(function () { img.setAttribute("src", src); }, 30);
+  };
+
+  var sw = [["Bone", "--bone", "#F5F0E6"], ["Flour", "--flour", "#FBF8F2"], ["Crust", "--crust", "#E8E0D0"], ["Ink", "--ink", "#1A1612"], ["Char", "--char", "#5E5648"], ["Copper", "--copper", "#A94F25"],
+            ["Saffron", "--saffron", "#B07A00"], ["Herb", "--herb", "#1F6A3E"], ["Slate", "--slate", "#3F5A7A"], ["Tomato", "--tomato", "#A8321C"]];
+  var box = document.getElementById("swatches");
+  sw.forEach(function (s) { var d = document.createElement("div"); d.className = "sw"; d.innerHTML = '<i style="background:' + s[2] + '"></i><b>' + s[0] + '</b><code>' + s[2] + '</code>'; box.appendChild(d); });
+})();
+</script>
+</body>
+</html>
