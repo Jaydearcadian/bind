@@ -38,6 +38,8 @@ const PUBLIC_ROUTES: Array<[string, string]> = [
   ["GET", "/metrics"],
   ["GET", "/api/templates"],
   ["GET", "/api/templates/:id/blueprint"],
+  // The OpenAPI document, generated from the route registry (docs/decisions/0034). Public, describes no data.
+  ["GET", "/api/openapi.json"],
   ["POST", "/api/workspaces/onboard"],
   ["POST", "/api/workspaces"],
   ["POST", "/api/webhooks/incoming"],

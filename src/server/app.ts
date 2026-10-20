@@ -42,7 +42,7 @@ import {
 } from "../workflows/menu.js";
 import { SettlementOrderError } from "../workflows/settlement.js";
 import { WorkflowCrashRecoveryRunner } from "../workflows/recovery.js";
-import { cancelWorkflow, CANCEL_REASON_MAX_CHARACTERS, WorkflowCancelError } from "../workflows/cancel.js";
+import { cancelWorkflow, WorkflowCancelError } from "../workflows/cancel.js";
 import { listNeedsAttention } from "../workflows/needs-attention.js";
 import { WebhookReceiver } from "../adapters/web2/webhook-receiver.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
@@ -81,6 +81,20 @@ import { requestContext } from "../observability/request-context.js";
 import { buildRateLimitScopes, rateLimitsEnabled, type RateLimitOptions } from "../security/rate-limit.js";
 import { rateLimitGate } from "../security/rate-limit-middleware.js";
 import { checkReadiness } from "../observability/readiness.js";
+import { ROUTES } from "../api/registry.js";
+import { API_VERSION, buildOpenApiDocument, serializeOpenApiDocument } from "../api/openapi.js";
+import {
+  ApprovalDecisionBodySchema,
+  CancelWorkflowBodySchema,
+  CreateWorkspaceBodySchema,
+  CustomerOrderBodySchema,
+  FeedbackBodySchema,
+  FeedbackSummaryQuerySchema,
+  KitchenCapacityBodySchema,
+  MenuProposalBodySchema,
+  PauseBodySchema,
+  ReplenishBodySchema,
+} from "../api/schemas.js";
 import { createMetricsHandler, DEFAULT_METRICS_CACHE_MS } from "../observability/metrics-route.js";
 import {
   SAFE_AGENT_TOOLS,
@@ -103,6 +117,19 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/**
+ * The body of an approval reject or revoke (ADR 0034). A field that fails the schema is answered 400 and nothing is decided.
+ * Returns null when the response has been sent.
+ */
+function parseDecisionBody(req: Request, res: Response): { reason?: string } | null {
+  const parsed = ApprovalDecisionBodySchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request body", fields: parsed.error.issues.map((i) => i.path.join(".")) });
+    return null;
+  }
+  return parsed.data;
+}
 
 /** Maps an approval decision failure to its HTTP status; anything else stays a 400. */
 function sendApprovalError(res: Response, err: any) {
@@ -131,11 +158,6 @@ function sendCancelError(res: Response, err: unknown) {
   return res.status(500).json({ error: "Request could not be completed" });
 }
 
-const CancelWorkflowBodySchema = z.object({
-  // Owner text. Stored as data by the service, never echoed in an error and never written to the audit row.
-  reason: z.string().max(CANCEL_REASON_MAX_CHARACTERS).optional(),
-});
-
 /** Customer order failures (ADR 0026). The message is the service's own text: it never echoes a customer's note. */
 function sendFulfilmentError(res: Response, err: unknown) {
   if (err instanceof FulfilmentError) {
@@ -147,27 +169,6 @@ function sendFulfilmentError(res: Response, err: unknown) {
   }
   return res.status(500).json({ error: "Request could not be completed" });
 }
-
-const CustomerOrderBodySchema = z.object({
-  externalRef: z.string().trim().min(1).max(120),
-  lines: z.array(z.object({ sku: z.string().min(1).max(120), quantity: z.number() })).max(200),
-  requestedFor: z.string().datetime({ offset: true }).optional(),
-  // Customer text. Stored as data and truncated by the service; it is never a decision input.
-  note: z.string().max(5000).optional(),
-});
-
-const KitchenCapacityBodySchema = z.object({
-  slots: z
-    .array(
-      z.object({
-        startsAt: z.string().datetime({ offset: true }),
-        endsAt: z.string().datetime({ offset: true }),
-        capacityUnits: z.number().int().min(0),
-      })
-    )
-    .min(1)
-    .max(200),
-});
 
 /**
  * Feedback and menu failures (ADR 0028). Messages are the services' own fixed texts: they never echo feedback text, a
@@ -192,34 +193,6 @@ function sendMenuError(res: Response, err: unknown) {
 }
 
 const FEEDBACK_SUMMARY_DEFAULT_DAYS = 30;
-
-const FeedbackBodySchema = z.object({
-  source: z.string().regex(/^[a-z][a-z0-9_.:-]{1,39}$/),
-  externalId: z.string().trim().min(1).max(120),
-  // Untrusted text. Trimmed and truncated by the service, stored as data, never read as an instruction.
-  text: z.string().max(20000),
-});
-
-const FeedbackSummaryQuerySchema = z.object({
-  since: z.string().datetime({ offset: true }).optional(),
-});
-
-const MenuChangeSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("add_item"),
-    name: z.string().max(400),
-    description: z.string().max(2000).optional(),
-    priceCents: z.number(),
-  }),
-  z.object({ type: z.literal("update_price"), itemId: z.string().min(1).max(64), priceCents: z.number() }),
-  z.object({ type: z.literal("remove_item"), itemId: z.string().min(1).max(64) }),
-]);
-
-const MenuProposalBodySchema = z.object({
-  change: MenuChangeSchema,
-  rationale: z.string().max(2000).optional(),
-  sourceFeedbackIds: z.array(z.string().min(1).max(64)).max(20).optional(),
-});
 
 /** Parses BIND_CORS_ORIGINS: comma-separated origins. Unset or empty means no origin is allowed. */
 export function parseCorsOrigins(raw: string | undefined): string[] {
@@ -450,6 +423,13 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     res.json(bp);
   });
 
+  // The OpenAPI document, built from the route registry at request time (docs/decisions/0034). Public: it describes no data.
+  // Sent as the same bytes as docs/openapi.json (serializeOpenApiDocument), so a served copy equals the committed file.
+  app.get("/api/openapi.json", (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.type("application/json").send(serializeOpenApiDocument(buildOpenApiDocument(ROUTES, API_VERSION)));
+  });
+
   // Workspaces. The list returns only the caller's own workspace.
   app.get("/api/workspaces", ...authenticated, async (req: Request, res: Response) => {
     try {
@@ -477,10 +457,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   });
 
   app.post("/api/workspaces", async (req: Request, res: Response) => {
-    const { id, name, templateId } = req.body ?? {};
-    if (typeof id !== "string" || typeof name !== "string" || typeof templateId !== "string" || !id || !name || !templateId) {
+    const parsedCreate = CreateWorkspaceBodySchema.safeParse(req.body ?? {});
+    if (!parsedCreate.success) {
       return res.status(400).json({ error: "id, name, and templateId are required" });
     }
+    const { id, name, templateId } = parsedCreate.data;
     try {
       const outcome = await createWithOwnerToken(String(id), () => provisionWorkspace(id, name, templateId));
       if (outcome.kind === "conflict") {
@@ -609,10 +590,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   // Low stock trigger / replenishment
   app.post("/api/workspaces/:id/replenish", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { sku } = req.body;
-    if (!sku) {
+    const parsed = ReplenishBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
       return res.status(400).json({ error: "sku is required" });
     }
+    const { sku } = parsed.data;
     try {
       const result = await procurementRunner.startReplenishment(id, sku, "owner_manual_trigger");
       res.json(result);
@@ -646,7 +628,9 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.post("/api/approvals/:id/reject", ...anyWorkspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
     const actor = req.actor!;
-    const { reason } = req.body;
+    const decision = parseDecisionBody(req, res);
+    if (!decision) return;
+    const { reason } = decision;
     try {
       const result = await procurementRunner.declineApproval(
         id,
@@ -664,7 +648,9 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.post("/api/approvals/:id/revoke", ...anyWorkspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
     const actor = req.actor!;
-    const { reason } = req.body;
+    const decision = parseDecisionBody(req, res);
+    if (!decision) return;
+    const { reason } = decision;
     try {
       const result = await procurementRunner.declineApproval(
         id,
@@ -1207,10 +1193,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   // Owner pause switch (ADR 0022). While paused, the commitment gate denies every commitment and no replenishment starts.
   app.put("/api/workspaces/:id/agents-paused", ...workspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
-    const paused = req.body?.paused;
-    if (typeof paused !== "boolean") {
+    const parsedPause = PauseBodySchema.safeParse(req.body ?? {});
+    if (!parsedPause.success) {
       return res.status(400).json({ error: "paused must be true or false." });
     }
+    const paused = parsedPause.data.paused;
     try {
       const stored = await setAgentsPaused(id, paused, { type: "owner", id: decidedByOf(req.actor!.label) }, "owner_api");
       if (stored === null) return res.status(404).json({ error: "Workspace not found" });
