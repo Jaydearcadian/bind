@@ -129,12 +129,16 @@ describe("Studio confirmation and runner settle an order exactly once", () => {
       docType === "delivery_receipt"
         ? `Delivery note\nSKU: ${SKU}\nQty: ${qty}`
         : `Invoice #: INV-${Math.random().toString(36).slice(2, 8).toUpperCase()}\nSKU: ${SKU}\nQty: ${qty}\nUnit Price: $${(unit / 100).toFixed(2)}\nTotal: $${((qty * unit) / 100).toFixed(2)}`;
-    const draft = await extractDocumentDraft(wsId, {
-      docType,
-      sourceLabel: "settle_once_test",
-      rawText,
-      linkedOrderId: orderId,
-    });
+    const draft = await extractDocumentDraft(
+      wsId,
+      {
+        docType,
+        sourceLabel: "settle_once_test",
+        rawText,
+        linkedOrderId: orderId,
+      },
+      { type: "owner", id: "settle-once-test" }
+    );
     return confirmStagedDocument(
       wsId,
       draft.docId,

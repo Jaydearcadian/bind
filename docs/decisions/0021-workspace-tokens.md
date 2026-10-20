@@ -87,6 +87,9 @@ workspace in the path), **owner-any** (owner of the workspace the approval or or
 | POST | `/api/workspaces/:id/tokens` | owner |
 | GET | `/api/workspaces/:id/tokens` | owner |
 | DELETE | `/api/workspaces/:id/tokens/:tokenId` | owner |
+| PUT | `/api/workspaces/:id/agents-paused` | owner (ADR 0022: the pause switch) |
+| GET | `/api/workspaces/:id/webhook-secret` | owner (ADR 0022: shows the signing secret, audited) |
+| POST | `/api/workspaces/:id/webhook-secret/rotate` | owner (ADR 0022: rotates the signing secret) |
 | POST | `/api/approvals/:id/approve` | owner-any |
 | POST | `/api/approvals/:id/reject` | owner-any |
 | POST | `/api/approvals/:id/revoke` | owner-any |

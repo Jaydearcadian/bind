@@ -236,8 +236,9 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   // Flow A: Onboard genuinely blank or owner-configured workspace. Public: creating a workspace issues its owner token.
   app.post("/api/workspaces/onboard", async (req: Request, res: Response) => {
     try {
+      // No token exists before the workspace does, so the audit actor is the creating system (ADR 0023).
       const outcome = await createWithOwnerToken(String(req.body?.workspaceId ?? ""), () =>
-        onboardBlankWorkspace(req.body)
+        onboardBlankWorkspace(req.body, { type: "system", id: "system:workspace-create" })
       );
       if (outcome.kind === "conflict") {
         return res.status(409).json({ error: "Workspace id is not available" });
@@ -584,7 +585,8 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.post("/api/workspaces/:id/agents", ...workspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
-      const result = await upsertAgentRole(id, req.body);
+      // Recorded under the owner token label (ADR 0023).
+      const result = await upsertAgentRole(id, req.body, { type: "owner", id: req.actor!.label });
       res.status(201).json(result);
     } catch (err: any) {
       if (err instanceof ForbiddenCapabilityError) {
@@ -621,7 +623,8 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.post("/api/workspaces/:id/documents/extract", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
-      const draft = await extractDocumentDraft(id, req.body);
+      // Recorded under the token label and its role, so a staff extraction is not shown as an owner's (ADR 0023).
+      const draft = await extractDocumentDraft(id, req.body, { type: req.actor!.role, id: req.actor!.label });
       res.status(201).json(draft);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
@@ -827,16 +830,25 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
         [event.observedQuantity, event.workspaceId, event.sku]
       );
       const item = itemRes.rows[0];
+      // The count is a fact and is kept above. While the workspace is paused (ADR 0023) the replenishment it would
+      // start is skipped, not refused: the event is answered 200 and says why.
+      const pauseRes = await query(`SELECT agents_paused FROM workspaces WHERE id = $1;`, [event.workspaceId]);
+      const paused = pauseRes.rows[0]?.agents_paused === true;
       let replenishmentResult = null;
+      let replenishmentSkipped: "AGENTS_PAUSED" | undefined;
       if (item && Number(item.current_quantity) < Number(item.par_level)) {
-        try {
-          replenishmentResult = await procurementRunner.startReplenishment(
-            event.workspaceId,
-            event.sku,
-            `surface_${event.surface}`
-          );
-        } catch (err: any) {
-          return res.status(400).json({ error: err.message });
+        if (paused) {
+          replenishmentSkipped = "AGENTS_PAUSED";
+        } else {
+          try {
+            replenishmentResult = await procurementRunner.startReplenishment(
+              event.workspaceId,
+              event.sku,
+              `surface_${event.surface}`
+            );
+          } catch (err: any) {
+            return res.status(400).json({ error: err.message });
+          }
         }
       }
       return res.json({
@@ -848,6 +860,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
         parLevel: item ? Number(item.par_level) : undefined,
         replenishmentTriggered: Boolean(replenishmentResult),
         replenishmentResult,
+        ...(replenishmentSkipped ? { replenishmentSkipped } : {}),
       });
     }
 

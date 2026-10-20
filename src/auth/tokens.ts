@@ -22,6 +22,15 @@ export interface TokenAuditActor {
 
 const SYSTEM_ACTOR: TokenAuditActor = { type: "system", id: "system:operator" };
 
+/**
+ * Who is recorded on an audit row written by a studio action. `owner` or `staff` with the token's label (never the
+ * token), or `system` with a `system:*` name. Every studio writer takes one explicitly; there is no fixed default (ADR 0023).
+ */
+export interface AuditActor {
+  type: "owner" | "staff" | "system";
+  id: string;
+}
+
 export interface Actor {
   workspaceId: string;
   role: WorkspaceRole;

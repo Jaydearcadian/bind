@@ -18,6 +18,8 @@ import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
  * SETTLEMENT_FAILED also end in `payment_hold`: the adapter refused the payment, or the transfer reverted.
  * SETTLEMENT_OUTCOME_UNKNOWN ends in `payment_hold` too: an earlier transfer attempt may have moved money and
  * the adapter cannot show whether it did, so the transfer is not sent again.
+ * AGENTS_PAUSED means the owner has paused the workspace (ADR 0023). Nothing is paid, and the order returns to
+ * the status it had before this call (`confirmed` or `payment_hold`), so it can be paid after the owner resumes.
  */
 export type ReconcileHold =
   | "RECONCILE_IN_PROGRESS"
@@ -26,7 +28,8 @@ export type ReconcileHold =
   | "WORKSPACE_SETTLEMENT_ADDRESS_MISSING"
   | "SETTLEMENT_REJECTED"
   | "SETTLEMENT_FAILED"
-  | "SETTLEMENT_OUTCOME_UNKNOWN";
+  | "SETTLEMENT_OUTCOME_UNKNOWN"
+  | "AGENTS_PAUSED";
 
 /** The statuses a settlement claim can take the order from; the claim restores the one it replaced. */
 type ClaimableStatus = "confirmed" | "payment_hold";
@@ -587,6 +590,26 @@ export class OrderSettlementService {
       // Keep the match row (already written above) and hold the claim as payment_hold.
       await this.holdClaim(order, "settlement.payment_hold", { orderId: order.id, hold });
       return { status: MatchStatus.MATCHED, reconciled: false, hold };
+    }
+
+    // The owner's pause switch (ADR 0023). A paused workspace pays nothing. The claim is released to the status the
+    // order had before it, with no transfer, no effect row, no restock and no journal. The flag is read here, at the
+    // last database read before the transfer, so a pause set during the match is honoured. A pause set in the instant
+    // between this read and the adapter call is not; ADR 0023 records that residual window.
+    const pauseRes = await query(`SELECT agents_paused FROM workspaces WHERE id = $1;`, [order.workspace_id]);
+    if (pauseRes.rows[0]?.agents_paused === true) {
+      await this.releaseClaim(order.id, prevStatus);
+      await this.workflowEngine.recordAudit(
+        order.workspace_id,
+        null,
+        "system",
+        "settlement_engine",
+        EffectClass.COMMERCIAL_COMMITMENT,
+        "settlement.paused_hold",
+        PolicyDecision.DENY,
+        { orderId: order.id, hold: "AGENTS_PAUSED" }
+      );
+      return { status: MatchStatus.MATCHED, reconciled: false, hold: "AGENTS_PAUSED" };
     }
 
     // Execute Settlement payment. The match hash binds the transfer to this order, receipt and bill.

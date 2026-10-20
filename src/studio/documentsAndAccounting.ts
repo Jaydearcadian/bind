@@ -6,6 +6,7 @@ import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import { OrderSettlementService } from "../workflows/settlement.js";
 import type { EvidenceLoader } from "../workflows/settlement.js";
 import { recordIdempotentJournalEntry } from "../accounting/journal.js";
+import type { AuditActor } from "../auth/tokens.js";
 export { recordIdempotentJournalEntry } from "../accounting/journal.js";
 
 export const ExtractDocumentInputSchema = z.object({
@@ -43,7 +44,8 @@ function parseDollarToCents(raw: string): number | null {
  */
 export async function extractDocumentDraft(
   workspaceId: string,
-  rawInput: unknown
+  rawInput: unknown,
+  actor: AuditActor
 ) {
   const input = ExtractDocumentInputSchema.parse(rawInput);
   const text = input.rawText;
@@ -184,10 +186,12 @@ export async function extractDocumentDraft(
 
   await query(
     `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, 'owner', 'owner@bind.local', 'read', 'document.extract_staged', 'ALLOW', $3::jsonb, NOW());`,
+     VALUES ($1, $2, $3, $4, 'read', 'document.extract_staged', 'ALLOW', $5::jsonb, NOW());`,
     [
       `audit_doc_ext_${randomUUID()}`,
       workspaceId,
+      actor.type,
+      actor.id,
       JSON.stringify({
         docId,
         docType: input.docType,

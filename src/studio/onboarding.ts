@@ -7,6 +7,7 @@ import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.j
 import { CANONICAL_ARC_LOCK } from "../agents/antiDriftWriter.js";
 import { templatesArtifactsDir } from "../utils/artifacts.js";
 import { newId } from "../utils/ids.js";
+import type { AuditActor } from "../auth/tokens.js";
 
 export const SAFE_AGENT_TOOLS = [
   "get_business_context",
@@ -176,7 +177,7 @@ export function getTemplateBlueprint(templateId: string) {
  * Creates a genuinely blank or owner-configured workspace in PostgreSQL.
  * Never fabricates orders, workflows, invoices, or transactions.
  */
-export async function onboardBlankWorkspace(rawInput: unknown) {
+export async function onboardBlankWorkspace(rawInput: unknown, actor: AuditActor) {
   const input = OnboardWorkspaceSchema.parse(rawInput);
 
   if (input.approvalThresholdCents > input.budgetDailyLimitCents) {
@@ -292,13 +293,15 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
       );
     }
 
-    // Record owner audit log
+    // The audit row names the actor the caller passed (ADR 0023).
     await client.query(
       `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-       VALUES ($1, $2, 'owner', 'owner@bind.local', 'commercial_commitment', 'workspace.onboard_configured', 'ALLOW', $3::jsonb, NOW());`,
+       VALUES ($1, $2, $3, $4, 'commercial_commitment', 'workspace.onboard_configured', 'ALLOW', $5::jsonb, NOW());`,
       [
         newId("audit_onboard"),
         input.workspaceId,
+        actor.type,
+        actor.id,
         JSON.stringify({
           provenance: "OWNER_CONFIRMED",
           businessType: input.businessType,
@@ -325,7 +328,7 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
 /**
  * Upserts an agent role in PostgreSQL and regenerates derived AGENTS.md / SKILL.md files.
  */
-export async function upsertAgentRole(workspaceId: string, rawInput: unknown) {
+export async function upsertAgentRole(workspaceId: string, rawInput: unknown, actor: AuditActor) {
   const input = AgentRoleUpsertSchema.parse(rawInput);
   assertSafeAgentTools(input.allowedTools);
 
@@ -367,10 +370,12 @@ export async function upsertAgentRole(workspaceId: string, rawInput: unknown) {
 
   await query(
     `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, 'owner', 'owner@bind.local', 'commercial_commitment', 'agent_role.configure', 'ALLOW', $3::jsonb, NOW());`,
+     VALUES ($1, $2, $3, $4, 'commercial_commitment', 'agent_role.configure', 'ALLOW', $5::jsonb, NOW());`,
     [
       newId("audit_role"),
       workspaceId,
+      actor.type,
+      actor.id,
       JSON.stringify({
         provenance: "OWNER_CONFIRMED",
         roleName: input.roleName,
