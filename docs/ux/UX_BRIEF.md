@@ -64,6 +64,17 @@ Status: draft. No UI has been built. `src/ui/` stays untouched (ADR 0016). This 
 - Connection status words: Simulated, Added not verified, Verified live, Needs attention, Revoked. "Verified live" appears only when a verifier succeeded.
 - Business data: tabs named by the template (kitchen: Stock, Orders, Customers, Menu) plus a global search, with shared table, detail and empty-state design.
 
+## People, Settings, Help and the shell (decided)
+- Access keys for builders live in Settings under "For builders" (owner-only). They become their own Developers page when outbound webhooks and event subscriptions exist.
+- Settings: workspace name and appearance (follow device, light, dark); notifications by event and channel (in-app works, email and messaging show "coming"); approval strictness (never below one deliberate tap); linked accounts and export; time zone, currency and business hours; quiet hours for nudges; sign-in methods; a separated danger zone (export, leave, delete).
+- Help: small "What is this?" tips beside hard terms, a searchable Help page, and a link to the builder docs. "Ask Bind" is deferred because a confident wrong answer about spending limits would do harm.
+- Phone shell: bottom tabs for Today, Activity, Team and Connections, plus More (Business data, People, Settings, Help). The header holds the pause control and the workspace switcher.
+
+## Page map (draft)
+Public: Landing; For builders; Security and trust; What we have tested; Status and changelog; Privacy, terms, contact; Accessibility; Sign in; Demo workspace entry.
+Signed in, no workspace: Create or join.
+In the app: Today; Activity (with "Follow this" histories); Team and limits (agent detail); Connections (add flow, connection detail); Business data (template tabs and search); People and access; Settings (with For builders); Help. Header: pause all, workspace switcher, account menu. Approval panel is a layer over any screen.
+
 ## Suggested, awaiting a yes
 - Headline "Connect once. Get back to work." with a specific subline ("Bind connects your tools to agents that can actually use them, and you decide what they are allowed to do.").
 - Main button: "Try a demo workspace" (simulated, labelled, throwaway, capped lifetime), secondary "Start your own workspace".
