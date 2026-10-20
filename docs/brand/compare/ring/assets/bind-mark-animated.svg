@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Bind"><title>Bind</title><style>
+@media (prefers-reduced-motion:no-preference){
+.ring{stroke-dasharray:100;animation:draw 700ms cubic-bezier(.2,0,0,1) both}
+.clasp{animation:seat 520ms 640ms cubic-bezier(.2,0,0,1) both}
+.all{transform-box:fill-box;transform-origin:center;animation:settle 380ms 1100ms cubic-bezier(.2,0,0,1) both}
+}
+@keyframes draw{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}
+@keyframes seat{0%{transform:translateY(-14px);opacity:0}60%{opacity:1}82%{transform:translateY(1.2px)}100%{transform:translateY(0);opacity:1}}
+@keyframes settle{0%{transform:scale(1)}45%{transform:scale(1.035)}100%{transform:scale(1)}}</style><g class="all"><path class="ring" d="M41.39 14.34 A20 20 0 1 1 22.61 14.34" fill="none" stroke="#1A1612" stroke-width="6" stroke-linecap="round" pathLength="100"/><path class="clasp" d="M23.87 13.73 A20 20 0 0 1 40.13 13.73" fill="none" stroke="#A94F25" stroke-width="6" stroke-linecap="round"/></g></svg>

@@ -1,0 +1,100 @@
+/*
+ * Bind design tokens, draft 1 (2026-10-20). Reference tokens first, then semantic tokens, then the mark states.
+ * Contrast was computed with WCAG 2.x relative luminance (see BRAND.md section 5). APCA was not computed.
+ * Colour never carries a state alone: every status also has a label and a mark position.
+ */
+:root {
+  /* Reference: light, "bone" */
+  --bone: #F5F0E6;
+  --flour: #FBF8F2;
+  --crust: #E8E0D0;
+  --ink: #1A1612;
+  --char: #5E5648;
+  --copper: #A94F25;
+  --saffron-ink: #7A5200; --saffron-tint: #F6E3B4; --saffron: #B07A00;
+  --herb-ink: #1F6A3E;    --herb-tint: #D5EBDD;    --herb: #1F6A3E;
+  --slate-ink: #3F5A7A;   --slate-tint: #D9E3EF;   --slate: #3F5A7A;
+  --tomato-ink: #A8321C;  --tomato-tint: #F6D9D2;  --tomato: #A8321C;
+
+  /* Semantic */
+  --bg: var(--bone);
+  --surface: var(--flour);
+  --border: var(--crust);
+  --text: var(--ink);
+  --text-muted: var(--char);
+  --accent: var(--copper);
+  --status-pending: var(--saffron);  --status-pending-text: var(--saffron-ink);  --status-pending-tint: var(--saffron-tint);
+  --status-approved: var(--herb);    --status-approved-text: var(--herb-ink);    --status-approved-tint: var(--herb-tint);
+  --status-held: var(--slate);       --status-held-text: var(--slate-ink);       --status-held-tint: var(--slate-tint);
+  --status-refused: var(--tomato);   --status-refused-text: var(--tomato-ink);   --status-refused-tint: var(--tomato-tint);
+  --focus-ring: 2px solid var(--ink);
+
+  /* Type */
+  --font-ui: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Motion: the Corporate archetype (docs/brand/BRAND.md section 6). Transform and opacity only. */
+  --dur-instant: 0ms;
+  --dur-fast: 120ms;     /* press, toggle, hover in */
+  --dur-base: 200ms;     /* chip and badge change, row enter */
+  --dur-slow: 320ms;     /* panel, dialog */
+  --dur-reveal: 520ms;   /* the mark, first load only */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+  --ease-emphasis: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --stagger: 40ms;       /* list entry; total under 400ms */
+}
+
+:root { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14110E; --surface: #1D1914; --border: #2E2822; --text: #F2EBDD; --text-muted: #A89E8E; --accent: #E08A57;
+    --status-pending: #F2C14E;  --status-pending-text: #F2C14E;  --status-pending-tint: #3A2D10;
+    --status-approved: #6FCB93; --status-approved-text: #6FCB93; --status-approved-tint: #12301F;
+    --status-held: #8FB0D6;     --status-held-text: #8FB0D6;     --status-held-tint: #1A2638;
+    --status-refused: #F08470;  --status-refused-text: #F08470;  --status-refused-tint: #3B1812;
+    --focus-ring: 2px solid var(--text);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14110E; --surface: #1D1914; --border: #2E2822; --text: #F2EBDD; --text-muted: #A89E8E; --accent: #E08A57;
+  --status-pending: #F2C14E;  --status-pending-text: #F2C14E;  --status-pending-tint: #3A2D10;
+  --status-approved: #6FCB93; --status-approved-text: #6FCB93; --status-approved-tint: #12301F;
+  --status-held: #8FB0D6;     --status-held-text: #8FB0D6;     --status-held-tint: #1A2638;
+  --status-refused: #F08470;  --status-refused-text: #F08470;  --status-refused-tint: #3B1812;
+  --focus-ring: 2px solid var(--text);
+}
+
+/*
+ * The mark as a status indicator. Put class "bind-mark" on an inline <svg> that holds the ring and clasp paths, and set
+ * data-state to one of: idle, pending, approved, held, refused. The position of the clasp says the state; the colour
+ * agrees with it. Always render a text label next to it. Do not set "approved" until the server confirms it.
+ */
+.bind-mark .ring { stroke: var(--text); }
+.bind-mark .clasp {
+  stroke: var(--accent);
+  transform-box: view-box; transform-origin: 32px 32px;
+  transition: transform var(--dur-slow) var(--ease-standard), stroke var(--dur-base) var(--ease-standard);
+}
+.bind-mark[data-state="pending"]  .clasp { stroke: var(--status-pending);  transform: translateY(-9px); }
+.bind-mark[data-state="approved"] .clasp { stroke: var(--status-approved); transform: none; }
+.bind-mark[data-state="held"]     .clasp { stroke: var(--status-held);     transform: rotate(16deg); }
+.bind-mark[data-state="refused"]  .clasp { stroke: var(--status-refused);  transform: translateY(-9px) rotate(-18deg); }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* A waiting request breathes by 3px. The open position and the label already say "waiting"; the motion is extra. */
+  .bind-mark[data-state="pending"] .clasp { animation: bind-wait 2400ms var(--ease-standard) 400ms infinite alternate; }
+  /* Seating gets one small settle when approval is confirmed. */
+  .bind-mark[data-state="approved"] .ring { animation: bind-settle 380ms var(--ease-standard) 1; transform-box: fill-box; transform-origin: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bind-mark .clasp { transition-duration: 1ms; }
+}
+@keyframes bind-wait { from { transform: translateY(-9px); } to { transform: translateY(-6px); } }
+@keyframes bind-settle { 0% { transform: scale(1); } 45% { transform: scale(1.035); } 100% { transform: scale(1); } }
