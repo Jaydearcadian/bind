@@ -90,10 +90,18 @@ async function send(
   return { status: res.status, text, body: parsed, contentType: res.headers.get("content-type") ?? "" };
 }
 
+/**
+ * An owner token is the answer of a few routes by design (POST /api/demo, ADR 0057). It is random, so a token can contain text
+ * the leak pattern matches by chance (for example "pg_"). Token-shaped values are masked before the pattern runs; the rest of
+ * the body is checked as before.
+ */
+const ISSUED_TOKEN = /bnd_[A-Za-z0-9_-]{43}/g;
+
 /** Every non-public response: a JSON body, no internals, and no client-visible database text. */
 function expectSafe(r: Sent, label: string) {
   expect(r.status, `${label} status`).toBeLessThan(500);
-  expect(LEAK.test(r.text), `${label} leaks internals: ${r.text.slice(0, 300)}`).toBe(false);
+  const visible = r.text.replace(ISSUED_TOKEN, "<issued-token>");
+  expect(LEAK.test(visible), `${label} leaks internals: ${visible.slice(0, 300)}`).toBe(false);
   expect(r.contentType, `${label} content-type`).toMatch(/json/);
   expect(r.body, `${label} body is JSON`).not.toBeUndefined();
 }
