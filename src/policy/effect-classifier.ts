@@ -30,6 +30,8 @@ const OPERATION_EFFECT_MAP: Record<string, EffectClass> = {
   "escrow.release_milestone": EffectClass.COMMERCIAL_COMMITMENT,
   "contractors.payout": EffectClass.COMMERCIAL_COMMITMENT,
   "invoices.issue_and_settle": EffectClass.COMMERCIAL_COMMITMENT,
+  // Accepting a customer order is accepting an offer (AGENTS.md). Decided in src/workflows/fulfilment.ts (ADR 0026).
+  "orders.accept_customer": EffectClass.COMMERCIAL_COMMITMENT,
 };
 
 /**

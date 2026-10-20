@@ -349,3 +349,49 @@ CREATE TABLE IF NOT EXISTS connector_credentials (
   revoked_at TIMESTAMPTZ,
   UNIQUE (workspace_id, connector_id)
 );
+
+-- Customer orders and substantiated promises (Task 8a, ADR 0026). A promise is written only when stock minus active
+-- reservations covers every line and a kitchen slot has room. The note is untrusted customer text, stored as data.
+CREATE TABLE IF NOT EXISTS customer_orders (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  external_ref TEXT NOT NULL CHECK (char_length(external_ref) BETWEEN 1 AND 120),
+  request_hash TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('accepted','partially_available','declined','needs_owner','cancelled','fulfilled')),
+  requested_for TIMESTAMPTZ,
+  promised_for TIMESTAMPTZ,
+  reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+  note TEXT,                                   -- untrusted customer text, at most 500 characters, data only
+  units INT NOT NULL DEFAULT 0,
+  slot_id VARCHAR(64),
+  decided_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (workspace_id, external_ref)
+);
+CREATE TABLE IF NOT EXISTS customer_order_lines (
+  id VARCHAR(64) PRIMARY KEY,
+  order_id VARCHAR(64) NOT NULL REFERENCES customer_orders(id) ON DELETE CASCADE,
+  sku TEXT NOT NULL,
+  quantity INT NOT NULL CHECK (quantity > 0)
+);
+CREATE TABLE IF NOT EXISTS stock_reservations (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  order_id VARCHAR(64) NOT NULL REFERENCES customer_orders(id) ON DELETE CASCADE,
+  sku TEXT NOT NULL,
+  quantity INT NOT NULL CHECK (quantity > 0),
+  status TEXT NOT NULL CHECK (status IN ('active','released','consumed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_reservations_active ON stock_reservations(workspace_id, sku) WHERE status = 'active';
+CREATE TABLE IF NOT EXISTS kitchen_capacity (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  starts_at TIMESTAMPTZ NOT NULL,
+  ends_at TIMESTAMPTZ NOT NULL CHECK (ends_at > starts_at),
+  capacity_units INT NOT NULL CHECK (capacity_units >= 0),
+  used_units INT NOT NULL DEFAULT 0 CHECK (used_units >= 0 AND used_units <= capacity_units),
+  UNIQUE (workspace_id, starts_at)
+);

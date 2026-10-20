@@ -58,6 +58,12 @@ const ANY_ROLE_ROUTES: Array<[string, string]> = [
   ["POST", "/api/workspaces/:id/documents/extract"],
   ["GET", "/api/workspaces/:id/accounting/ledger"],
   ["GET", "/api/workspaces/:id/audit"],
+  ["GET", "/api/workspaces/:id/customer-orders"],
+  ["POST", "/api/workspaces/:id/customer-orders"],
+  ["GET", "/api/workspaces/:id/customer-orders/:orderId"],
+  ["POST", "/api/workspaces/:id/customer-orders/:orderId/cancel"],
+  ["POST", "/api/workspaces/:id/customer-orders/:orderId/fulfil"],
+  ["GET", "/api/workspaces/:id/kitchen-capacity"],
 ];
 
 /** Owner of the workspace in the path, or of the approval or order whose workspace the service checks. */
@@ -72,6 +78,8 @@ const OWNER_ROUTES: Array<[string, string]> = [
   ["GET", "/api/workspaces/:id/tokens"],
   ["DELETE", "/api/workspaces/:id/tokens/:tokenId"],
   ["PUT", "/api/workspaces/:id/agents-paused"],
+  ["POST", "/api/workspaces/:id/customer-orders/:orderId/accept"],
+  ["PUT", "/api/workspaces/:id/kitchen-capacity"],
   ["GET", "/api/workspaces/:id/webhook-secret"],
   ["POST", "/api/workspaces/:id/webhook-secret/rotate"],
   ["GET", "/api/workspaces/:id/connectors"],

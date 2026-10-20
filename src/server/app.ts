@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import path from "path";
 import { fileURLToPath } from "url";
+import { z } from "zod";
 import { query } from "../db/client.js";
 import { acquireAdvisoryLock } from "../db/advisory-lock.js";
 import { config } from "../config/env.js";
@@ -11,6 +12,18 @@ import { authenticated, workspaceMember, workspaceOwner, anyWorkspaceOwner } fro
 import { provisionWorkspace, listTemplates } from "../templates/registry.js";
 import { ProcurementWorkflowRunner } from "../workflows/procurement.js";
 import { ApprovalDecisionError } from "../workflows/engine.js";
+import {
+  acceptCustomerOrder,
+  acceptHeldOrder,
+  cancelCustomerOrder,
+  fulfilCustomerOrder,
+  getCustomerOrder,
+  listCustomerOrders,
+  listKitchenCapacity,
+  setKitchenCapacity,
+  FulfilmentError,
+  type OperatorActor,
+} from "../workflows/fulfilment.js";
 import { SettlementOrderError } from "../workflows/settlement.js";
 import { WorkflowCrashRecoveryRunner } from "../workflows/recovery.js";
 import { WebhookReceiver } from "../adapters/web2/webhook-receiver.js";
@@ -78,6 +91,39 @@ function sendApprovalError(res: Response, err: any) {
   }
   return res.status(400).json({ error: err.message });
 }
+
+/** Customer order failures (ADR 0026). The message is the service's own text: it never echoes a customer's note. */
+function sendFulfilmentError(res: Response, err: unknown) {
+  if (err instanceof FulfilmentError) {
+    const status = err.code === "INVALID_INPUT" ? 400 : err.code === "ORDER_NOT_FOUND" ? 404 : 409;
+    return res.status(status).json({ error: err.message, code: err.code });
+  }
+  if (err instanceof z.ZodError) {
+    return res.status(400).json({ error: "Invalid request body", fields: err.issues.map((i) => i.path.join(".")) });
+  }
+  return res.status(500).json({ error: "Request could not be completed" });
+}
+
+const CustomerOrderBodySchema = z.object({
+  externalRef: z.string().trim().min(1).max(120),
+  lines: z.array(z.object({ sku: z.string().min(1).max(120), quantity: z.number() })).max(200),
+  requestedFor: z.string().datetime({ offset: true }).optional(),
+  // Customer text. Stored as data and truncated by the service; it is never a decision input.
+  note: z.string().max(5000).optional(),
+});
+
+const KitchenCapacityBodySchema = z.object({
+  slots: z
+    .array(
+      z.object({
+        startsAt: z.string().datetime({ offset: true }),
+        endsAt: z.string().datetime({ offset: true }),
+        capacityUnits: z.number().int().min(0),
+      })
+    )
+    .min(1)
+    .max(200),
+});
 
 /** Parses BIND_CORS_ORIGINS: comma-separated origins. Unset or empty means no origin is allowed. */
 export function parseCorsOrigins(raw: string | undefined): string[] {
@@ -504,6 +550,104 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
         return;
       }
       res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Customer orders (Task 8a, ADR 0026). Creating and reading are member routes; the order is decided as the fulfilment
+  // agent. Accepting a held order is owner-only. Cancel and fulfil are member routes, and staff may use them.
+  app.get("/api/workspaces/:id/customer-orders", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      res.json(await listCustomerOrders(req.params.id));
+    } catch (err) {
+      sendFulfilmentError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/customer-orders", ...workspaceMember, async (req: Request, res: Response) => {
+    const { id } = req.params;
+    let body: z.infer<typeof CustomerOrderBodySchema>;
+    try {
+      body = CustomerOrderBodySchema.parse(req.body);
+    } catch (err) {
+      return sendFulfilmentError(res, err);
+    }
+    try {
+      const result = await acceptCustomerOrder(
+        {
+          workspaceId: id,
+          externalRef: body.externalRef,
+          lines: body.lines,
+          requestedFor: body.requestedFor ? new Date(body.requestedFor) : undefined,
+          note: body.note,
+        },
+        { kind: "agent", roleName: "fulfilment_agent" }
+      );
+      res.status(result.replayed ? 200 : 201).json(result);
+    } catch (err) {
+      sendFulfilmentError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/customer-orders/:orderId", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      const order = await getCustomerOrder(req.params.id, req.params.orderId);
+      if (!order) return res.status(404).json({ error: "Order not found", code: "ORDER_NOT_FOUND" });
+      res.json(order);
+    } catch (err) {
+      sendFulfilmentError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/customer-orders/:orderId/accept", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      res.json(await acceptHeldOrder(req.params.id, req.params.orderId, req.actor!.label));
+    } catch (err) {
+      sendFulfilmentError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/customer-orders/:orderId/cancel", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      const actor: OperatorActor = { kind: req.actor!.role, label: req.actor!.label };
+      res.json(await cancelCustomerOrder(req.params.id, req.params.orderId, actor));
+    } catch (err) {
+      sendFulfilmentError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/customer-orders/:orderId/fulfil", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      const actor: OperatorActor = { kind: req.actor!.role, label: req.actor!.label };
+      res.json(await fulfilCustomerOrder(req.params.id, req.params.orderId, actor));
+    } catch (err) {
+      sendFulfilmentError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/kitchen-capacity", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      res.json(await listKitchenCapacity(req.params.id));
+    } catch (err) {
+      sendFulfilmentError(res, err);
+    }
+  });
+
+  app.put("/api/workspaces/:id/kitchen-capacity", ...workspaceOwner, async (req: Request, res: Response) => {
+    let body: z.infer<typeof KitchenCapacityBodySchema>;
+    try {
+      body = KitchenCapacityBodySchema.parse(req.body);
+    } catch (err) {
+      return sendFulfilmentError(res, err);
+    }
+    try {
+      const slots = body.slots.map((slot) => ({
+        startsAt: new Date(slot.startsAt),
+        endsAt: new Date(slot.endsAt),
+        capacityUnits: slot.capacityUnits,
+      }));
+      res.json(await setKitchenCapacity(req.params.id, slots, { kind: "owner", label: req.actor!.label }));
+    } catch (err) {
+      sendFulfilmentError(res, err);
     }
   });
 
