@@ -91,7 +91,12 @@ lock was busy.
 
 **Off by default in `runTick`.** The `restockSweep` option defaults to false, so `runTick` callers and tests do not start
 replenishments unless they ask. `startWorker` passes the option through. The server enables it:
-`startWorker({ restockSweep: config.BIND_RESTOCK_SWEEP !== "false" })`, with `BIND_RESTOCK_SWEEP` added to `src/config/env.ts`.
+`startWorker({ restockSweep: config.BIND_RESTOCK_SWEEP === "true" })`, with `BIND_RESTOCK_SWEEP` added to `src/config/env.ts`.
+
+**Default (changed after review).** The sweep is OFF in the server unless `BIND_RESTOCK_SWEEP=true`. It starts replenishments
+without a human asking, and an order inside policy limits is placed without an approval. The first implementation enabled it by
+default; the controller reversed that as the conservative, reversible choice (AGENTS.md: no commercial commitment without
+authorization). The owner opts in.
 
 **Why the cooldown.** A sku whose replenishment just failed, was cancelled, or was reconciled is not started again for 6
 hours. Without it the sweep would retry it on every tick (every 15 seconds by default).
@@ -151,9 +156,8 @@ compared byte for byte with its backup.
 - **Sweep retry collision (pre-existing, ADR 0027).** A replenishment's idempotency key includes the available quantity. A retry at
   the same quantity collides with the earlier, cancelled or failed workflow, and is recorded as `replenishment.sweep_failed` once
   per cooldown until the count changes. The sweep does not fix this.
-- **The sweep can order on its own, including at server start.** The demo kitchen starts with flour and butter below par, so
-  with the sweep on, the first tick (15 seconds after start) may place simulated orders within policy. Set
-  `BIND_RESTOCK_SWEEP=false` to prevent that.
+- **The sweep can order on its own once enabled.** The demo kitchen starts with flour and butter below par, so with
+  `BIND_RESTOCK_SWEEP=true` the first tick (15 seconds after start) may place simulated orders within policy. It is off by default.
 - **The payment-hold code is found by a correlated subquery over `audit_logs.evidence`.** It has no index on `evidence->>'orderId'`.
   That is acceptable at this size. An index is needed when the audit table grows.
 - **An approval past its window, not yet expired by the worker.** Revoking it expires it (ADR 0005), and the answer is

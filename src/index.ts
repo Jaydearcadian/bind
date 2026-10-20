@@ -28,9 +28,10 @@ async function main() {
 
     // The worker expires approvals, resumes interrupted workflows and polls settlements without anyone opening a
     // page (ADR 0029). BIND_WORKER_ENABLED=false turns it off. Serverless deployments run no worker.
-    // The restock sweep (ADR 0030) runs unless BIND_RESTOCK_SWEEP=false.
+    // The restock sweep (ADR 0030) is OFF unless BIND_RESTOCK_SWEEP=true: it can place orders within policy without a
+    // human, so the owner opts in (ADR 0030, "Default").
     if (config.BIND_WORKER_ENABLED !== "false") {
-      worker = startWorker({ restockSweep: config.BIND_RESTOCK_SWEEP !== "false" });
+      worker = startWorker({ restockSweep: config.BIND_RESTOCK_SWEEP === "true" });
       console.log("Background worker started.");
     }
   });
