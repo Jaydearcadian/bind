@@ -70,6 +70,10 @@ const envSchema = z.object({
   BIND_WORKER_ENABLED: z.string().optional(),
   // The restock sweep (ADR 0030) runs in the worker unless this is exactly "false".
   BIND_RESTOCK_SWEEP: z.string().optional(),
+  // Log level for the structured logger (ADR 0032). Unset or empty means info.
+  LOG_LEVEL: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["debug", "info", "warn", "error"]).optional()),
+  // Bearer token for GET /metrics (ADR 0032). Not a workspace token. Unset: /metrics answers 404. At least 32 characters.
+  BIND_METRICS_TOKEN: optionalSecret("BIND_METRICS_TOKEN"),
   ALLOW_NO_CONTRACTS: z.string().optional().default("1"),
   PARALLEL_API_KEY: z.string().optional(),
   NEBIUS_API_KEY: z.string().optional(),

@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { redactText } from "../utils/redact.js";
+import { log } from "../observability/logger.js";
 
 /**
  * The one place that decides what an error may say to a client (Task 11, docs/decisions/0031).
@@ -104,8 +105,12 @@ export function requestErrorHandler(err: unknown, req: Request, res: Response, n
     res.status(httpStatus).json({ error: "Invalid request" });
     return;
   }
-  const message = err instanceof Error ? err.message : String(err);
-  console.error(`[request] ${req.method} failed: ${redactText(message || "unknown error").slice(0, MAX_CLIENT_MESSAGE_CHARACTERS)}`);
+  // The real error goes to the log once, redacted, with the request id and no stack (docs/decisions/0032).
+  log.error("http.error", {
+    requestId: req.id,
+    // A non-Error throw is logged as a fixed text, never stringified: a value's own toString may throw inside this handler.
+    error: err instanceof Error ? err : { name: "NonError", message: typeof err === "string" ? err.slice(0, MAX_CLIENT_MESSAGE_CHARACTERS) : "non-error value" },
+  });
   res.status(500).json({ error: "Internal error" });
 }
 

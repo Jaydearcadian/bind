@@ -11,6 +11,7 @@ import { evaluateThreeWayMatch, MatchStatus } from "../accounting/three-way-matc
 import { recordIdempotentJournalEntry } from "../accounting/journal.js";
 import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
 import { newId } from "../utils/ids.js";
+import { log } from "../observability/logger.js";
 
 /**
  * Why an order is not paid or not yet final. RECONCILE_IN_PROGRESS means another caller holds the claim.
@@ -190,7 +191,7 @@ export class OrderSettlementService {
           await this.releaseClaim(order.id, prevStatus);
         } catch (releaseErr) {
           // Never mask the original failure. The order stays `settling` (held).
-          console.error(`Could not release settlement claim on order '${order.id}':`, releaseErr);
+          log.error("settlement.claim_release_failed", { orderId: order.id, error: releaseErr });
         }
       }
       throw err;
@@ -220,7 +221,7 @@ export class OrderSettlementService {
         try {
           await this.releaseClaim(order.id, "settlement_submitted");
         } catch (releaseErr) {
-          console.error(`Could not release confirmation claim on order '${order.id}':`, releaseErr);
+          log.error("settlement.confirmation_release_failed", { orderId: order.id, error: releaseErr });
         }
         throw err;
       }
@@ -318,7 +319,7 @@ export class OrderSettlementService {
       return outcomeOf(await adapter.confirm(txHash));
     } catch (err) {
       // The error can carry transport detail, so only its type is logged.
-      console.warn(`Settlement outcome for ${txHash} is unknown (${err instanceof Error ? err.name : "unknown error"}).`);
+      log.warn("settlement.outcome_unknown", { txHash, errorName: err instanceof Error ? err.name : "unknown" });
       return { kind: "unconfirmed" };
     }
   }

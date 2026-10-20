@@ -4,6 +4,7 @@ import path from "node:path";
 import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { log } from "../observability/logger.js";
 import {
   HybridMarketBenchmarkAdapter,
   MarketBenchmarkResult,
@@ -265,9 +266,7 @@ export async function generateVerifiableDecisionRecord(params: {
   try {
     await writeWorkflowAntiDriftFiles(fullRecord);
   } catch (err: any) {
-    console.warn(
-      `Anti-drift artifact write skipped for ${fullRecord.workflowId}: ${err?.message}`
-    );
+    log.warn("agent.antidrift_write_skipped", { workflowId: fullRecord.workflowId, error: err });
   }
 
   return fullRecord;

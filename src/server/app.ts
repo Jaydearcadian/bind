@@ -76,6 +76,10 @@ import {
 } from "../studio/workspaceControls.js";
 import { newId } from "../utils/ids.js";
 import { publicErrorMessage, rejectNulInput, requestErrorHandler, wrapAsyncHandlers } from "./errors.js";
+import { log } from "../observability/logger.js";
+import { requestContext } from "../observability/request-context.js";
+import { checkReadiness } from "../observability/readiness.js";
+import { createMetricsHandler, DEFAULT_METRICS_CACHE_MS } from "../observability/metrics-route.js";
 import {
   SAFE_AGENT_TOOLS,
   FORBIDDEN_AGENT_CAPABILITIES,
@@ -304,6 +308,11 @@ export interface CreateAppOptions {
    * value from the environment. Tests use this to run unconfigured.
    */
   secrets?: { masterSecret?: string | null; webhookSecret?: string | null };
+  /**
+   * The metrics route (ADR 0032). token: null disables it (404); omitted means BIND_METRICS_TOKEN. cacheMs bounds how long
+   * a database snapshot is reused by a scrape. Tests use this to run with a known token and no cache.
+   */
+  metrics?: { token?: string | null; cacheMs?: number };
 }
 
 const WEBHOOK_UNAUTHORIZED = { error: "Invalid signature or expired timestamp" };
@@ -330,6 +339,9 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   const app = express();
   // Before any route: a rejected promise from a route reaches the central error handler, never an unhandled rejection.
   wrapAsyncHandlers(app);
+  // First of all: every response, including errors and static files, carries x-request-id, and each request is logged
+  // once on finish with its route pattern and no URL, query, header or body (docs/decisions/0032).
+  app.use(requestContext);
   const procurementRunner = new ProcurementWorkflowRunner();
   const recoveryRunner = new WorkflowCrashRecoveryRunner();
   const corsOrigins = options.corsOrigins ?? parseCorsOrigins(config.BIND_CORS_ORIGINS);
@@ -338,6 +350,12 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   const webhookSecret =
     options.secrets?.webhookSecret !== undefined ? (options.secrets.webhookSecret ?? undefined) : config.BIND_WEBHOOK_SECRET;
   const receiver = new WebhookReceiver(() => webhookSecret);
+  const metricsToken =
+    options.metrics?.token !== undefined ? (options.metrics.token ?? null) : (config.BIND_METRICS_TOKEN ?? null);
+  const metricsRoute = createMetricsHandler({
+    token: metricsToken,
+    cacheMs: options.metrics?.cacheMs ?? DEFAULT_METRICS_CACHE_MS,
+  });
 
   app.use(helmet({
     contentSecurityPolicy: false, // Allow CDN resources for Tailwind in UI
@@ -372,15 +390,30 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     })
   );
 
-  // Healthcheck
+  // Liveness: public and cheap. A database error answers only the status; the real error is logged (docs/decisions/0032).
   app.get("/health", async (_req: Request, res: Response) => {
     try {
       await query("SELECT 1;");
       res.json({ status: "ok", postgres: "connected", timestamp: new Date() });
-    } catch (err: any) {
-      res.status(500).json({ status: "error", error: publicErrorMessage(err) });
+    } catch (err: unknown) {
+      log.error("health.database_unavailable", { error: err });
+      res.status(500).json({ status: "error" });
     }
   });
+
+  // Readiness: public. 200 when SELECT 1 answers within the budget and the schema is present; otherwise 503 with no detail.
+  app.get("/ready", async (_req: Request, res: Response) => {
+    const outcome = await checkReadiness();
+    if (outcome.ready) {
+      res.json({ status: "ready" });
+      return;
+    }
+    log.warn("ready.not_ready", { reason: outcome.reason, error: outcome.error });
+    res.status(503).json({ status: "not_ready" });
+  });
+
+  // Metrics: aggregate only, behind BIND_METRICS_TOKEN (docs/decisions/0032). Disabled (404) when no token is configured.
+  app.get("/metrics", metricsRoute);
 
   // Templates & Blueprints
   app.get("/api/templates", (_req: Request, res: Response) => {

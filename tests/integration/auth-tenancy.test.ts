@@ -33,6 +33,9 @@ const OWNER_REQUIRED = { error: "Owner role required" };
  */
 const PUBLIC_ROUTES: Array<[string, string]> = [
   ["GET", "/health"],
+  // Readiness is public and answers no data (ADR 0032). Metrics is not a workspace route: it needs BIND_METRICS_TOKEN.
+  ["GET", "/ready"],
+  ["GET", "/metrics"],
   ["GET", "/api/templates"],
   ["GET", "/api/templates/:id/blueprint"],
   ["POST", "/api/workspaces/onboard"],

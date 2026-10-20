@@ -1,6 +1,7 @@
 import { createApp } from "../dist/server/app.js";
 import { runMigrations } from "../dist/db/migrate.js";
 import { provisionDemoWorkspace } from "../dist/server/demo.js";
+import { log } from "../dist/observability/logger.js";
 
 const app = createApp();
 
@@ -13,7 +14,7 @@ function ensureInit() {
       try {
         await provisionDemoWorkspace();
       } catch (err) {
-        console.warn("Demo workspace could not be provisioned:", err?.message);
+        log.warn("demo.not_provisioned", { error: err });
       }
     })().catch((err) => {
       initPromise = null;
@@ -27,7 +28,8 @@ export default async function handler(req, res) {
   try {
     await ensureInit();
   } catch (err) {
-    console.error("Startup initialization failed:", err);
+    // The error is logged through the redacting logger: a driver message can carry a connection string (docs/decisions/0032).
+    log.error("startup.initialization_failed", { error: err });
     if (String(req.url || "").startsWith("/api/")) {
       res.statusCode = 503;
       res.setHeader("Content-Type", "application/json");

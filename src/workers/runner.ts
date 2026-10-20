@@ -7,6 +7,8 @@ import { EffectClass } from "../policy/effect-classifier.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { redactText } from "../utils/redact.js";
 import { newId } from "../utils/ids.js";
+import { log } from "../observability/logger.js";
+import { recordWorkerTick } from "../observability/metrics.js";
 
 /**
  * The background worker (ADR 0029, ADR 0030). One tick runs five steps in order, each bounded by a batch size:
@@ -330,8 +332,12 @@ async function restockSweepStep(cfg: Resolved, report: TickReport): Promise<void
   }
 }
 
-/** Runs one tick: the steps in order. Never throws. The restock sweep runs only when it is enabled. */
+/**
+ * Runs one tick: the steps in order. Never throws. The restock sweep runs only when it is enabled. The tick's duration,
+ * its finish time and its step errors are recorded in the metrics registry (docs/decisions/0032).
+ */
 export async function runTick(opts: TickOptions = {}): Promise<TickReport> {
+  const startedAt = process.hrtime.bigint();
   const cfg = resolved(opts);
   const report = emptyReport();
   await runStep("expiry", report, () => expiryStep(cfg, report));
@@ -343,6 +349,10 @@ export async function runTick(opts: TickOptions = {}): Promise<TickReport> {
   } else {
     report.restockSweep.skipped = true;
   }
+  recordWorkerTick(
+    Number(process.hrtime.bigint() - startedAt) / 1e9,
+    report.errors.map((entry) => entry.step)
+  );
   return report;
 }
 
@@ -374,7 +384,7 @@ export function startWorker(opts: WorkerOptions = {}): Worker {
       runOnce()
         .then((report) => {
           for (const entry of report.errors) {
-            console.warn(`Worker step '${entry.step}' failed: ${entry.error}`);
+            log.warn("worker.step_failed", { step: entry.step, error: entry.error });
           }
         })
         .catch(() => undefined)

@@ -18,6 +18,7 @@ import {
   type PromiseFacts,
   type PromiseReasonRef,
 } from "./fulfilment-promise.js";
+import { log } from "../observability/logger.js";
 
 /**
  * Customer orders, substantiated promises, stock reservations and kitchen capacity (Task 8a, ADR 0026).
@@ -585,7 +586,10 @@ function noticeMessage(orderId: string, status: CustomerOrderStatus, reasons: Pr
 
 const systemEngine = new WorkflowEngine();
 
-/** Writes a system audit row. A failure to write it is swallowed: the caller has already done its work. */
+/**
+ * Writes a system audit row. A failure to write it does not throw: the caller has already done its work. The failure is
+ * logged (docs/decisions/0032), so a missing audit row is visible to an operator.
+ */
 async function recordSystemAudit(
   workspaceId: string,
   actorId: string,
@@ -596,7 +600,9 @@ async function recordSystemAudit(
 ): Promise<void> {
   await systemEngine
     .recordAudit(workspaceId, null, "system", actorId, effectClass, action, decision, evidence)
-    .catch(() => undefined);
+    .catch(() => {
+      log.warn("audit.write_failed", { action, workspaceId });
+    });
 }
 
 /**
