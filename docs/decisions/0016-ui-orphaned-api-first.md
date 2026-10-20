@@ -1,7 +1,7 @@
 # ADR 0016: The current UI is orphaned; the build is API first
 
 ## Status
-Accepted (2026-10-19), by the owner's direct instruction.
+Accepted (2026-10-19), by the owner's direct instruction. Note (2026-10-20): the new website replaces the serving of this UI (ADR 0054); the files in `src/ui` are left untouched.
 
 ## Context
 The owner will rebuild the UI from the ground up, later. The existing UI under `src/ui/public` is not

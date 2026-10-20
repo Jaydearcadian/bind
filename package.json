@@ -10,7 +10,7 @@
     "test": "vitest run tests/unit/",
     "test:unit": "vitest run tests/unit/",
     "test:integration": "vitest run tests/integration/",
-    "test:e2e": "node -e \"console.error('BLOCKED: browser E2E is not run: the UI is orphaned (ADR 0016); use test:e2e:legacy'); process.exit(1)\"",
+    "test:e2e": "playwright test -c playwright.web.config.ts",
     "test:e2e:legacy": "playwright test tests/e2e/",
     "build": "tsc -p tsconfig.build.json",
     "build:vercel": "tsc -p tsconfig.build.json && mkdir -p dist/db && cp src/db/schema.sql dist/db/schema.sql",

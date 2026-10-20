@@ -29,7 +29,7 @@ a live system: `docs/RELEASE_EVIDENCE.md` is the place for that.
 | [0013](0013-arc-settlement-truthful-states.md) | Arc settlement reports only what the chain returned | Accepted | Settlement is `submitted`, `confirmed` or `failed`. No hash is made up. |
 | [0014](0014-settlement-confirmation.md) | An order is paid only after the transfer is confirmed | Accepted | A submitted transfer is not a payment until it is confirmed. |
 | [0015](0015-single-commitment-gate.md) | One commitment gate, decided in code and re-checked at approval | Accepted | Every commitment is decided by one function and checked again when the owner approves. |
-| [0016](0016-ui-orphaned-api-first.md) | The current UI is orphaned; the build is API first | Accepted | `src/ui` is not maintained. The product surface is the API, SSE, the SDK and MCP. |
+| [0016](0016-ui-orphaned-api-first.md) | The current UI is orphaned; the build is API first | Accepted (serving replaced by ADR 0054) | `src/ui` is not maintained. The product surface is the API, SSE, the SDK and MCP. |
 | [0017](0017-effects-ledger.md) | Durable ledger for external effects | Accepted | Each external call runs at most once per key. An unknown outcome is recorded as in doubt. |
 | [0018](0018-order-reservation-and-recovery.md) | Reserve spend before the supplier call | Accepted | Spend is reserved under a workspace lock before the supplier is called. Recovery goes through the ledger. |
 | [0019](0019-settlement-through-the-ledger.md) | The settlement transfer goes through the effects ledger | Accepted | Transfers go through the ledger. Adapters can look a transfer up. |
@@ -67,3 +67,4 @@ a live system: `docs/RELEASE_EVIDENCE.md` is the place for that.
 | [0051](0051-sign-in-with-privy.md) | Sign-in with Privy, on top of workspace tokens | Accepted | Google and wallet sign-in for people; workspace tokens stay for machines. Privy proves identity only. Backend built in ADR 0052. |
 | [0052](0052-account-layer.md) | The account layer: accounts, sessions, invitations, members | Accepted | Privy token in, short-lived workspace-scoped session out; role read per request; single-use invitations; last-owner protection. Backend only. |
 | [0053](0053-event-envelope-v1.md) | Event envelope v1 | Accepted | Events gain name, schemaVersion, workspaceId, object and correlationId; audit rows record the request id. Additive. |
+| [0054](0054-website.md) | The website, served by the API server | Accepted | Landing page in `web/`, brand from `docs/brand`, strict CSP, the orphaned UI no longer served, browser E2E is a real gate again. App screens not built. |

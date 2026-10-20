@@ -120,10 +120,12 @@ describe("test:e2e acceptance", () => {
     expect(acceptedFor("test:e2e,")).toBe("test:e2e");
   });
 
-  it("the script prints the blocked line and the accepted line for test:e2e, and nothing else is accepted that way", () => {
+  it("the script runs test:e2e as a gate unless it is accepted, and nothing else is accepted that way", () => {
     const text = fs.readFileSync(SCRIPT, "utf8");
-    expect(text).toContain("block 'test:e2e (UI orphaned, ADR 0016");
-    expect(text).toContain("NOT_RUN (accepted by BIND_ACCEPT_NOT_RUN): test:e2e (UI orphaned, ADR 0016)");
+    // The website exists (ADR 0054): the browser suite runs by default, and a skip must be asked for by name.
+    expect(text).toContain("run 'test:e2e' npm run test:e2e");
+    expect(text).not.toContain("block 'test:e2e");
+    expect(text).toContain("NOT_RUN (accepted by BIND_ACCEPT_NOT_RUN): test:e2e (website browser suite not run, ADR 0054)");
     // Exactly one call site asks whether a gate is accepted, and it asks for test:e2e.
     const callSites = text.match(/e2e_accepted\b/g) ?? [];
     expect(callSites.length).toBe(2); // one definition, one call

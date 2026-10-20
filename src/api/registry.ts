@@ -114,7 +114,7 @@ export type AccessLevel =
 export interface ResponseSpec {
   description: string;
   schema?: z.ZodTypeAny;
-  contentType?: "application/json" | "text/csv" | "text/plain" | "text/event-stream";
+  contentType?: "application/json" | "text/csv" | "text/plain" | "text/html" | "text/event-stream";
 }
 
 export interface RouteSpec {
@@ -177,7 +177,7 @@ function withGenericErrors(entry: Omit<RouteSpec, "responses"> & { responses: Re
 
 /** Why the UI catch-all has no contract test. */
 const CONTRACT_NOT_TESTED_UI =
-  "The catch-all serves the unsupported UI HTML (ADR 0016). It is not an API route and has no JSON schema; its access is checked by the access test.";
+  "The catch-all serves the website's not-found page (ADR 0054). It is not an API route and has no JSON schema; its access is checked by the access test and its page by tests/web.";
 
 export const ROUTES: RouteSpec[] = [
   // -------------------------------------------------------------------------------------------------------------------
@@ -1320,7 +1320,7 @@ export const ROUTES: RouteSpec[] = [
   }),
 
   // -------------------------------------------------------------------------------------------------------------------
-  // The orphaned UI catch-all (ADR 0016). Not an API route.
+  // The website's catch-all (ADR 0054). Not an API route.
   // -------------------------------------------------------------------------------------------------------------------
   {
     operationId: "getUiShell",
@@ -1328,8 +1328,8 @@ export const ROUTES: RouteSpec[] = [
     path: "*",
     access: "public",
     tags: ["UI"],
-    summary: "The orphaned browser UI shell (ADR 0016). Not an API route.",
-    responses: { 200: { description: "HTML of the unsupported UI shell." } },
+    summary: "Any other GET path: the website's not-found page (ADR 0054). Not an API route.",
+    responses: { 404: { description: "The not-found page, as HTML.", contentType: "text/html" } },
     contractTested: false,
     notTestedReason: CONTRACT_NOT_TESTED_UI,
   },

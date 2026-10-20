@@ -6,8 +6,8 @@
 #   bash scripts/verify-local.sh --accepted   print the NOT_RUN gates that BIND_ACCEPT_NOT_RUN accepts; executes nothing
 #
 # BLOCKED means a required tool or gate could not run here. It counts as a failure, and a missing tool is never
-# accepted. The one acceptable NOT_RUN gate is test:e2e (the UI is orphaned, ADR 0016). It is accepted only when
-# BIND_ACCEPT_NOT_RUN contains test:e2e, and it is then reported as NOT_RUN_ACCEPTED, neither a pass nor a failure.
+# accepted. test:e2e runs the website's browser suite (ADR 0054). It is the one gate that may be recorded as NOT_RUN instead,
+# and only when BIND_ACCEPT_NOT_RUN contains test:e2e; it is then reported as NOT_RUN_ACCEPTED, neither a pass nor a failure.
 #
 # Drift checks (OpenAPI spec, SDK types, CODEBASE_MAP) regenerate a committed file and then run `git diff --exit-code`
 # on it. Regenerating is the only file write this script makes. On drift the regenerated file is left in the working
@@ -54,7 +54,7 @@ list_gates() {
   gate 'forge coverage' 'forge coverage'
   gate 'anvil integration' 'npx vitest run tests/integration/anvil-settlement.test.ts'
   gate 'slither (--fail-medium)' 'slither . --fail-medium'
-  gate 'test:e2e' 'none: UI orphaned (ADR 0016); accepted only through BIND_ACCEPT_NOT_RUN'
+  gate 'test:e2e' 'npm run test:e2e'
 }
 
 # Entries of BIND_ACCEPT_NOT_RUN (comma separated, surrounding spaces ignored) that this script accepts as NOT_RUN.
@@ -259,14 +259,13 @@ else
   fi
 fi
 
-# Browser E2E. The UI under src/ui is orphaned (ADR 0016), so this gate is not run. It counts as a failure unless
-# BIND_ACCEPT_NOT_RUN names it.
-printf '\n===== test:e2e =====\n'
+# Browser E2E: the website in Chromium against the real server (ADR 0054). It runs unless BIND_ACCEPT_NOT_RUN names it.
 if e2e_accepted; then
-  printf 'NOT_RUN (accepted by BIND_ACCEPT_NOT_RUN): test:e2e (UI orphaned, ADR 0016)\n'
+  printf '\n===== test:e2e =====\n'
+  printf 'NOT_RUN (accepted by BIND_ACCEPT_NOT_RUN): test:e2e (website browser suite not run, ADR 0054)\n'
   not_run_accepted=$((not_run_accepted+1))
 else
-  block 'test:e2e (UI orphaned, ADR 0016; not run. Set BIND_ACCEPT_NOT_RUN=test:e2e to record it as NOT_RUN)'
+  run 'test:e2e' npm run test:e2e
 fi
 
 printf '\n===== SUMMARY =====\nPASS=%d FAIL_OR_BLOCKED=%d NOT_RUN_ACCEPTED=%d\n' "$pass" "$fail" "$not_run_accepted"

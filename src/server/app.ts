@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import path from "path";
@@ -409,9 +409,26 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     cacheMs: options.metrics?.cacheMs ?? DEFAULT_METRICS_CACHE_MS,
   });
 
-  app.use(helmet({
-    contentSecurityPolicy: false, // Allow CDN resources for Tailwind in UI
-  }));
+  // The website is self-hosted (ADR 0054): no CDN, no inline script or style, so a strict policy applies to every response.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'"],
+          imgSrc: ["'self'", "data:"],
+          fontSrc: ["'self'"],
+          connectSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          frameAncestors: ["'none'"],
+        },
+      },
+    })
+  );
   if (corsOrigins.length > 0) {
     app.use(cors({ origin: corsOrigins }));
   }
@@ -430,16 +447,25 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   // From here on, an audit row written by this request records its id (ADR 0053).
   app.use(bindRequestId);
 
-  // Serve static UI assets with no-store cache headers so updates are always fresh
-  const staticPath = path.resolve(__dirname, "../../src/ui/public");
+  // The website (ADR 0054): the pages in web/, and only the brand files they use (tokens, fonts, SVG assets) from docs/brand.
+  // The orphaned UI in src/ui is no longer served (ADR 0016, 0054). HTML is revalidated; fonts and assets may be cached.
+  const webPath = path.resolve(__dirname, "../../web");
+  const brandPath = path.resolve(__dirname, "../../docs/brand");
+  const brandStatic = express.static(brandPath, {
+    index: false,
+    fallthrough: false,
+    setHeaders: (res) => res.setHeader("Cache-Control", "public, max-age=3600"),
+  });
+  const BRAND_FILE = /^\/(tokens\.css|fonts\/[A-Za-z0-9-]+\.woff2|assets\/[A-Za-z0-9-]+\.svg)$/;
+  app.use("/brand", (req: Request, res: Response, next: NextFunction) => {
+    if ((req.method === "GET" || req.method === "HEAD") && BRAND_FILE.test(req.path)) return brandStatic(req, res, next);
+    next();
+  });
   app.use(
-    express.static(staticPath, {
-      etag: false,
-      lastModified: false,
-      setHeaders: (res) => {
-        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-        res.setHeader("Pragma", "no-cache");
-        res.setHeader("Expires", "0");
+    express.static(webPath, {
+      extensions: ["html"],
+      setHeaders: (res, filePath) => {
+        res.setHeader("Cache-Control", filePath.endsWith(".html") ? "no-cache" : "public, max-age=300");
       },
     })
   );
@@ -1682,11 +1708,10 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   });
 
   // Default SPA route (supports /, /app, /app/workflows/:workflowId)
+  // Anything else is not a page: the website's not-found page, with a 404 (ADR 0054).
   app.get("*", (_req: Request, res: Response) => {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    res.sendFile(path.resolve(staticPath, "index.html"));
+    res.setHeader("Cache-Control", "no-cache");
+    res.status(404).sendFile(path.resolve(webPath, "404.html"));
   });
 
   // Last: body-parser and routing errors and any unexpected error (docs/decisions/0031). Stacks are never sent.
