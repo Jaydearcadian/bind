@@ -1,103 +1,149 @@
-# Bind brand direction, draft 1
+# Bind brand, study 1
 
-Status: a proposal written on 2026-10-20 for the owner to accept or change. It is not a finished identity and nothing in the product uses it yet (the UI is orphaned, ADR 0016, and has not been rebuilt). `src/ui/` is not touched. Everything here is reproducible: `node docs/brand/build-assets.mjs` regenerates the SVGs, and `docs/brand/board.html` shows the system live.
+Status: a proposal written on 2026-10-20 for the owner to accept or change. It is a fresh direction and does not build on any earlier brand file. Nothing in the product uses it yet (the UI is orphaned, ADR 0016, and `src/ui/` is not touched). `board.html` is a brand study, not the product UI; its ticket text is demo data.
 
-The brief was the "Chief Brand Designer" prompt. Sections it asked for that were not requested are left out on purpose: mascot, pitch deck and hackathon story, and image-generation prompts.
+Scope of this round, as asked: brand core, logo, animated logo, colour and type, landing page visuals, motion direction, the swipe, the loading screen and animated loading icon. Not in this round: the product film, demo run of show, pitch deck, and Hyperframe prompts. Hyperframe's real capabilities were not checked, so no tool-specific prompt is given here.
 
-## A. Brand core
+Reproduce everything: `python3 docs/brand/build_assets.py` (needs `pip install fonttools brotli shapely` and the three font files in `docs/brand/fonts-src/`, which are not committed; the script reads `BIND_FONT_SRC` if they live elsewhere). Open `docs/brand/board.html` in a browser.
 
-- **Name.** Keep **Bind**. It already means three useful things: a binding commitment, the thing that holds a sauce together in a kitchen, and a clasp. No rename is worth the cost.
-- **Positioning, one line.** Bind is the connectivity layer that brings agents into a business: connect once, and a team of agents works inside your real tools so the owner and staff can spend their time on the work itself.
-- **Tagline (recommended).** **Connect once. Get back to work.** It says what Bind is (a connection, made once) and what the owner gets (their time back), and it matches the build brief word for word: a business "connects once". Alternatives: "Agents that fit your business" (accurate, a little flat) and "Your business, with agents in the room" (warm, but longer and vaguer). An earlier draft used "Agents propose. Rules decide." It was dropped: that line describes a safety layer, and Bind is a connectivity layer. Control still matters, but it is a supporting proof point on the page, not the headline.
-- **Personality.** Calm, capable, a little dry. The tone of a good sous chef who takes things off your plate and tells you plainly what got done.
-- **Target user.** A kitchen owner or operator who is not technical and does not want to learn agent infrastructure. They approve things from a phone, often between tasks.
-- **Emotional hook.** Time back. "The ordering, the chasing, the paperwork is handled, and I can get on with the food and the people."
-- **What makes it memorable.** The mark is a ring being closed. A loop that clasps shut is a connection made, and "bind" is the verb. The same picture doubles as a status light in the product: open means something is waiting for the owner, closed means it is done.
+## A. Product and brand core
 
-## B. Direction (opinion, with the reasons)
+**What exists** (`README.md`, `docs/RELEASE_EVIDENCE.md`): an API, an event stream, a TypeScript SDK and an MCP tool server, a kitchen template with three agent roles, and a set of connectors that are all simulated. **What is only planned:** real supplier, messaging and accounting connectors, and the owner-facing UI. The brand must never imply the second list exists.
 
-1. **Warm and physical, not fintech.** The category defaults to neon on near-black with gradients. Bind sits in a kitchen: bone paper, ink, copper, enamel. That is the difference people will notice.
-2. **One idea, used everywhere.** Connecting: a loop that closes. Not a mascot, not a pattern system. A mascot would add character but cost production time and dilute the one idea. Recommendation: no mascot.
-3. **Neutral by default, colour means state.** The brand is ink on bone with a single copper latch. Saffron, herb, slate and tomato appear only when something has a status. If every card is colourful, status stops reading.
-4. **Quiet motion.** The Corporate archetype from the LottieFiles motion skill (200 to 400 ms, almost no overshoot), which that skill itself lists for financial and enterprise products. One moment of delight: the latch seating.
-5. **Plain, accurate copy.** The product says "waiting", "confirming", "done", "paused", "refused". It does not say "approved" or "paid" before the system has confirmed it. This is a wording habit that builds trust, not the brand's headline.
+- **Name.** Bind. It stays.
+- **Positioning, one line.** Bind is the connectivity layer that brings agents into a business: connect your tools once, and a team of agents works inside them, so the owner and staff can get on with the work.
+- **Tagline.** **Hand off the busywork.** Supporting line: *Connect your tools once. Your agents join the team, and you get back to the work.* I considered "Connect once. Get back to work." (clear, but it describes setup, not the benefit) and "Work changes hands here." (distinctive, too abstract for a hero). "Hand off the busywork" is plain, says what the owner gets, and contains the metaphor.
+- **Core promise.** The routine work gets handled where the business already works, and you can see what was done.
+- **Audience.** An owner-operator of a small, process-heavy business, first a kitchen, who is not technical and does not want to learn agent infrastructure. Secondary: the staff who do the stocktaking, receiving and ordering.
+- **The problem.** Routine coordination eats the day: checking stock, chasing quotes, logging deliveries, answering the same questions. The owner is the human glue between their own tools.
+- **Emotional hook.** Relief. "Somebody picked that up."
+- **The defining metaphor: the pass.** In a kitchen, the pass is the counter where work changes hands, from the cooks to the floor. Every business is a chain of handoffs, and most of the pain is in the handoffs. Bind makes them clean.
+- **The idea to remember.** *Clean handoffs.* The mark shows it: two pieces joined so they cannot pull apart sideways, only slide along the seam.
+- **Differentiation, stated carefully.** Not a chatbot you talk to, not a no-code builder you assemble, not an agent marketplace. It is a layer a business connects to once. (No competitor was researched, so no named comparison is made.)
+- **Personality and voice.** Calm, capable, plain-spoken, a little dry; a sous chef who takes things off your plate and tells you what got done. Short sentences. Say what happened, in kitchen words ("ticket", "on it", "bumped").
+  Do: "Butter is low. Draft order ready for you." / Don't: "Unlock the power of intelligent automation."
+- **Honest wording.** "On it", "Needs your OK", "Done", "Paused", "Needs you". Never "Done" or "Paid" before the server confirms it. This is a habit of the voice, not the headline.
 
-What I rejected, and why: a chain-link or knot logo (generic, and a knot does not animate cleanly to a status); a lowercase "b" monogram (every second startup has one); gradients and glass (they fight the bone palette and cost contrast).
+## B. Creative strategy
 
-## C. Logo
+Start from the reaction wanted: *"I get it in one second, and it looks like nothing else."* Work backward: one object (a ticket), one gesture (the bump), one moving part (the yolk piece), one loud colour. Everything else stays quiet.
 
-- **Mark.** A ring with a latch at the top (`assets/bind-mark.svg`). The ring is ink. The latch is copper and overlaps the ring ends slightly, like a bolt. Geometry: ring radius 20 in a 64 box, stroke 6, round caps, a 56 degree gap with a 48 degree latch.
-- **Wordmark.** Lowercase `bind`, drawn as monoline strokes on the same round-capped geometry (`assets/bind-wordmark.svg`). No font is needed, so it never renders differently. The dot of the `i` is the latch colour.
-- **Lockup.** Mark left, wordmark right (`assets/bind-lockup.svg`). Reverse versions for dark backgrounds, a currentColor mono mark, and a theme-aware favicon with a heavier stroke so it holds at 16 px.
-- **Clear space and minimum size.** Keep one ring-stroke of space (6 units of the 64 box) around the mark. Minimum: mark 16 px (use the favicon version), lockup 96 px wide.
-- **Do not.** Recolour the ring, put the latch in a status colour outside a status context, add a drop shadow or gradient, or rotate the mark.
+Avoided on purpose: rings, knots, threads and chains (the usual "connect" logos), network nodes, gradients, glow, robots, floating UI, purple.
 
-## D. Animated logo
+## C. Recommended visual direction
 
-`assets/bind-mark-animated.svg`, about 1.5 s, plays once:
+- **Palette idea:** a stainless kitchen at night. Near-black olive (Cast), stainless-sage light (Pass), and one yolk-yellow that means "in hand". Finished work goes quiet. Red appears only for "needs you".
+- **The recurring object:** the order ticket, with a notched tear edge and a clip, set in monospace. Cards in the product are tickets.
+- **Shapes:** a hard-edged, soft-cornered block (the mark), 14 px ticket corners, 2 px cast outlines on light surfaces. No shadows, no gradients, no glass.
+- **Type:** big, heavy, slightly compressed headlines (Bricolage Grotesque Bold), calm body (Instrument Sans), monospace for tickets and amounts (IBM Plex Mono).
+- **Photography:** none required for the first version. If used, close, tactile hands-and-surfaces, natural light, no staged smiles. Not stock.
+- **Consistency rule:** if a thing is not the ticket, the mark, the yolk piece, or plain type, it needs a reason to be there.
 
-| Time | What happens |
-| --- | --- |
-| 0 to 700 ms | The ring draws itself around, standard easing |
-| 640 to 1160 ms | The latch drops 14 px, fades in, seats with a 1 px settle |
-| 1100 to 1480 ms | The whole mark swells 3.5 percent and settles |
+## D. Identity and design system
 
-The animation is inside `prefers-reduced-motion: no-preference`, so the default and the reduced-motion view are the finished mark. Checked in a real browser: frames at 250, 500, 750, 950, 1250 and 2000 ms show the sequence, and with reduced motion emulated the inline and directly opened SVG show the finished mark with no animation. **Not verified:** when the SVG is loaded through an `<img>` tag, the emulated reduced-motion setting did not stop the animation in Chromium. Use the static SVG in `<img>` and inline the animated one only where the page can honour the preference, or drive it from the host page. A real operating-system setting was not tested.
+**Logo.** `assets/bind-mark.svg` and `assets/bind-lockup.svg`. A rounded square split by a dovetail seam. The left piece carries a flared tongue and is yolk; the right piece holds the groove and is cast. The wordmark is `bind`, lowercase, outlined from Bricolage Grotesque Bold (no font needed to display it). The mark's height equals the ascender height, with its bottom on the baseline. Variants: reverse (for dark), mono (`currentColor`), a theme-aware favicon, and a yolk-field version.
+Geometry (64 box): square 4 to 60, corner radius 9, seam at x = 32, tongue base 18 high and tip 32 high, a 1.4 unit gap between pieces.
+Clear space: half the mark's width on every side. Minimum size: mark 16 px, lockup 96 px wide.
+Do not: recolour the pieces outside a status context, add shadows or gradients, rotate or tilt the mark, separate the pieces permanently, or animate the mark except as specified below.
 
-**The mark as a status light** (`tokens.css`, `.bind-mark[data-state=...]`):
+**Colour** (`tokens.css`, WCAG 2.x contrast; APCA not computed):
 
-| State | Latch | Colour | Words |
-| --- | --- | --- | --- |
-| idle | seated | copper | none |
-| pending | lifted 9 px, breathes 3 px | saffron | Waiting for you |
-| confirming | stays lifted | saffron | Confirming |
-| approved | seated, one settle | herb | Done |
-| held | seated, turned 16 degrees | slate | Agents paused |
-| refused | lifted and askew | tomato | Refused |
-
-The latch position carries the state, colour agrees, and a text label always sits next to it. `board.html` lets you click through these, including "Approve" showing "Confirming" for a moment before "Done".
-
-## E. Colour and type
-
-All values are in `tokens.css` and `tokens.json`. Contrast is WCAG 2.x relative luminance; APCA was not computed.
-
-| Role | Light | Dark |
+| Role | Hex | Notes |
 | --- | --- | --- |
-| Background | Bone `#F5F0E6` | `#14110E` |
-| Surface | Flour `#FBF8F2` | `#1D1914` |
-| Border | Crust `#E8E0D0` | `#2E2822` |
-| Text | Ink `#1A1612` (15.84 on bone) | `#F2EBDD` (15.86) |
-| Muted text | Char `#5E5648` (6.37) | `#A89E8E` (7.12) |
-| Brand accent | Copper `#A94F25` (4.82 on bone, 5.17 on flour) | `#E08A57` (7.12) |
+| Cast | `#1A1F12` | type and the dark field. On Pass 13.97, on Plate 15.89 |
+| Olive | `#272E18` | raised surface on dark |
+| Pass | `#E9EBE2` | the light field |
+| Plate | `#F8F9F3` | cards, ticket stock |
+| Seam | `#CBD0C0` | hairlines on light |
+| Yolk | `#F5C518` | "in hand" and the one action colour. Cast on Yolk 10.32 |
+| Chili | `#BE2F19` | "needs you". On Pass 4.83, on Plate 5.49 |
+| Steel | `#5F675A` | "paused" and muted text. On Pass 4.88, on Plate 5.55 |
+| Chili lit / Steel lit | `#FF7A63` / `#A9B0A0` | the same roles on the dark field: 6.58 and 7.53 on Cast |
 
-Status colours (text and tint pairs, all at least 5.0 in light and 6.2 in dark): saffron `#7A5200` on `#F6E3B4`, herb `#1F6A3E` on `#D5EBDD`, slate `#3F5A7A` on `#D9E3EF`, tomato `#A8321C` on `#F6D9D2`. The copper accent was first `#B4572B` and failed text contrast (4.26), so it was darkened.
+Known weak pairs: Yolk on Pass is 1.35, so yolk is never text and never the only carrier of meaning on the light field (a label always accompanies it; the logo is exempt). Chili started at `#C8341D` (4.40 on Pass) and was darkened to pass.
 
-**Type.** Newsreader (display, used sparingly for headlines and empty states), Geist (interface), Geist Mono with tabular figures (money, quantities, ids). They are free on Google Fonts under the OFL; confirm the licence when adding them. The board falls back to system fonts, so type rendering has not been seen with the real fonts.
+**Type.** Display: Bricolage Grotesque 700, line-height 1.0 to 1.05, tight tracking. UI and body: Instrument Sans 400 to 600. Tickets, ids, amounts: IBM Plex Mono 500. All three are SIL OFL; the licences and web-font files are in `fonts/`. Checked here by rendering; not checked on other operating systems.
 
-**Motion tokens.** 120 ms (press), 200 ms (chips, rows), 320 ms (clasp, panels), 520 ms (the mark on first load), easing `cubic-bezier(.2,0,0,1)`, 40 ms stagger under 400 ms total. Transform and opacity only.
+**Iconography.** Not decided in this round. Recommendation: a stroke icon set with 2 px strokes and round caps, matched to the mark's corner radius, chosen when the UI is built.
 
-## F. Landing page direction
+## E. Product UX and interaction direction
 
-A single page, calm, one scroll. No claim that is not true today (see `docs/RELEASE_EVIDENCE.md`).
+**Status mark.** The mark is a status light. The left piece's distance from the seat says the state, its colour agrees, and a label always sits beside it.
 
-1. **Hero.** The ring, large, with the latch lifted and breathing, then closing as the page loads. Headline: "Connect once. Get back to work." Sub-line: "Bind brings a team of agents into your kitchen's real tools, so you and your staff can focus on the food and the people." One button. Beside it, a small live card that shows the agents doing a piece of the job: "Low on butter. Order drafted for Sysco Metro, $392.00. Waiting for you." Approve and Refuse. Pressing Approve shows "Confirming" and then "Done", the board's exact sequence. It shows the work being taken off your plate and you staying in charge, in one gesture.
-2. **How it connects.** Three steps, each with a ring: connect your tools once; tell Bind how you run things (preferences, limits, who approves what); meet your team. Say only what exists today and name what is coming.
-3. **The team.** Three roles (procurement, fulfilment, menu and feedback): what each takes off your hands.
-4. **A day in the kitchen.** Four steps as four rings: stock runs low, agent proposes, owner approves, order is confirmed. The ring changes with scroll position.
-5. **You stay in charge, and proof.** One short block: you set the limits and approve what matters, and the agents work inside them. Then what has been tested and what has not (local tests pass; no live supplier or payment connection yet). A page that says what is not done earns more trust than one that hides it.
-6. **Close.** One button.
+| State | Piece | Colour | Label |
+| --- | --- | --- | --- |
+| idle | seated | yolk | none |
+| working | 10 up | yolk | On it |
+| done | seated, goes quiet | same as the other piece | Done |
+| held | 4 up | steel | Paused |
+| failed | 10 down | chili | Needs you |
 
-Layout: 12 column grid, generous space, content width 960 px, bone background, flour cards, no photography of food in the first version (stock photos would pull it toward every other restaurant-tech site). Sections enter with a 200 ms fade and 12 px rise, staggered 40 ms, once.
+`board.html` runs these, including "Server confirms": it shows "Confirming" for 800 ms and only then "Done". The rule is that the product never sets "done" before the server has.
 
-## G. Creative recommendation
+**The swipe: bump it.** I read "the swipe" as the signature gesture, and the landing page's horizontal strip. The gesture is the kitchen's *bump*: slide a ticket sideways off the rail. Right bumps (dealt with), left holds. The ticket follows the finger 1 to 1; past 35% of its width, or a quick flick, it commits; otherwise it seats back with a knock. Always also a Bump and a Hold button, and the arrow keys on a focused ticket; the result is announced to screen readers.
+**What a swipe may not do:** anything that spends money or promises something to a customer. Those are a tap and a confirm. A swipe is for acknowledging: delivery notes, feedback summaries, "seen".
+On the landing page the swipe is a scroll-snap strip of tickets along the rail, which needs no JavaScript to work.
 
-Build the brand around one promise and one picture. The promise: **connect once, get back to work.** The picture: **a ring that closes.** Ship the mark, the status light and the plain wording first. Treat everything else (landing page, empty states, social) as applications of that promise. If a design choice does not say "connected", "handled for you" or "you are in charge", it is probably decoration and can wait.
+**Loading.** One loader icon, 16 px up to a full screen. Full-screen loading shows the real thing being done ("Opening your workspace") over the loader on the Cast field. In the product those lines must come from the server. Never a made-up percentage.
 
-## H. Known limits of this draft
+## F. Landing page: storyboard and sections
 
-- No real user has seen it. The mark is untested at very small sizes beyond one favicon render.
-- Fonts were not loaded in the renders. Colour contrast is WCAG 2 only.
-- The animated mark is verified inline and as a direct document, not through `<img>` under reduced motion (see D).
-- The latch-as-status idea needs a second look for people who cannot see colour: position carries the state, and the label is mandatory, but the held and refused positions are close. Test with real users before relying on it.
-- No trademark or name search was done for "Bind" or the mark.
-- Inputs studied but not copied: the ten skill repositories. Rules were borrowed from LottieFiles' motion skill (archetype and timing), `designer-skills` (state machines, motion tokens), `inclusive-design-skills` (reduced motion, status without colour alone), colour-expert (semantic layers, contrast checks) and the DESIGN.md idea from brand-to-design-md. No brand's own design was reproduced.
+The hero opening, on the dark field (all timings from page load; the page is usable immediately):
+
+| Time | What happens | Motion |
+| --- | --- | --- |
+| 0 to 160 ms | Fixed piece of the mark fades in | opacity |
+| 120 to 680 ms | Yolk piece slides up the seam from 30 units below, overshoots 1.6 up, seats | slide, ease-slide then ease-seat |
+| 568 to 738 ms | Fixed piece takes a 0.9 unit knock as it seats | the seat knock |
+| 560 / 610 ms | Headline line 1 and 2 rise 14 px and fade in | rise, ease-seat |
+| 760 / 820 ms | Sub-line, then buttons | rise |
+| 940 ms, each +45 ms | The four tickets slide in from the right and settle on the rail | slide-in, ease-seat |
+
+Sections, each with one visual:
+1. **Hero:** the large mark and the rail of demo tickets. Headline "Hand off the busywork."
+2. **Connect once:** three tickets in a row: *Connect your tools*, *Meet your team*, *Hand it off*. Say only what exists today and label what is coming.
+3. **The pass:** a swipeable strip of five tickets showing a day: stock low, order drafted, delivery in, feedback summarised, menu idea. Labelled demo.
+4. **You stay in the loop:** one short block. Agents work inside limits you set, and you are asked when it matters. Not a security pitch.
+5. **What has been tested, and what has not:** an honest panel linking `docs/RELEASE_EVIDENCE.md`.
+6. **Close:** the mark assembles again and one button.
+
+## G. Motion system: slide and seat
+
+**Principles.** Things slide along one axis; they never just fade. The seat has a soft stop, not a bounce. Motion tells you where something is or what changed. Done is quiet.
+
+**Hierarchy.** Functional (90 to 260 ms): state changes, hover, focus, press. Expressive (260 to 420 ms): tickets entering the rail, the swipe. Signature (rare): the logo assembling, the done-knock, the loader's tick-tock.
+
+**Tokens** (`tokens.css`): tick 90 ms, slide 260 ms, seat 140 ms, rail 420 ms, page 380 ms, loop 1400 ms; ease-slide `cubic-bezier(.45,0,.2,1)`, ease-seat `cubic-bezier(.3,.9,.2,1)`; stagger 45 ms, under 300 ms total. Transform and opacity only.
+
+| Animation | Trigger | What moves | How, how long | Says |
+| --- | --- | --- | --- | --- |
+| Logo assemble (`bind-mark-animated.svg`, `bind-lockup-animated.svg`) | first load, once | yolk piece up the seam, then a 0.9 unit knock; in the lockup the letters rise 40 units, 45 ms apart | 0.75 s for the mark, about 1 s for the lockup | the product joins things cleanly |
+| State change | a real state result arrives | the yolk piece to its new offset and colour | 260 ms, ease-slide | what is happening now |
+| Done knock | the server confirms | the fixed piece drops 0.9 units and returns | 170 ms, ease-seat | it landed |
+| Ticket enters the rail | new item | slides 46 px from the right, overshoots 3 px, settles | 420 ms | something new is in hand |
+| Bump / hold | swipe, button or key | ticket slides off 1 to 1 with the finger, or springs back | commit 320 ms; spring back 260 ms | dealt with, or put aside |
+| Loader (`bind-loader.svg`) | waiting on work | yolk piece passes the seat twice per cycle, pausing on each pass | 1400 ms loop | working, steadily |
+
+Before and after: before the logo animation the mark is invisible; after it, it rests seated forever. A ticket's neighbours do not move when it is bumped (they close up in the next 260 ms).
+
+**Reduced motion.** The logo and loader animations are written inside `prefers-reduced-motion: no-preference`, so the default and the reduced view are the finished mark; the loader holds still 5 units off the seat. Tickets appear without sliding. Status still changes (position and label) with no transition.
+**Verified:** inline and as a direct document, the emulated reduced-motion setting stops the animation. **Not verified:** when an animated SVG is loaded with an `<img>` tag, the emulated setting did not stop it (Chromium). Use the static files in `<img>` and inline the animated ones, or drive them from the host page. A real operating-system setting was not tested.
+**Mobile and performance:** only transform and opacity animate; the loader is two paths; the rail uses CSS scroll-snap. Not measured on a device.
+
+## L. Implementation priorities
+
+Must have: tokens and fonts, the mark and lockup, the status mark, the loader, honest status wording. High impact: the hero assembly, the ticket as the card pattern, the bump gesture with button and key alternatives. Optional polish: the lockup letter reveal, a full-screen loading transition, photography.
+Depends on a decision: icon set, and what the real connector list on the landing page can claim.
+
+## M. Final creative recommendation, and the next decision
+
+Make **the handoff** the whole brand: a yolk piece that is in hand, a ticket that you bump when it is dealt with, and a mark that seats when work is done. Keep everything else quiet so those three moments carry the product.
+
+**The next decision:** accept or change the tagline "Hand off the busywork." and the mark. Everything downstream (landing build, loading screen, the motion map) follows from it. After that, I would write the motion map for the first UI screens.
+
+## Known limits
+
+- No real person has seen this. Not tested with colour-blind users: position and label carry state, but "held" (4 up) and "working" (10 up) are only 6 units apart, which needs a user test.
+- Fonts were rendered here on Linux only. APCA contrast not computed. No trademark or name search for "Bind" or the mark.
+- The animated SVG through `<img>` under reduced motion (above). Performance not measured on a device.
+- The brand board's demos have no server. The swipe, "Server confirms" and the loading screen simulate one.

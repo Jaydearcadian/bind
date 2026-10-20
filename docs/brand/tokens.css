@@ -1,100 +1,81 @@
 /*
- * Bind design tokens, draft 1 (2026-10-20). Reference tokens first, then semantic tokens, then the mark states.
- * Contrast was computed with WCAG 2.x relative luminance (see BRAND.md section 5). APCA was not computed.
- * Colour never carries a state alone: every status also has a label and a mark position.
+ * Bind design tokens, study 1 (2026-10-20). Reference tokens, then semantic tokens, then motion tokens, then the mark states.
+ * Contrast is WCAG 2.x relative luminance and is listed in BRAND.md section D. APCA was not computed.
+ * Colour never carries a state alone: every status also has a label, and the mark's offset repeats it.
  */
-:root {
-  /* Reference: light, "bone" */
-  --bone: #F5F0E6;
-  --flour: #FBF8F2;
-  --crust: #E8E0D0;
-  --ink: #1A1612;
-  --char: #5E5648;
-  --copper: #A94F25;
-  --saffron-ink: #7A5200; --saffron-tint: #F6E3B4; --saffron: #B07A00;
-  --herb-ink: #1F6A3E;    --herb-tint: #D5EBDD;    --herb: #1F6A3E;
-  --slate-ink: #3F5A7A;   --slate-tint: #D9E3EF;   --slate: #3F5A7A;
-  --tomato-ink: #A8321C;  --tomato-tint: #F6D9D2;  --tomato: #A8321C;
+@font-face { font-family: "Bricolage Grotesque"; src: url("fonts/BricolageGrotesque-var.woff2") format("woff2"); font-weight: 200 800; font-stretch: 75% 100%; font-display: swap; }
+@font-face { font-family: "Instrument Sans";     src: url("fonts/InstrumentSans-var.woff2") format("woff2");     font-weight: 400 700; font-stretch: 75% 100%; font-display: swap; }
+@font-face { font-family: "IBM Plex Mono";       src: url("fonts/IBMPlexMono-Medium.woff2") format("woff2");     font-weight: 500;     font-display: swap; }
 
-  /* Semantic */
-  --bg: var(--bone);
-  --surface: var(--flour);
-  --border: var(--crust);
-  --text: var(--ink);
-  --text-muted: var(--char);
-  --accent: var(--copper);
-  --status-pending: var(--saffron);  --status-pending-text: var(--saffron-ink);  --status-pending-tint: var(--saffron-tint);
-  --status-approved: var(--herb);    --status-approved-text: var(--herb-ink);    --status-approved-tint: var(--herb-tint);
-  --status-held: var(--slate);       --status-held-text: var(--slate-ink);       --status-held-tint: var(--slate-tint);
-  --status-refused: var(--tomato);   --status-refused-text: var(--tomato-ink);   --status-refused-tint: var(--tomato-tint);
-  --focus-ring: 2px solid var(--ink);
+:root {
+  /* Reference */
+  --cast: #1A1F12;     /* near-black olive: type, the dark field */
+  --olive: #272E18;    /* raised surface on the dark field */
+  --pass: #E9EBE2;     /* stainless-sage: the light field */
+  --plate: #F8F9F3;    /* raised surface on the light field, ticket stock */
+  --seam: #CBD0C0;     /* hairlines on the light field */
+  --yolk: #F5C518;     /* the piece in motion; the one action colour */
+  --chili: #BE2F19;    /* needs attention (text-safe on light) */
+  --steel: #5F675A;    /* paused, muted text on light */
+  --chili-lit: #FF7A63;/* needs attention on the dark field */
+  --steel-lit: #A9B0A0;/* paused, muted text on the dark field */
+
+  /* Semantic (light field by default) */
+  --bg: var(--pass);
+  --surface: var(--plate);
+  --border: var(--seam);
+  --text: var(--cast);
+  --text-muted: var(--steel);
+  --action: var(--yolk);
+  --on-action: var(--cast);
+  --attention: var(--chili);
+  --focus-ring: 3px solid var(--cast);
 
   /* Type */
-  --font-ui: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
-  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-display: "Bricolage Grotesque", "Arial Narrow", system-ui, sans-serif;
+  --font-ui: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-ticket: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Motion: the Corporate archetype (docs/brand/BRAND.md section 6). Transform and opacity only. */
-  --dur-instant: 0ms;
-  --dur-fast: 120ms;     /* press, toggle, hover in */
-  --dur-base: 200ms;     /* chip and badge change, row enter */
-  --dur-slow: 320ms;     /* panel, dialog */
-  --dur-reveal: 520ms;   /* the mark, first load only */
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
-  --ease-emphasis: cubic-bezier(0.05, 0.7, 0.1, 1);
-  --stagger: 40ms;       /* list entry; total under 400ms */
+  /* Motion: "slide and seat". Transform and opacity only. */
+  --t-tick: 90ms;      /* press, hover in, focus */
+  --t-slide: 260ms;    /* anything that changes state or moves along its axis */
+  --t-seat: 140ms;     /* the soft stop at the end of a slide */
+  --t-page: 380ms;     /* route and section change */
+  --t-rail: 420ms;     /* a ticket entering or leaving the rail */
+  --t-loop: 1400ms;    /* one tick-tock of the loader */
+  --ease-slide: cubic-bezier(0.45, 0, 0.2, 1);
+  --ease-seat: cubic-bezier(0.3, 0.9, 0.2, 1);
+  --stagger: 45ms;     /* under 300 ms in total */
+  --travel: 10px;      /* how far a seated piece rebounds or a ticket rises on entry is never more than this */
 }
 
-:root { color-scheme: light; }
-:root[data-theme="dark"] { color-scheme: dark; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { color-scheme: dark; }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #14110E; --surface: #1D1914; --border: #2E2822; --text: #F2EBDD; --text-muted: #A89E8E; --accent: #E08A57;
-    --status-pending: #F2C14E;  --status-pending-text: #F2C14E;  --status-pending-tint: #3A2D10;
-    --status-approved: #6FCB93; --status-approved-text: #6FCB93; --status-approved-tint: #12301F;
-    --status-held: #8FB0D6;     --status-held-text: #8FB0D6;     --status-held-tint: #1A2638;
-    --status-refused: #F08470;  --status-refused-text: #F08470;  --status-refused-tint: #3B1812;
-    --focus-ring: 2px solid var(--text);
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #14110E; --surface: #1D1914; --border: #2E2822; --text: #F2EBDD; --text-muted: #A89E8E; --accent: #E08A57;
-  --status-pending: #F2C14E;  --status-pending-text: #F2C14E;  --status-pending-tint: #3A2D10;
-  --status-approved: #6FCB93; --status-approved-text: #6FCB93; --status-approved-tint: #12301F;
-  --status-held: #8FB0D6;     --status-held-text: #8FB0D6;     --status-held-tint: #1A2638;
-  --status-refused: #F08470;  --status-refused-text: #F08470;  --status-refused-tint: #3B1812;
-  --focus-ring: 2px solid var(--text);
+/* The dark field. Opt in with data-field="dark" on any container, or on :root. */
+[data-field="dark"] {
+  --bg: var(--cast); --surface: var(--olive); --border: #3A4326;
+  --text: var(--plate); --text-muted: var(--steel-lit); --attention: var(--chili-lit);
+  --focus-ring: 3px solid var(--yolk);
 }
 
 /*
- * The mark as a status indicator. Put class "bind-mark" on an inline <svg> that holds the ring and clasp paths, and set
- * data-state to one of: idle, pending, approved, held, refused. The position of the clasp says the state; the colour
- * agrees with it. Always render a text label next to it. Do not set "approved" until the server confirms it.
+ * The mark as a status indicator. Put class "bind-mark" on an inline <svg> with two paths: .pr (the fixed piece) and .pl (the
+ * piece that slides on the seam). Set data-state to: idle, working, done, held, failed.
+ *   idle     seated, yolk and cast
+ *   working  piece 10 units up from the seat, yolk            "On it"
+ *   done     seated, the piece goes quiet (same colour)       "Done"
+ *   held     piece 4 units up, steel                          "Paused"
+ *   failed   piece 10 units down, chili                       "Needs you"
+ * Never set "done" before the server has confirmed it.
  */
-.bind-mark .ring { stroke: var(--text); }
-.bind-mark .clasp {
-  stroke: var(--accent);
-  transform-box: view-box; transform-origin: 32px 32px;
-  transition: transform var(--dur-slow) var(--ease-standard), stroke var(--dur-base) var(--ease-standard);
-}
-.bind-mark[data-state="pending"]  .clasp { stroke: var(--status-pending);  transform: translateY(-9px); }
-.bind-mark[data-state="approved"] .clasp { stroke: var(--status-approved); transform: none; }
-.bind-mark[data-state="held"]     .clasp { stroke: var(--status-held);     transform: rotate(16deg); }
-.bind-mark[data-state="refused"]  .clasp { stroke: var(--status-refused);  transform: translateY(-9px) rotate(-18deg); }
-
+.bind-mark .pr { fill: var(--text); }
+.bind-mark .pl { fill: var(--action); transform-box: view-box; transition: transform var(--t-slide) var(--ease-slide), fill var(--t-slide) var(--ease-slide); }
+.bind-mark[data-state="working"] .pl { transform: translateY(-10px); }
+.bind-mark[data-state="done"]    .pl { fill: var(--text); transform: none; }
+.bind-mark[data-state="held"]    .pl { fill: var(--text-muted); transform: translateY(-4px); }
+.bind-mark[data-state="failed"]  .pl { fill: var(--attention); transform: translateY(10px); }
 @media (prefers-reduced-motion: no-preference) {
-  /* A waiting request breathes by 3px. The open position and the label already say "waiting"; the motion is extra. */
-  .bind-mark[data-state="pending"] .clasp { animation: bind-wait 2400ms var(--ease-standard) 400ms infinite alternate; }
-  /* Seating gets one small settle when approval is confirmed. */
-  .bind-mark[data-state="approved"] .ring { animation: bind-settle 380ms var(--ease-standard) 1; transform-box: fill-box; transform-origin: center; }
+  .bind-mark[data-state="done"] .pr { animation: bind-knock 170ms var(--ease-seat) 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .bind-mark .clasp { transition-duration: 1ms; }
+  .bind-mark .pl { transition-duration: 1ms; }
 }
-@keyframes bind-wait { from { transform: translateY(-9px); } to { transform: translateY(-6px); } }
-@keyframes bind-settle { 0% { transform: scale(1); } 45% { transform: scale(1.035); } 100% { transform: scale(1); } }
+@keyframes bind-knock { 0% { transform: translateY(0); } 45% { transform: translateY(0.9px); } 100% { transform: translateY(0); } }

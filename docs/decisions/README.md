@@ -56,4 +56,5 @@ a live system: `docs/RELEASE_EVIDENCE.md` is the place for that.
 | [0040](0040-cleanup-round-13c.md) | Cleanup round for known defects | Accepted | The ledger GET is read-only, typed pause and restock codes, atomic approval decisions, and a restock key fix. |
 | [0041](0041-api-casing.md) | API field casing is frozen as it is; new fields are camelCase | Accepted | The API is already mixed. No rename now. Any future unification is versioned, and a UI should go through the SDK. |
 | [0042](0042-model-driven-mcp-check.md) | A real model drives the MCP server | Accepted | A real model used the tools correctly and resisted an injected note. One tool description was wrong and is fixed. |
-| [0043](0043-brand-direction-draft.md) | Brand direction, draft 1 | Proposed | A ring-and-latch mark that doubles as a status light, a warm palette where colour means state, and quiet motion. Assets only; the UI is untouched. |
+| [0043](0043-brand-direction-draft.md) | Brand direction, draft 1 | Superseded | An earlier ring-and-latch draft, withdrawn and removed. Replaced by ADR 0044. |
+| [0044](0044-brand-study-1.md) | Brand study 1: the handoff | Proposed | A dovetail mark, yolk-on-olive palette, ticket cards, slide-and-seat motion, a bump swipe and an honest loader. Assets only; the UI is untouched. |

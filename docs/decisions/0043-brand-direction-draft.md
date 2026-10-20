@@ -1,7 +1,7 @@
 # ADR 0043: Brand direction, draft 1 (assets only; the UI is not touched)
 
 ## Status
-Proposed (2026-10-20). Needs the owner's acceptance. Builds on ADR 0016 (the UI is orphaned and will be rebuilt) and the design inputs studied the same day.
+Superseded by ADR 0044 (2026-10-20); the files it described were removed. It was Proposed and never accepted. Needs the owner's acceptance. Builds on ADR 0016 (the UI is orphaned and will be rebuilt) and the design inputs studied the same day.
 
 ## Context
 The owner asked for a logo, an animated logo, colours, typography, assets, a landing page direction and a creative recommendation, produced with the supplied "Chief Brand Designer" prompt. `src/ui/` must not be edited.
