@@ -206,7 +206,11 @@ above, except where the class column says otherwise.
   is returned. It is not a market price.
 - **Arc live.** NOT_RUN. No network to the chain, no token, no `cast`. The live script (`scripts/verify-live-arc.ts`) was not run.
 - **Forge, Anvil, Slither.** BLOCKED. Their suites are listed in section 5.
-- **CI.** NOT_RUN. The workflow has never executed on GitHub, so its job definitions are unproven.
+- **CI.** BLOCKED. One manual run was dispatched on 2026-10-20 (run 39412218020, commit 23042f2). The `quality` and `contracts` jobs
+  ended `failure` after 3 seconds with no runner assigned, no steps and no log (the log download returns 404), and `verify-local`
+  was skipped. No step of the workflow executed, so its job definitions are still unproven. The cause is not visible from the
+  API. A job that never gets a runner usually points to the account or repository (Actions billing or spending limit, or Actions
+  settings), not to the workflow file. Owner action: open the run page, read the annotation, and fix the account setting.
 - **Browser E2E.** `npm run test:e2e` is BLOCKED (the UI is orphaned). `npm run test:e2e:legacy` is NOT_RUN.
 - **Circle CLI and surface providers.** Disabled unless `ENABLE_LIVE_CIRCLE_CLI` and `SURFACE_PROVIDER_VERIFIED` are set. Neither is set here.
 - **Serverless deployment (Vercel).** NOT_RUN. The entry `api/` runs no worker, and `/ready` and `/metrics` are not routed to the function (RUNBOOK section 1).
