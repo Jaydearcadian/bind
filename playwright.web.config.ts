@@ -28,7 +28,7 @@ export default defineConfig({
     { name: "phone", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "npx tsx src/index.ts",
+    command: "npm run sdk:build && npx tsx src/index.ts",
     url: `http://127.0.0.1:${PORT}/health`,
     reuseExistingServer: false,
     timeout: 60000,
