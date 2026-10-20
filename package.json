@@ -5,8 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "lint": "eslint src/ tests/",
-    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ tests/ sdk/src/",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p sdk/tsconfig.json",
     "test": "vitest run tests/unit/",
     "test:unit": "vitest run tests/unit/",
     "test:integration": "vitest run tests/integration/",
@@ -20,6 +20,8 @@
     "db:migrate:dev": "tsx src/db/migrate.ts",
     "map:functions": "tsx scripts/map-functions.ts",
     "api:spec": "tsx scripts/generate-openapi.ts",
+    "sdk:generate": "tsx scripts/generate-sdk.ts",
+    "sdk:build": "tsc -p sdk/tsconfig.json && cp sdk/src/generated/api.d.ts sdk/dist/generated/api.d.ts",
     "token:issue": "tsx scripts/issue-owner-token.ts",
     "credentials:rotate-key": "tsx scripts/rotate-credential-key.ts",
     "contract:artifact": "npm --prefix tools/compile-contract ci && node tools/compile-contract/generate.mjs"
@@ -57,6 +59,7 @@
     "@types/pg": "^8.11.10",
     "@types/uuid": "^10.0.0",
     "eslint": "^9.17.0",
+    "openapi-typescript": "^7.13.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1",
