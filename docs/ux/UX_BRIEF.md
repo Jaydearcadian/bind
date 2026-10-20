@@ -42,6 +42,21 @@ Status: draft. No UI has been built. `src/ui/` stays untouched (ADR 0016). This 
 - Several owners per workspace, with the last owner always protected (as the API behaves today). An owner-plus-admins role is a later idea.
 - First sign-in with no workspace: "Start a workspace" or "I have an invite link" (recommended; awaiting confirmation).
 
+## First run (decided)
+- First sign-in with no workspace: "Start a workspace" or "I have an invite link".
+- Team setup: a gallery of ready-made teams (only the kitchen team is ready; others show "coming") plus a clear "start blank", with a "describe your business" box that only routes to a ready team or blank and labels what is ready. Generated suggestions are a later project.
+- Setup asks two things (name, team). Limits and connections are asked the first time an agent needs one. A "Getting started" list stays on Today until done.
+- After setup: Today with the starter list. No sample items in a real workspace (never fabricate activity); sample items exist only in the demo workspace, clearly labelled.
+
+## Today and approvals (decided)
+- A "Needs you" item: plain headline, why it is waiting, who asked and when, amount or effect, what happens if nothing is done (including expiry), a simulated or live label, an irreversible marker where it commits the business, and a tap through to details.
+- Failures sit at the top of "Needs you", calm and specific, with a distinct Failed status and the next step beside them.
+- "What is happening": a plain-language feed by default, with jobs in progress as a slim strip above it.
+- Stale or offline: a quiet banner with "Refresh now". Data stays visible with its age. Server-dependent actions pause with a reason. Nothing shows as done before the server confirms.
+- Approval panel (open, read, confirm) shows: the action in plain words; the amount against the limit and threshold; what was compared and why this was chosen; what happens next; what happens on reject; simulated or live; an irreversible marker; evidence and history behind "Show details"; the expiry; supplier and customer text as quoted, untrusted data; who can still change it and until when (for example revoke before submission); and a decision trail.
+- Confirm step is tiered by amount: one deliberate tap for small items, press and hold over the owner's approval threshold, typing the amount for the largest. Settings may tighten it, never loosen it below one deliberate tap.
+- Activity: a timeline by day with filters, and "Follow this" on any item opening its full history.
+
 ## Suggested, awaiting a yes
 - Headline "Connect once. Get back to work." with a specific subline ("Bind connects your tools to agents that can actually use them, and you decide what they are allowed to do.").
 - Main button: "Try a demo workspace" (simulated, labelled, throwaway, capped lifetime), secondary "Start your own workspace".
