@@ -42,6 +42,22 @@ function rawRequest(port: number, method: string, rawPath: string): Promise<Answ
   });
 }
 
+/** The newest modification time of any file under a folder. */
+function newestMtime(dir: string): number {
+  return fs.readdirSync(dir, { withFileTypes: true }).reduce((newest, entry) => {
+    const full = path.join(dir, entry.name);
+    const at = entry.isDirectory() ? newestMtime(full) : fs.statSync(full).mtimeMs;
+    return Math.max(newest, at);
+  }, 0);
+}
+
+/** True when sdk/dist/index.js exists and is newer than every file in sdk/src, so a rebuild would change nothing. */
+function sdkBuildIsCurrent(): boolean {
+  const built = path.join(SDK_DIST, "index.js");
+  if (!fs.existsSync(built)) return false;
+  return fs.statSync(built).mtimeMs > newestMtime(path.join(ROOT, "sdk", "src"));
+}
+
 /** Every compiled .js file under sdk/dist, as paths relative to it (for example "generated/operations.js"). */
 function compiledJs(dir: string, prefix = ""): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -56,14 +72,15 @@ describe("/sdk/ serves the compiled browser SDK only (ADR 0056)", () => {
   let port = 0;
 
   beforeAll(async () => {
-    // The served files are the build output, so build it first. A failure here fails the suite.
-    execSync("npm run sdk:build", { cwd: ROOT, stdio: "pipe" });
+    // The served files are the build output. Rebuild only when sdk/src is newer than sdk/dist, because a rebuild rewrites
+    // sdk/dist in place and must not race another run's server. A failure here fails the suite.
+    if (!sdkBuildIsCurrent()) execSync("npm run sdk:build", { cwd: ROOT, stdio: "pipe" });
     const app = createApp({ rateLimits: { enabled: false }, metrics: { token: null } });
     server = app.listen(0, "127.0.0.1");
     await new Promise<void>((resolve) => server.once("listening", () => resolve()));
     const addr = server.address();
     port = typeof addr === "object" && addr ? addr.port : 0;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     server.closeAllConnections();

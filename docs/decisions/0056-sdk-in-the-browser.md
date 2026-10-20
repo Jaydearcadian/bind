@@ -17,6 +17,9 @@ browser as compiled, and no bundler is needed.
   (`/^\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.js$/`). So `.d.ts` files, source maps, dotfiles and any path with `..` are not
   served, and a miss is a 404 (`fallthrough: false`, so the website's catch-all page is not used). It is static middleware, not an
   `app.get` route, so it needs no registry entry (`src/api/registry.ts`). Cache: `public, max-age=300`, as the other assets.
+  **Cache window (known trade-off):** the module filenames are not hashed, so after a deploy a browser can hold an old and a new
+  file together for up to five minutes and mix them. Acceptable for now; revisit with hashed filenames when the app has a build
+  step.
 - **Build.** `npm run build` now runs `npm run sdk:build` after the server build, so `npm run build && node dist/index.js` serves
   the SDK. The Playwright web suite's `webServer` runs `npm run sdk:build && npx tsx src/index.ts`, so the dev server has the
   files too. No new dependency.
