@@ -26,6 +26,8 @@
     "mcp:start": "node mcp/dist/mcp/src/main.js",
     "token:issue": "tsx scripts/issue-owner-token.ts",
     "credentials:rotate-key": "tsx scripts/rotate-credential-key.ts",
+    "accounting:backfill": "tsx scripts/backfill-journal.ts",
+    "test:clean": "tsx scripts/clean-test-fixtures.ts",
     "contract:artifact": "npm --prefix tools/compile-contract ci && node tools/compile-contract/generate.mjs"
   },
   "dependencies": {

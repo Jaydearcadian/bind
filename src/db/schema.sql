@@ -325,6 +325,14 @@ CREATE TABLE IF NOT EXISTS effects (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_effects_workspace_status ON effects(workspace_id, status);
+-- Query indexes (ADR 0040). The first start builds them, and the build takes a lock that blocks writes to the table while it runs
+-- (docs/RUNBOOK.md section 3.1). A name that already exists makes IF NOT EXISTS skip the statement silently, so each name here
+-- is new: idx_workflows_state is already (workspace_id, state), so the state-only index is idx_workflows_state_global.
+-- Each serves a query across workspaces: metrics (GROUP BY state, GROUP BY status), the worker (settling orders), unresolved effects.
+CREATE INDEX IF NOT EXISTS idx_audit_order ON audit_logs ((evidence->>'orderId'));
+CREATE INDEX IF NOT EXISTS idx_workflows_state_global ON workflows(state);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_effects_status ON effects(status, updated_at);
 
 -- Per-workspace access tokens (src/auth/tokens.ts, ADR 0021). Only the SHA-256 hash of a token is stored.
 -- The plaintext is returned once when it is issued and is never written anywhere.

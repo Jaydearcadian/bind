@@ -113,7 +113,8 @@ replayed order from reserving stock twice (ADR 0026).
 - **Notices are not delivered.** The emitter is still the simulator (ADR 0025).
 - **A pre-existing hazard, not changed here.** `createWorkflow` upserts on the idempotency key and returns the existing row, but
   `startReplenishment` keeps its own new id. If a sku's earlier workflow has reached a terminal state, and a later trigger computes the
-  same available quantity, the two can collide. The lock and the dedupe make this unlikely, and it is recorded for a later task.
+  same available quantity, the two can collide. The lock and the dedupe make this unlikely, and it is recorded for a later task. Fixed by ADR 0040: the key
+  now includes a round after a terminal workflow, and a start that finds the key existing returns that workflow.
 
 ## Tests
 - `tests/integration/customer-fulfilment-effects.test.ts` (15 tests): one notice per declined, held and partly available decision; no

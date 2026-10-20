@@ -444,7 +444,10 @@ describe("Connector credentials: encrypted at rest, owner-only, honest status (A
     await revokeCredential(wsA, revokedConn, ACTOR);
 
     const pending = (
-      await query(`SELECT COUNT(*)::int AS n FROM connector_credentials WHERE status <> 'revoked' AND key_id <> $1;`, [sha8(newKey)])
+      await query(
+        `SELECT COUNT(*)::int AS n FROM connector_credentials WHERE status <> 'revoked' AND key_id <> $1 AND workspace_id = ANY($2::text[]);`,
+        [sha8(newKey), allWorkspaceIds]
+      )
     ).rows[0].n as number;
     expect(pending).toBeGreaterThanOrEqual(2);
 
@@ -453,14 +456,17 @@ describe("Connector credentials: encrypted at rest, owner-only, honest status (A
       config.BIND_CREDENTIAL_KEY = newKey;
       config.BIND_CREDENTIAL_KEY_PREVIOUS = oldKey;
 
-      const first = await rotateCredentialKeys();
+      const first = await rotateCredentialKeys({ workspaceId: allWorkspaceIds });
       expect(first).toEqual({ rotated: pending, skipped: 0, failed: 0 });
-      const left = await query(`SELECT COUNT(*)::int AS n FROM connector_credentials WHERE status <> 'revoked' AND key_id <> $1;`, [sha8(newKey)]);
+      const left = await query(
+        `SELECT COUNT(*)::int AS n FROM connector_credentials WHERE status <> 'revoked' AND key_id <> $1 AND workspace_id = ANY($2::text[]);`,
+        [sha8(newKey), allWorkspaceIds]
+      );
       expect(left.rows[0].n).toBe(0);
       const revokedRow = await row(wsA, revokedConn);
       expect(revokedRow.ciphertext).toBeNull();
 
-      const second = await rotateCredentialKeys();
+      const second = await rotateCredentialKeys({ workspaceId: allWorkspaceIds });
       expect(second.rotated).toBe(0);
       expect(second.failed).toBe(0);
       expect(second.skipped).toBeGreaterThanOrEqual(2);
@@ -553,5 +559,71 @@ describe("Connector credentials: encrypted at rest, owner-only, honest status (A
     expect(typeof rows[0].evidence.fingerprint).toBe("string");
     const other = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE actor_id = 'owner@bind.local' AND workspace_id = $1;`, [wsA]);
     expect(other.rows[0].n).toBe(0);
+  });
+
+  // Rotation scope (ADR 0040). These use their own workspaces, created here and deleted here.
+  async function keyIdOf(workspaceId: string, connectorId: string): Promise<string> {
+    const res = await query(`SELECT key_id FROM connector_credentials WHERE workspace_id = $1 AND connector_id = $2;`, [workspaceId, connectorId]);
+    return res.rows[0].key_id as string;
+  }
+
+  it("rotation can be limited to one workspace", async () => {
+    const isoA = `ws-cred-iso-a-${run}`;
+    const isoB = `ws-cred-iso-b-${run}`;
+    await provisionWorkspace(isoA, "Credential Isolation A", "kitchen-v1");
+    await provisionWorkspace(isoB, "Credential Isolation B", "kitchen-v1");
+    const oldKey = config.BIND_CREDENTIAL_KEY!;
+    const newKey = randomBytes(32).toString("base64");
+    const connA = connId("limit-a");
+    const connB = connId("limit-b");
+    await setCredential({ workspaceId: isoA, connectorId: connA, kind: CONNECTOR_KINDS_OK, secret: seeded(), actor: ACTOR });
+    await setCredential({ workspaceId: isoB, connectorId: connB, kind: CONNECTOR_KINDS_OK, secret: seeded(), actor: ACTOR });
+
+    const saved = { current: config.BIND_CREDENTIAL_KEY, previous: config.BIND_CREDENTIAL_KEY_PREVIOUS };
+    try {
+      config.BIND_CREDENTIAL_KEY = newKey;
+      config.BIND_CREDENTIAL_KEY_PREVIOUS = oldKey;
+      const limited = await rotateCredentialKeys({ workspaceId: isoA });
+      expect(limited).toEqual({ rotated: 1, skipped: 0, failed: 0 });
+      expect(await keyIdOf(isoA, connA)).toBe(sha8(newKey));
+      // The other workspace is not touched by a rotation limited to isoA.
+      expect(await keyIdOf(isoB, connB)).toBe(sha8(oldKey));
+    } finally {
+      config.BIND_CREDENTIAL_KEY = saved.current;
+      config.BIND_CREDENTIAL_KEY_PREVIOUS = saved.previous;
+      await query(`DELETE FROM workspaces WHERE id = ANY($1::text[]);`, [[isoA, isoB]]);
+    }
+  });
+
+  it("rotation without a filter still covers every workspace", async () => {
+    const isoA = `ws-cred-all-a-${run}`;
+    const isoB = `ws-cred-all-b-${run}`;
+    await provisionWorkspace(isoA, "Credential Coverage A", "kitchen-v1");
+    await provisionWorkspace(isoB, "Credential Coverage B", "kitchen-v1");
+    const oldKey = config.BIND_CREDENTIAL_KEY!;
+    const newKey = randomBytes(32).toString("base64");
+    const connA = connId("all-a");
+    const connB = connId("all-b");
+    await setCredential({ workspaceId: isoA, connectorId: connA, kind: CONNECTOR_KINDS_OK, secret: seeded(), actor: ACTOR });
+    await setCredential({ workspaceId: isoB, connectorId: connB, kind: CONNECTOR_KINDS_OK, secret: seeded(), actor: ACTOR });
+
+    const saved = { current: config.BIND_CREDENTIAL_KEY, previous: config.BIND_CREDENTIAL_KEY_PREVIOUS };
+    try {
+      config.BIND_CREDENTIAL_KEY = newKey;
+      config.BIND_CREDENTIAL_KEY_PREVIOUS = oldKey;
+      // Other suites may leave rows that cannot be decrypted; only the counts for these two workspaces are asserted.
+      const all = await rotateCredentialKeys();
+      expect(all.rotated).toBeGreaterThanOrEqual(2);
+      expect(await keyIdOf(isoA, connA)).toBe(sha8(newKey));
+      expect(await keyIdOf(isoB, connB)).toBe(sha8(newKey));
+    } finally {
+      // Put every row back under the test key, so later tests in this file still decrypt the rows of other workspaces.
+      config.BIND_CREDENTIAL_KEY = oldKey;
+      config.BIND_CREDENTIAL_KEY_PREVIOUS = newKey;
+      await rotateCredentialKeys();
+      config.BIND_CREDENTIAL_KEY = saved.current;
+      config.BIND_CREDENTIAL_KEY_PREVIOUS = saved.previous;
+      await query(`DELETE FROM workspaces WHERE id = ANY($1::text[]);`, [[isoA, isoB]]);
+    }
   });
 });

@@ -350,6 +350,9 @@ export const ROUTES: RouteSpec[] = [
     sampleBody: { sku: "FOOD-BUTTER-36LB" },
     responses: {
       200: ok("The replenishment workflow, and its order or approval if one exists.", ReplenishResultSchema),
+      400: err(
+        "Malformed JSON, a NUL character, or a missing or non-text sku. Also refused: a paused workspace (code AGENTS_PAUSED, ADR 0023), an unknown sku, and an item with sufficient stock."
+      ),
     },
     contractTested: true,
   }),
@@ -1093,7 +1096,7 @@ export const ROUTES: RouteSpec[] = [
       200: ok("Processed, or a duplicate. Surface and standard answers have different fields.", z.union([SurfaceEventResultSchema, StandardWebhookResultSchema])),
       400: err("A standard event without provider and eventId, or a surface event the server cannot process."),
       401: err("The signature or the timestamp is wrong or expired. The same body answers an unknown workspace."),
-      403: err("The surface actor has no binding in this workspace, or a staff binding asked for an owner action (SURFACE_ROLE_VIOLATION)."),
+      403: err("Actor is not authorized for this event: no binding in this workspace, or a staff binding asked for an owner action. The code is SURFACE_ROLE_VIOLATION."),
       404: err("A surface approval decision for an approval that is not in this workspace (APPROVAL_NOT_FOUND)."),
       409: err("A surface approval decision that cannot be made now."),
       503: { description: "Webhook signing is not configured, or the event could not be recorded (retry later).", schema: z.union([ErrorBody, StandardWebhookResultSchema]) },

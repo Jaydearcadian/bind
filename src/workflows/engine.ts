@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { query } from "../db/client.js";
 import { WorkflowRecord, WorkflowState, WorkflowType, TransitionOptions } from "./types.js";
 import { EffectClass } from "../policy/effect-classifier.js";
@@ -60,7 +61,8 @@ export class WorkflowEngine {
   }
 
   /**
-   * Creates a new durable workflow record in DRAFT state.
+   * Creates a new durable workflow record in DRAFT state, or returns the existing one with the same idempotency key.
+   * `created` says which.
    */
   async createWorkflow(
     id: string,
@@ -68,7 +70,7 @@ export class WorkflowEngine {
     workflowType: WorkflowType,
     idempotencyKey: string,
     initialContext: Record<string, any> = {}
-  ): Promise<WorkflowRecord> {
+  ): Promise<WorkflowRecord & { created: boolean }> {
     const res = await query(
       `INSERT INTO workflows (id, workspace_id, workflow_type, state, context_data, idempotency_key, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
@@ -76,7 +78,9 @@ export class WorkflowEngine {
        RETURNING *;`,
       [id, workspaceId, workflowType, WorkflowState.DRAFT, safeJsonStringify(initialContext), idempotencyKey]
     );
-    return this.mapRow(res.rows[0]);
+    // An existing row comes back with its own id. `created` is true only when the row is the one this call inserted (ADR 0040).
+    const row = res.rows[0];
+    return { ...this.mapRow(row), created: row.id === id };
   }
 
   /**
@@ -133,28 +137,33 @@ export class WorkflowEngine {
     action: string,
     policyDecision: PolicyDecision,
     evidence: Record<string, any> = {},
-    txHash?: string
+    txHash?: string,
+    /** When given, the row is written in that client's transaction (ADR 0040). Without it, a plain pool statement. */
+    client?: PoolClient
   ): Promise<void> {
     const auditId = newId("audit");
     // Redact any potential private keys or sensitive tokens before logging
     const sanitizedEvidence = redactDeep(evidence);
 
-    await query(
-      `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW());`,
-      [
-        auditId,
-        workspaceId,
-        workflowId,
-        actorType,
-        actorId,
-        effectClass,
-        action,
-        policyDecision,
-        safeJsonStringify(sanitizedEvidence),
-        txHash || null,
-      ]
-    );
+    const sql = `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW());`;
+    const params = [
+      auditId,
+      workspaceId,
+      workflowId,
+      actorType,
+      actorId,
+      effectClass,
+      action,
+      policyDecision,
+      safeJsonStringify(sanitizedEvidence),
+      txHash || null,
+    ];
+    if (client) {
+      await client.query(sql, params);
+    } else {
+      await query(sql, params);
+    }
   }
 
   /**
@@ -191,12 +200,13 @@ export class WorkflowEngine {
     approvalId: string,
     decision: ApprovalDecision,
     decidedBy: string,
-    reason?: string
+    reason?: string,
+    /** When given, the decision is written in that client's transaction, so its audit row can share it (ADR 0040). */
+    client?: PoolClient
   ): Promise<{ workflowId: string }> {
     const target = APPROVAL_DECISION_TARGETS[decision];
     const patch = decision === "approved" ? { approvedBy: decidedBy } : {};
-    const res = await query(
-      `WITH decided AS (
+    const sql = `WITH decided AS (
          UPDATE approvals
          SET status = $1, decided_by = $2, reason = $3, decided_at = NOW()
          WHERE id = $4 AND status = 'pending' AND expires_at > NOW()
@@ -208,17 +218,17 @@ export class WorkflowEngine {
            context_data = context_data || $7::jsonb,
            updated_at = NOW()
        WHERE id IN (SELECT entity_id FROM decided) AND state = 'awaiting_approval'
-       RETURNING id;`,
-      [
-        decision,
-        decidedBy,
-        reason || null,
-        approvalId,
-        target.workflowState,
-        target.errorMessage(reason),
-        safeJsonStringify(patch),
-      ]
-    );
+       RETURNING id;`;
+    const params = [
+      decision,
+      decidedBy,
+      reason || null,
+      approvalId,
+      target.workflowState,
+      target.errorMessage(reason),
+      safeJsonStringify(patch),
+    ];
+    const res = client ? await client.query(sql, params) : await query(sql, params);
 
     if (res.rowCount === 0) {
       await this.explainUnresolvedApproval(approvalId);

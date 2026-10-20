@@ -110,9 +110,9 @@ One capacity unit is one unit of quantity; `units` is the sum of line quantities
   The status values are checked by the database. A workspace's `agent_roles` id is `role_<workspace>_<role>`, which must fit `VARCHAR(64)`.
 
 ## Not done (later tasks)
+The owner notice and the low-stock replenishment trigger were Task 8b and are done (ADR 0027). They are not listed here.
 - **Partial acceptance.** A partly covered order is `partially_available` with no reservation. The customer re-submits with a new `externalRef`.
 - **Prices and payment.** Customer prices, invoices and payment are out of scope. A customer line is an inventory SKU, and nothing is charged.
-- **Owner notification and the low-stock replenishment trigger** (Task 8b).
 - **SKU-to-recipe consumption.** A customer line consumes its own SKU, not the ingredients of a dish.
 - **Delivery tracking** of fulfilled orders.
 - **Re-check of a held order when the role is granted.** A grant does not decide held orders retroactively. The owner accepts them.

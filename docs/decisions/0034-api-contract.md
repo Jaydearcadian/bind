@@ -151,10 +151,10 @@ checked by the access test. The limit `MAX_NOT_CONTRACT_TESTED` in the contract 
 - Shared row schemas are inlined, so `docs/openapi.json` is about 400 KB. `$ref` components for the rows are a later
   refinement; the document is correct without them.
 - `GET /api/openapi.json` builds the document on each request, as specified. If it shows in a profile, cache it on first use.
-- Behaviour the contract records but does not change: the ledger GET writes journal entries when it backfills reconciled
-  orders (a read with a write); a customer order is created with `201` whatever its decision (`needs_owner`, `declined`),
-  so the status code does not carry the decision; the policy route accepts numeric strings through `Number()`, while the
-  schema says number; and the webhook route's 200 is a union of two shapes.
+- Behaviour the contract records but does not change: a customer order is created with `201` whatever its decision
+  (`needs_owner`, `declined`), so the status code does not carry the decision; and the webhook route's 200 is a union of two
+  shapes. Two items the first draft of this list recorded are fixed by ADR 0040: the ledger GET no longer writes, and the policy
+  route takes only JSON numbers.
 - The release evidence (`docs/RELEASE_EVIDENCE.md`) is updated in the release step, not here.
 
 ## Evidence

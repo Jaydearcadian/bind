@@ -10,7 +10,7 @@ import { config } from "../config/env.js";
 import { issueToken, listTokens, revokeToken, TokenError, type WorkspaceRole } from "../auth/tokens.js";
 import { authenticated, workspaceMember, workspaceOwner, anyWorkspaceOwner } from "../auth/middleware.js";
 import { provisionWorkspace, listTemplates } from "../templates/registry.js";
-import { ProcurementWorkflowRunner } from "../workflows/procurement.js";
+import { AgentsPausedError, ProcurementWorkflowRunner } from "../workflows/procurement.js";
 import { ApprovalDecisionError } from "../workflows/engine.js";
 import {
   acceptCustomerOrder,
@@ -77,6 +77,7 @@ import {
 import { newId } from "../utils/ids.js";
 import { publicErrorMessage, rejectNulInput, requestErrorHandler, wrapAsyncHandlers } from "./errors.js";
 import { log } from "../observability/logger.js";
+import { redactText } from "../utils/redact.js";
 import { requestContext } from "../observability/request-context.js";
 import { buildRateLimitScopes, rateLimitsEnabled, type RateLimitOptions } from "../security/rate-limit.js";
 import { rateLimitGate } from "../security/rate-limit-middleware.js";
@@ -432,9 +433,13 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
 
   // The OpenAPI document, built from the route registry at request time (docs/decisions/0034). Public: it describes no data.
   // Sent as the same bytes as docs/openapi.json (serializeOpenApiDocument), so a served copy equals the committed file.
+  // Built once, on first use, from the registry, and kept as bytes for this app (ADR 0040). The committed file is not read at
+  // run time: it is not part of the serverless bundle, and the registry is the source it is generated from.
+  let servedOpenApi: string | undefined;
   app.get("/api/openapi.json", (_req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
-    res.type("application/json").send(serializeOpenApiDocument(buildOpenApiDocument(ROUTES, API_VERSION)));
+    servedOpenApi ??= serializeOpenApiDocument(buildOpenApiDocument(ROUTES, API_VERSION));
+    res.type("application/json").send(servedOpenApi);
   });
 
   // Workspaces. The list returns only the caller's own workspace.
@@ -504,8 +509,9 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   // Update workspace spending policy & settlement address
   app.put("/api/workspaces/:id/policy", ...workspaceOwner, async (req: Request, res: Response) => {
     const { id } = req.params;
-    const budgetDailyLimitCents = Number(req.body.budgetDailyLimitCents);
-    const approvalThresholdCents = Number(req.body.approvalThresholdCents);
+    // Only a JSON number is read. A numeric string (or any other type) is NaN here and is refused below (ADR 0040).
+    const budgetDailyLimitCents = typeof req.body.budgetDailyLimitCents === "number" ? req.body.budgetDailyLimitCents : NaN;
+    const approvalThresholdCents = typeof req.body.approvalThresholdCents === "number" ? req.body.approvalThresholdCents : NaN;
     const settlementAddress = req.body.settlementAddress;
 
     // A provided address must be an EVM address. It is stored checksummed (the same normalizer as a supplier payee).
@@ -606,6 +612,10 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       const result = await procurementRunner.startReplenishment(id, sku, "owner_manual_trigger");
       res.json(result);
     } catch (err: any) {
+      // A paused workspace keeps the same 400 and message, and adds the typed code (ADR 0023, ADR 0040).
+      if (err instanceof AgentsPausedError) {
+        return res.status(400).json({ error: publicErrorMessage(err), code: err.code });
+      }
       res.status(400).json({ error: publicErrorMessage(err) });
     }
   });
@@ -1123,7 +1133,16 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       });
       res.json(confirmed);
     } catch (err: any) {
-      res.status(400).json({ error: publicErrorMessage(err) });
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ error: publicErrorMessage(err) });
+      }
+      // The detail of a refused confirm names the workspace and the document (ids from the URL, ADR 0031). It is logged,
+      // redacted and cut, and never returned. The client gets a fixed text with the same status.
+      log.warn("documents.confirm_refused", {
+        requestId: req.id,
+        error: redactText(err instanceof Error ? err.message : "non-error value").slice(0, 300),
+      });
+      res.status(400).json({ error: "Document could not be confirmed" });
     }
   });
 
@@ -1339,7 +1358,13 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       authMeta = await verifyAndAuthorizeSurfaceEvent(event);
     } catch (err: any) {
       if (err instanceof SurfaceAuthorizationError) {
-        return res.status(403).json({ error: publicErrorMessage(err) });
+        // The detail names the actor id from the event (untrusted text, ADR 0031). It is logged, redacted and cut, and
+        // never returned. The client gets a fixed message and the machine code (ADR 0040).
+        log.warn("surface.authorization_refused", {
+          requestId: req.id,
+          error: redactText(err.message).slice(0, 300),
+        });
+        return res.status(403).json({ error: "Actor is not authorized for this event", code: "SURFACE_ROLE_VIOLATION" });
       }
       throw err;
     }
@@ -1373,6 +1398,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
               `surface_${event.surface}`
             );
           } catch (err: any) {
+            // A pause set after the check above is refused here with the typed code (ADR 0040). Before the pause is seen, the
+            // event is answered 200 with replenishmentSkipped, as above.
+            if (err instanceof AgentsPausedError) {
+              return res.status(400).json({ error: publicErrorMessage(err), code: err.code });
+            }
             return res.status(400).json({ error: publicErrorMessage(err) });
           }
         }

@@ -70,3 +70,9 @@ the `effects` table in `src/db/schema.sql`.
   `generateIdempotencyKey` is used in production (`src/workflows/procurement.ts`). Task 5b decides whether the stores
   are removed or replaced by this ledger.
 - The `idempotency_keys` table is still required by `tests/integration/db-migrations.test.ts`, so it stays.
+
+### Follow-up: the stores are deleted (ADR 0040)
+Task 5b's decision is taken: `MemoryIdempotencyStore`, `PostgresIdempotencyStore`, their `IdempotencyStore` interface and
+`DuplicateExecutionError` are deleted from `src/utils/idempotency.ts`, with the two tests that used only them. Reason: no production
+caller, and the effects ledger is the single mechanism. Kept: `canonicalStringify` and `generateIdempotencyKey`, and the
+`idempotency_keys` table (still required by `db-migrations.test.ts`).

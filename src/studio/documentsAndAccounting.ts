@@ -5,7 +5,7 @@ import { query } from "../db/client.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import { OrderSettlementService } from "../workflows/settlement.js";
 import type { EvidenceLoader } from "../workflows/settlement.js";
-import { recordIdempotentJournalEntry } from "../accounting/journal.js";
+import { JournalConflictError, recordIdempotentJournalEntry } from "../accounting/journal.js";
 import type { AuditActor } from "../auth/tokens.js";
 import { MAX_AMOUNT_CENTS, MAX_QUANTITY } from "../adapters/suppliers/validate.js";
 export { recordIdempotentJournalEntry } from "../accounting/journal.js";
@@ -491,24 +491,76 @@ export async function listStagedDocuments(workspaceId: string) {
   return res.rows;
 }
 
-export async function getWorkspaceAccountingLedger(workspaceId: string) {
-  // Backfill any already-reconciled orders in this workspace that don't have a journal entry yet
+/** Counts from one workspace's journal backfill. Holds no amounts, memos or hashes. */
+export interface JournalBackfillReport {
+  workspaceId: string;
+  /** Reconciled orders in the workspace. */
+  reconciled: number;
+  /** Reconciled orders that already have an entry. */
+  withEntry: number;
+  /** Reconciled orders that need a write: no entry yet, or an entry without the hash the order has. */
+  missing: number;
+  /** Writes made. Always 0 when `apply` is false. */
+  written: number;
+  /** Orders whose key is held by another workspace or another amount. Nothing was changed for them. */
+  conflicts: number;
+}
+
+/**
+ * Writes the journal entries that a reconciled order should have and does not. An operator runs it (scripts/backfill-journal.ts),
+ * never a read: the ledger GET returns stored entries only (docs/RUNBOOK.md). `apply: false` counts and writes nothing.
+ * Each write goes through recordIdempotentJournalEntry, so a repeat run writes nothing new.
+ */
+export async function backfillReconciledJournalEntries(
+  workspaceId: string,
+  opts: { apply: boolean }
+): Promise<JournalBackfillReport> {
   const reconciledOrders = await query(
-    `SELECT * FROM orders WHERE workspace_id = $1 AND status = 'reconciled';`,
+    `SELECT * FROM orders WHERE workspace_id = $1 AND status = 'reconciled' ORDER BY created_at ASC, id ASC;`,
     [workspaceId]
   );
+  const report: JournalBackfillReport = {
+    workspaceId,
+    reconciled: reconciledOrders.rows.length,
+    withEntry: 0,
+    missing: 0,
+    written: 0,
+    conflicts: 0,
+  };
   for (const ord of reconciledOrders.rows) {
-    await recordIdempotentJournalEntry({
-      workspaceId,
-      orderId: ord.id,
-      orderNumber: ord.order_number,
-      itemName: ord.item_name,
-      supplierName: ord.supplier_name,
-      amountCents: BigInt(ord.total_price_cents),
-      txHash: ord.tx_hash || undefined,
-    });
+    const existing = await query(`SELECT tx_hash FROM accounting_journal_entries WHERE idempotency_key = $1;`, [
+      `idem_je_${ord.id}`,
+    ]);
+    const hasEntry = existing.rows.length > 0;
+    if (hasEntry) report.withEntry += 1;
+    const needsWrite = !hasEntry || (existing.rows[0].tx_hash === null && Boolean(ord.tx_hash));
+    if (!needsWrite) continue;
+    report.missing += 1;
+    if (!opts.apply) continue;
+    try {
+      await recordIdempotentJournalEntry({
+        workspaceId,
+        orderId: ord.id,
+        orderNumber: ord.order_number,
+        itemName: ord.item_name,
+        supplierName: ord.supplier_name,
+        amountCents: BigInt(ord.total_price_cents),
+        txHash: ord.tx_hash || undefined,
+      });
+      report.written += 1;
+    } catch (err) {
+      if (err instanceof JournalConflictError) {
+        report.conflicts += 1;
+        continue;
+      }
+      throw err;
+    }
   }
+  return report;
+}
 
+/** The stored journal entries of a workspace, newest first, up to 100. Read-only. */
+export async function getWorkspaceAccountingLedger(workspaceId: string) {
   const res = await query(
     `SELECT * FROM accounting_journal_entries WHERE workspace_id = $1 ORDER BY created_at DESC LIMIT 100;`,
     [workspaceId]

@@ -62,7 +62,7 @@ with no benefit.
 The conflict rule is set by the upsert in `recordIdempotentJournalEntry` (see "Fixed in this commit").
 Test coverage: `tests/integration/journal-idempotency.test.ts`.
 
-### 4. The idempotency stores are kept for now
+### 4. The idempotency stores are kept for now (superseded: deleted by ADR 0040)
 `MemoryIdempotencyStore` and `PostgresIdempotencyStore` in `src/utils/idempotency.ts` have no production callers. Each
 has a comment saying so. They are not deleted, because `tests/unit/idempotency.test.ts` still uses the memory store and
 the `idempotency_keys` table is required by `tests/integration/db-migrations.test.ts`.

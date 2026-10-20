@@ -307,9 +307,9 @@ describe("the MCP server against the real API (docs/decisions/0037)", () => {
       const refused = await call(session, "request_replenishment", { sku: "FOOD-MCP-FLOUR" });
       expect(refused.isError).toBe(true);
       expect(refused.body.error.status).toBe(400);
-      // This route sends no structured code: the server writes its code into the message, as "[AGENTS_PAUSED] ...".
-      // The MCP reports the API answer as it is, so the code is read from the message (ADR 0037, finding).
-      expect(refused.body.error.code).toBeNull();
+      // The route answers the typed code in the body, next to the message, which keeps its "[AGENTS_PAUSED] ..." tag (ADR 0040).
+      // The MCP reports the API answer as it is, so the code is read from the body.
+      expect(refused.body.error.code).toBe("AGENTS_PAUSED");
       expect(refused.body.error.reasonCodes).toBeNull();
       expect(refused.body.error.message).toContain("[AGENTS_PAUSED]");
       expect(refused.body.error.requestId).toEqual(expect.any(String));

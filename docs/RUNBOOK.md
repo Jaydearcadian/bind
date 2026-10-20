@@ -126,6 +126,13 @@ npm run db:migrate
 
 Later starts do nothing for these columns.
 
+**Query indexes (ADR 0040).** The first start also builds four indexes: `idx_audit_order` (audit rows by `orderId`),
+`idx_workflows_state_global` (workflows by state, across workspaces), `idx_orders_status` and `idx_effects_status`. A plain
+`CREATE INDEX` blocks writes to its table while it builds. On a large `audit_logs`, `workflows`, `orders` or `effects` table, run
+the migration in a maintenance window as above, or build the index first with `CREATE INDEX CONCURRENTLY` (same definition). The
+later `IF NOT EXISTS` then skips it. The workflow index has a different name from `idx_workflows_state` (workspace and state):
+`IF NOT EXISTS` skips a name that already exists, so a reused name would silently build nothing.
+
 ### 3.2 Migration lock
 
 Migrations take the session advisory lock `migrations` on a dedicated connection. Two instances that start together run the DDL
@@ -588,4 +595,40 @@ in it is lost. A database setting bounds the problem for the future; it is not s
 `ALTER DATABASE <name> SET idle_in_transaction_session_timeout = '60s';` (an operator decision, made per database).
 
 The poll route is the way for a client that cannot hold a connection (serverless). It shares the same horizon.
+
+## 16. Operator and development scripts
+
+### 16.1 Accounting journal backfill (operator, ADR 0040)
+
+The ledger GET (`GET /api/workspaces/:id/accounting/ledger`) only reads stored entries. It used to write journal entries for
+reconciled orders that had none, and it no longer does. A reconciled order without an entry is written only by this command:
+
+```
+npm run accounting:backfill -- <workspaceId>            # dry run: prints counts, writes nothing (the default)
+npm run accounting:backfill -- <workspaceId> --apply    # writes the missing entries
+npm run accounting:backfill -- --all [--apply]          # every workspace that has a reconciled order
+```
+
+Each line of output is one workspace: `reconciled` (reconciled orders), `with_entry` (already have an entry), `missing` (need a
+write), `written` (writes made) and `conflicts`. Only counts are printed: no amount, memo, hash or customer text. The writes use
+the same idempotent journal writer as settlement, so a second `--apply` writes nothing. A conflict means the entry's key belongs to
+another workspace or to another amount. Nothing is changed for that order, and a person must look at it. The backfill writes no
+audit row (not done in ADR 0040).
+
+### 16.2 Test fixture cleanup (development only: never against production)
+
+```
+npm run test:clean            # dry run: lists the fixture workspaces and template directories it would remove
+npm run test:clean -- --apply # deletes them
+```
+
+It matches workspace ids that start with one of the fixture prefixes in `scripts/clean-test-fixtures.ts` (`FIXTURE_PREFIXES`):
+the suite families (`ws-contract-`, `wu-`, `ws-gate-`, `ws-e2e-blank-`, `ws-test-`, `ws-untrusted-`, `ws-mcp-`, `ws-sdk-`,
+`ws-probe`, and the per-file prefixes such as `ws-cred-`, `ws-approval-`, `ws-policy-`), and the `templates/<id>` directory of each.
+A directory is removed only when git does not track it. It never matches the demo workspace `ws-kitchen-main` or the reference
+templates `kitchen-ops` and `coffee-roaster`. `ws-kitchen-` and short generic names such as `ws-a-` are not in the list.
+
+**Never run this against a production database.** It deletes workspaces, and every table that refers to a workspace cascades, so
+the workspace's rows go with it. The script refuses when `NODE_ENV` is `production`, but that is a guard, not the control. Before
+you run `--apply`, check that `DATABASE_URL` points at a local or test database.
 

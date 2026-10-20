@@ -2112,7 +2112,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description The surface actor has no binding in this workspace, or a staff binding asked for an owner action (SURFACE_ROLE_VIOLATION). */
+            /** @description Actor is not authorized for this event: no binding in this workspace, or a staff binding asked for an owner action. The code is SURFACE_ROLE_VIOLATION. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -6957,7 +6957,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            /** @description Malformed JSON, a NUL character, or a missing or non-text sku. Also refused: a paused workspace (code AGENTS_PAUSED, ADR 0023), an unknown sku, and an item with sufficient stock. */
             400: {
                 headers: {
                     [name: string]: unknown;

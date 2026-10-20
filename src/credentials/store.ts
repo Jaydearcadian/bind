@@ -340,11 +340,25 @@ export async function verifyCredential(
  * Each row is its own transaction: a row that cannot be decrypted is counted as failed and left unchanged. Only counts
  * are returned, never a secret.
  */
-export async function rotateCredentialKeys(): Promise<RotationReport> {
+/** Which workspaces a rotation covers. Omitted: every workspace (the default, used by the rotate-key script). */
+export interface RotationScope {
+  workspaceId?: string | readonly string[];
+}
+
+export async function rotateCredentialKeys(scope: RotationScope = {}): Promise<RotationReport> {
   const keyring = keyringFromConfig();
+  const wanted =
+    scope.workspaceId === undefined
+      ? null
+      : typeof scope.workspaceId === "string"
+        ? [scope.workspaceId]
+        : [...scope.workspaceId];
   const live = await query(
     `SELECT id, workspace_id, connector_id FROM connector_credentials
-     WHERE status <> 'revoked' AND ciphertext IS NOT NULL ORDER BY workspace_id ASC, connector_id ASC;`
+     WHERE status <> 'revoked' AND ciphertext IS NOT NULL
+       AND ($1::text[] IS NULL OR workspace_id = ANY($1::text[]))
+     ORDER BY workspace_id ASC, connector_id ASC;`,
+    [wanted]
   );
   const report: RotationReport = { rotated: 0, skipped: 0, failed: 0 };
   const system: CredentialActor = { type: "system", id: "system:credential-rotation" };

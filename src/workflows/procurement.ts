@@ -1,6 +1,6 @@
 import { WorkflowEngine, ApprovalDecisionError } from "./engine.js";
 import { WorkflowState } from "./types.js";
-import { query } from "../db/client.js";
+import { query, withTransaction } from "../db/client.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
 import { authorizeCommitment, describeCommitmentDecision, type CommitmentDecision } from "../policy/commitment-gate.js";
@@ -34,6 +34,22 @@ export interface ProcurementRunnerDeps {
 }
 
 export type { ReconcileResult } from "./settlement.js";
+
+/**
+ * A replenishment is refused because the owner has paused the workspace (ADR 0023). The message keeps its [AGENTS_PAUSED]
+ * tag, which the API answers as the error text, and `code` is the typed value the route and the restock paths test with
+ * instanceof (ADR 0040). Nothing is started when this is thrown.
+ */
+export class AgentsPausedError extends Error {
+  readonly code = "AGENTS_PAUSED" as const;
+
+  constructor() {
+    super(
+      "[AGENTS_PAUSED] The owner has paused the agents for this workspace. Resume them before starting a replenishment."
+    );
+    this.name = "AgentsPausedError";
+  }
+}
 
 /** Actor recorded when the approval-time re-check rejects an approval. */
 const POLICY_RECHECK_ACTOR = "system:policy-recheck";
@@ -89,10 +105,17 @@ export class ProcurementWorkflowRunner {
     // 0a. The owner's pause switch (ADR 0022). A paused workspace starts no workflow and asks no supplier for a quote.
     const pauseRes = await query(`SELECT agents_paused FROM workspaces WHERE id = $1;`, [workspaceId]);
     if (pauseRes.rows[0]?.agents_paused === true) {
-      throw new Error(
-        "[AGENTS_PAUSED] The owner has paused the agents for this workspace. Resume them before starting a replenishment."
-      );
+      throw new AgentsPausedError();
     }
+
+    // The number of earlier replenishments for this sku. It is read before the active-workflow check below, so a concurrent start
+    // that committed first is seen by that check (ADR 0040).
+    const roundRes = await query(
+      `SELECT COUNT(*)::int AS n FROM workflows
+       WHERE workspace_id = $1 AND workflow_type = 'kitchen_replenishment' AND context_data->>'sku' = $2;`,
+      [workspaceId, sku]
+    );
+    const round = Number(roundRes.rows[0].n);
 
     // 0. Idempotency Gate on Entry: check if an active non-terminal workflow already exists
     const activeWfRes = await query(
@@ -135,16 +158,29 @@ export class ProcurementWorkflowRunner {
     }
 
     const workflowId = newId("wf_proc");
-    const idempotencyKey = generateIdempotencyKey(workspaceId, "procurement.replenish", { sku, currentQty });
+    // The first attempt keeps the key it always had. A later attempt for the same sku and quantity (after a terminal workflow)
+    // adds its round, so its key is new and the existing workflow is not returned for it (ADR 0040).
+    const keyPayload = round > 0 ? { sku, currentQty, round } : { sku, currentQty };
+    const idempotencyKey = generateIdempotencyKey(workspaceId, "procurement.replenish", keyPayload);
 
     // 3. Create Workflow in DRAFT state
-    await this.workflowEngine.createWorkflow(
+    const created = await this.workflowEngine.createWorkflow(
       workflowId,
       workspaceId,
       "kitchen_replenishment",
       idempotencyKey,
       { sku, itemName: item.name, triggerSource, currentQty, parLevel, reorderQty }
     );
+    if (!created.created) {
+      // A concurrent start holds this key. Its workflow is the answer. This call does nothing else: continuing with
+      // workflowId, which was never inserted, is what made the transitions below fail (ADR 0040).
+      return {
+        workflowId: created.id,
+        state: created.state,
+        orderId: created.contextData?.orderId,
+        approvalId: created.contextData?.approvalId,
+      };
+    }
 
     await this.workflowEngine.recordAudit(
       workspaceId,
@@ -372,18 +408,23 @@ export class ProcurementWorkflowRunner {
         totalPriceCents: BigInt(proposal?.totalPriceCents ?? 0),
       });
       if (recheck.decision === PolicyDecision.DENY) {
-        // Cancels the waiting workflow in the same step as the rejection. No order and no supplier call follow.
-        await this.workflowEngine.resolveApproval(approvalId, "rejected", POLICY_RECHECK_ACTOR, recheck.reasonCodes.join(","));
-        await this.workflowEngine.recordAudit(
-          approval.workspace_id,
-          approval.entity_id,
-          "system",
-          POLICY_RECHECK_ACTOR,
-          EffectClass.COMMERCIAL_COMMITMENT,
-          "commitment.recheck",
-          PolicyDecision.DENY,
-          { approvalId, reasonCodes: recheck.reasonCodes, reason: describeCommitmentDecision(recheck), ...recheck.evidence }
-        );
+        // Cancels the waiting workflow in the same transaction as the rejection and its audit row (ADR 0040). No order and no
+        // supplier call follow.
+        await withTransaction(async (client) => {
+          await this.workflowEngine.resolveApproval(approvalId, "rejected", POLICY_RECHECK_ACTOR, recheck.reasonCodes.join(","), client);
+          await this.workflowEngine.recordAudit(
+            approval.workspace_id,
+            approval.entity_id,
+            "system",
+            POLICY_RECHECK_ACTOR,
+            EffectClass.COMMERCIAL_COMMITMENT,
+            "commitment.recheck",
+            PolicyDecision.DENY,
+            { approvalId, reasonCodes: recheck.reasonCodes, reason: describeCommitmentDecision(recheck), ...recheck.evidence },
+            undefined,
+            client
+          );
+        });
         throw new ApprovalDecisionError(
           "POLICY_DENIED",
           `Approval '${approvalId}' was refused: the commitment no longer passes policy. ${describeCommitmentDecision(recheck)}`,
@@ -392,17 +433,24 @@ export class ProcurementWorkflowRunner {
       }
     }
 
-    const { workflowId } = await this.workflowEngine.resolveApproval(approvalId, "approved", decidedBy);
-    await this.workflowEngine.recordAudit(
-      approval.workspace_id,
-      workflowId,
-      "owner",
-      decidedBy,
-      EffectClass.COMMERCIAL_COMMITMENT,
-      "approval.approved",
-      PolicyDecision.ALLOW,
-      { approvalId }
-    );
+    // The decision and its audit row are one transaction (ADR 0040): if the audit write fails, the approval stays pending.
+    // The order submission below is outside it, because it calls the supplier.
+    const { workflowId } = await withTransaction(async (client) => {
+      const decided = await this.workflowEngine.resolveApproval(approvalId, "approved", decidedBy, undefined, client);
+      await this.workflowEngine.recordAudit(
+        approval.workspace_id,
+        decided.workflowId,
+        "owner",
+        decidedBy,
+        EffectClass.COMMERCIAL_COMMITMENT,
+        "approval.approved",
+        PolicyDecision.ALLOW,
+        { approvalId },
+        undefined,
+        client
+      );
+      return decided;
+    });
 
     return this.resumeOrderSubmission(workflowId);
   }
@@ -430,17 +478,23 @@ export class ProcurementWorkflowRunner {
     if (owned.rows.length === 0) {
       throw new ApprovalDecisionError("APPROVAL_NOT_FOUND", `Approval '${approvalId}' not found.`);
     }
-    const { workflowId } = await this.workflowEngine.resolveApproval(approvalId, decision, decidedBy, reason);
-    await this.workflowEngine.recordAudit(
-      workspaceId,
-      workflowId,
-      "owner",
-      decidedBy,
-      EffectClass.COMMERCIAL_COMMITMENT,
-      `approval.${decision}`,
-      PolicyDecision.DENY,
-      { approvalId, reason: reason ?? null }
-    );
+    // The decision and its audit row are one transaction (ADR 0040).
+    const { workflowId } = await withTransaction(async (client) => {
+      const decided = await this.workflowEngine.resolveApproval(approvalId, decision, decidedBy, reason, client);
+      await this.workflowEngine.recordAudit(
+        workspaceId,
+        decided.workflowId,
+        "owner",
+        decidedBy,
+        EffectClass.COMMERCIAL_COMMITMENT,
+        `approval.${decision}`,
+        PolicyDecision.DENY,
+        { approvalId, reason: reason ?? null },
+        undefined,
+        client
+      );
+      return decided;
+    });
     return { workflowId, state: WorkflowState.CANCELLED };
   }
 

@@ -11,7 +11,7 @@ import { sendOwnerNotification, type OwnerNoticeKind } from "../notifications/di
 import { customerOrderLink } from "../notifications/links.js";
 import { resolveOwnerRecipient } from "../notifications/recipients.js";
 import { WorkflowEngine } from "../workflows/engine.js";
-import { ProcurementWorkflowRunner } from "./procurement.js";
+import { AgentsPausedError, ProcurementWorkflowRunner } from "./procurement.js";
 import {
   decidePromise,
   type PromiseDecision,
@@ -153,8 +153,6 @@ const LIST_LIMIT = 100;
 const RESTOCK_LOCK_WAIT_MS = 5_000;
 /** The trigger source recorded on a replenishment started from a customer order. */
 const RESTOCK_TRIGGER_SOURCE = "customer_order";
-/** startReplenishment refuses a paused workspace with a message that starts with this tag (ADR 0023). */
-const PAUSED_MESSAGE_PREFIX = "[AGENTS_PAUSED]";
 
 function invalid(message: string): never {
   throw new FulfilmentError("INVALID_INPUT", message);
@@ -701,8 +699,7 @@ async function restockIfLow(workspaceId: string, orderId: string, sku: string): 
       availableQuantity: level.available,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.startsWith(PAUSED_MESSAGE_PREFIX)) {
+    if (err instanceof AgentsPausedError) {
       // A pause refuses the restock. It is a policy refusal, so it is recorded as a denial (ADR 0023).
       await recordSystemAudit(workspaceId, "system:restock", "replenishment.trigger_skipped", EffectClass.READ, PolicyDecision.DENY, {
         orderId,

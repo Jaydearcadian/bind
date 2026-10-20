@@ -226,7 +226,7 @@ describe("Business Onboarding & Operations Studio (Flows A, B, C, D)", () => {
     });
 
     expect(spoofApproveRes.status).toBe(403);
-    expect(spoofApproveRes.body.error).toContain("SURFACE_ROLE_VIOLATION");
+    expect(spoofApproveRes.body.code).toBe("SURFACE_ROLE_VIOLATION");
   });
 
   it("Flow D: executes two-stage Extract -> Confirm for quotes, feeds procurement, enforces 3-way match on invoices, and exports accounting ledger CSV", async () => {

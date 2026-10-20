@@ -2,7 +2,7 @@ import { query, withTransaction } from "../db/client.js";
 import { acquireAdvisoryLock, type AdvisoryLock } from "../db/advisory-lock.js";
 import { WorkflowEngine } from "../workflows/engine.js";
 import { WorkflowCrashRecoveryRunner } from "../workflows/recovery.js";
-import { ProcurementWorkflowRunner, type ProcurementRunnerDeps } from "../workflows/procurement.js";
+import { AgentsPausedError, ProcurementWorkflowRunner, type ProcurementRunnerDeps } from "../workflows/procurement.js";
 import { EffectClass } from "../policy/effect-classifier.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { redactText } from "../utils/redact.js";
@@ -81,8 +81,6 @@ const DEFAULT_STUCK_SETTLING_AFTER_MS = 10 * 60 * 1000;
 const DEFAULT_INTERVAL_MS = 15_000;
 const DEFAULT_RESTOCK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const ERROR_LIMIT = 200;
-/** startReplenishment refuses a paused workspace with a message that starts with this tag (ADR 0023). */
-const PAUSED_TAG = "[AGENTS_PAUSED]";
 /** The actor on the sweep's audit rows. */
 const SWEEP_ACTOR = "system:restock-sweep";
 
@@ -314,8 +312,7 @@ async function restockSweepStep(cfg: Resolved, report: TickReport): Promise<void
       });
       report.restockSweep.started += 1;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (message.startsWith(PAUSED_TAG)) {
+      if (err instanceof AgentsPausedError) {
         // The pause was set after the candidates were read. The sweep does not retry it (ADR 0023).
         await engine.recordAudit(row.workspace_id, null, "system", SWEEP_ACTOR, EffectClass.READ, "replenishment.sweep_skipped", PolicyDecision.DENY, {
           sku: row.sku,
