@@ -417,3 +417,50 @@ describe("the MCP server over the SDK (docs/decisions/0037)", () => {
     expect(typeof parsed.ts).toBe("string");
   });
 });
+
+describe("idempotency keys on the MCP tools (ADR 0049)", () => {
+  const KEYED = ["request_replenishment", "create_customer_order", "cancel_customer_order"];
+
+  it("a keyed tool always sends a key: the caller's own when given, otherwise a fresh one per call", async () => {
+    const fake = makeFake();
+    const session = await connect(fake);
+    try {
+      for (const name of KEYED) {
+        fake.calls.length = 0;
+        await session.client.callTool({ name, arguments: VALID_ARGS[name] });
+        await session.client.callTool({ name, arguments: VALID_ARGS[name] });
+        await session.client.callTool({ name, arguments: { ...VALID_ARGS[name], idempotencyKey: "retry-me-1" } });
+        const keys = fake.calls.map((c) => (c.options as { idempotencyKey?: string }).idempotencyKey);
+        expect(keys[0], name).toMatch(/^[0-9a-f-]{36}$/);
+        expect(keys[1], name).toMatch(/^[0-9a-f-]{36}$/);
+        expect(keys[0], `${name} must not reuse a derived key across separate calls`).not.toBe(keys[1]);
+        expect(keys[2], name).toBe("retry-me-1");
+      }
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("refuses a malformed key before any call, and sends no key from a tool that takes none", async () => {
+    const fake = makeFake();
+    const session = await connect(fake);
+    try {
+      const bad = (await session.client.callTool({ name: "request_replenishment", arguments: { sku: "A", idempotencyKey: "not valid!" } })) as CallToolResult;
+      expect(bad.isError).toBe(true);
+      expect(fake.calls).toHaveLength(0);
+      await session.client.callTool({ name: "submit_feedback", arguments: VALID_ARGS.submit_feedback });
+      expect((fake.calls[0].options as { idempotencyKey?: string }).idempotencyKey).toBeUndefined();
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("the keyed tools are exactly the tools whose operation takes a key in the capability catalogue", () => {
+    const catalogue = JSON.parse(readFileSync(join(HERE, "../../docs/capabilities.json"), "utf8")) as {
+      capabilities: { id: string; idempotency: { clientKey: boolean } }[];
+    };
+    const takesKey = new Set(catalogue.capabilities.filter((c) => c.idempotency.clientKey).map((c) => c.id));
+    for (const t of TOOLS) expect(t.keyed, t.name).toBe(takesKey.has(t.operationId));
+  });
+});
+

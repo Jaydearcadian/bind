@@ -124,6 +124,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "effectId": {
                       "type": "string"
                     },
@@ -294,6 +405,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "approvalId": {
                       "type": "string"
                     },
@@ -474,6 +696,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "approvalId": {
                       "type": "string"
                     },
@@ -3359,6 +3692,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "allowedTools": {
                       "items": {
                         "type": "string"
@@ -3566,6 +4010,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "paused": {
                       "type": "boolean"
                     },
@@ -4200,6 +4755,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "connectorId": {
                       "type": "string"
                     },
@@ -4966,6 +5632,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "orderId": {
                       "type": "string"
                     },
@@ -5024,6 +5801,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "orderId": {
                       "type": "string"
                     },
@@ -5419,6 +6307,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "orderId": {
                       "type": "string"
                     },
@@ -5603,6 +6602,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "createdAt": {
                       "format": "date-time",
                       "type": "string"
@@ -5834,6 +6944,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "createdAt": {
                       "format": "date-time",
                       "type": "string"
@@ -6498,6 +7719,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "docId": {
                       "type": "string"
                     },
@@ -9442,6 +10774,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "applied": {
                       "additionalProperties": {},
                       "nullable": true,
@@ -10391,6 +11834,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "provenance": {
                       "enum": [
                         "OWNER_CONFIRMED"
@@ -10786,6 +12340,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "approvalId": {
                       "type": "string"
                     },
@@ -11144,6 +12809,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "adapter_type": {
                       "type": "string"
                     },
@@ -12051,6 +13827,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "id": {
                       "type": "string"
                     },
@@ -12326,6 +14213,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "secret": {
                       "type": "string"
                     },
@@ -12632,6 +14630,117 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "alreadyCancelled": {
                       "type": "boolean"
                     },

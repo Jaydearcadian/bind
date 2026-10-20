@@ -17,6 +17,8 @@ export interface CallArguments {
   params?: Record<string, string>;
   query?: Record<string, string>;
   body?: Record<string, unknown>;
+  /** Sent as Idempotency-Key. The server runs a command with the same key once and replays the outcome. */
+  idempotencyKey?: string;
 }
 
 export interface ToolSpec {
@@ -28,6 +30,8 @@ export interface ToolSpec {
   readonly inputSchema: z.ZodTypeAny;
   readonly readOnly: boolean;
   readonly idempotent: boolean;
+  /** True when the operation takes an Idempotency-Key: the server fills one in when the caller gave none. */
+  readonly keyed: boolean;
   /** JSON paths in the answer that carry free text written by customers, suppliers or staff. */
   readonly untrustedTextFields: readonly string[];
   readonly buildCall: (input: any, workspaceId: string) => CallArguments;
@@ -102,7 +106,16 @@ const POLL = z
   })
   .strict("unknown field");
 
-const REPLENISH = z.object({ sku: text("sku", 1, MAX_SKU) }).strict("unknown field");
+/**
+ * Optional on the tools whose command takes an Idempotency-Key. Without one the server makes a random key for the call, so a
+ * network retry inside the call cannot run it twice. A caller that retries the call itself passes the same key again.
+ */
+const IDEMPOTENCY_KEY = z
+  .string({ invalid_type_error: "idempotencyKey must be text" })
+  .regex(/^[A-Za-z0-9._:-]{1,128}$/, "idempotencyKey must be 1 to 128 characters from A-Z a-z 0-9 . _ : -")
+  .optional();
+
+const REPLENISH = z.object({ sku: text("sku", 1, MAX_SKU), idempotencyKey: IDEMPOTENCY_KEY }).strict("unknown field");
 
 const LINE = z
   .object({
@@ -120,10 +133,11 @@ const CUSTOMER_ORDER = z
       .max(200, "lines must have at most 200 lines"),
     requestedFor: instant("requestedFor").optional(),
     note: text("note", 1, 5000).optional(),
+    idempotencyKey: IDEMPOTENCY_KEY,
   })
   .strict("unknown field");
 
-const ORDER_ID = z.object({ orderId: text("orderId", 1, MAX_REF) }).strict("unknown field");
+const CANCEL_ORDER = z.object({ orderId: text("orderId", 1, MAX_REF), idempotencyKey: IDEMPOTENCY_KEY }).strict("unknown field");
 
 const FEEDBACK = z
   .object({
@@ -187,6 +201,7 @@ function tool<S extends z.ZodTypeAny>(spec: {
   inputSchema: S;
   readOnly: boolean;
   idempotent: boolean;
+  keyed?: boolean;
   untrustedTextFields?: readonly string[];
   buildCall: (input: z.infer<S>, workspaceId: string) => CallArguments;
 }): ToolSpec {
@@ -199,6 +214,7 @@ function tool<S extends z.ZodTypeAny>(spec: {
     inputSchema: spec.inputSchema,
     readOnly: spec.readOnly,
     idempotent: spec.idempotent,
+    keyed: spec.keyed ?? false,
     untrustedTextFields: spec.untrustedTextFields ?? [],
     buildCall: spec.buildCall,
   };
@@ -337,7 +353,12 @@ export const TOOLS: readonly ToolSpec[] = [
     inputSchema: REPLENISH,
     readOnly: false,
     idempotent: false,
-    buildCall: (input, workspaceId) => ({ params: { id: workspaceId }, body: { sku: input.sku } }),
+    keyed: true,
+    buildCall: (input, workspaceId) => ({
+      params: { id: workspaceId },
+      body: { sku: input.sku },
+      ...(input.idempotencyKey === undefined ? {} : { idempotencyKey: input.idempotencyKey }),
+    }),
   }),
   tool({
     name: "create_customer_order",
@@ -349,7 +370,9 @@ export const TOOLS: readonly ToolSpec[] = [
     inputSchema: CUSTOMER_ORDER,
     readOnly: false,
     idempotent: true,
+    keyed: true,
     buildCall: (input, workspaceId) => ({
+      ...(input.idempotencyKey === undefined ? {} : { idempotencyKey: input.idempotencyKey }),
       params: { id: workspaceId },
       body: {
         externalRef: input.externalRef,
@@ -366,10 +389,14 @@ export const TOOLS: readonly ToolSpec[] = [
       "Cancels a customer order by its id. Effect class: commercial commitment (cancelling an accepted order). The server decides what may be cancelled and refuses the rest with a 409.",
     effect: "commercial_commitment",
     operationId: "cancelCustomerOrder",
-    inputSchema: ORDER_ID,
+    inputSchema: CANCEL_ORDER,
     readOnly: false,
     idempotent: true,
-    buildCall: (input, workspaceId) => ({ params: { id: workspaceId, orderId: input.orderId } }),
+    keyed: true,
+    buildCall: (input, workspaceId) => ({
+      params: { id: workspaceId, orderId: input.orderId },
+      ...(input.idempotencyKey === undefined ? {} : { idempotencyKey: input.idempotencyKey }),
+    }),
   }),
   tool({
     name: "submit_feedback",

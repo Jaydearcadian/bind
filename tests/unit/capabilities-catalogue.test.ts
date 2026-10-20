@@ -75,6 +75,22 @@ describe("capability catalogue", () => {
     expect(withHeader).toBe(IDEMPOTENT_ROUTES.size);
   });
 
+  it("the contract documents _meta on a 2xx answer of every operation that takes an idempotency key", () => {
+    const spec = JSON.parse(fs.readFileSync(path.join(ROOT, "docs", "openapi.json"), "utf8")) as {
+      paths: Record<string, Record<string, { operationId: string; parameters?: { name: string }[]; responses: Record<string, unknown> }>>;
+    };
+    let checked = 0;
+    for (const methods of Object.values(spec.paths)) {
+      for (const op of Object.values(methods)) {
+        if (!op.parameters?.some((p) => p.name === "Idempotency-Key")) continue;
+        const twoXx = Object.entries(op.responses).filter(([code]) => code.startsWith("2"));
+        expect(twoXx.some(([, r]) => JSON.stringify(r).includes("_meta")), op.operationId).toBe(true);
+        checked++;
+      }
+    }
+    expect(checked).toBe(IDEMPOTENT_ROUTES.size);
+  });
+
   it("every irreversible or economic operation says what it is in a note", () => {
     for (const c of caps.filter((x) => x.irreversible || x.economic)) {
       const flagged = c.note.trim().length > 0 || c.effect === "read";

@@ -1,5 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { resolveToken, type Actor, type WorkspaceRole } from "./tokens.js";
+import { responseMeta } from "../server/response-meta.js";
 import { idempotency } from "../server/idempotency.js";
 import { tokenRateLimit } from "../security/rate-limit-middleware.js";
 
@@ -82,10 +83,10 @@ export function requireRole(role: WorkspaceRole) {
 
 // Each composition applies the per-token limit right after authentication (docs/decisions/0033).
 /** Owner or staff of the workspace in the path. */
-export const workspaceMember: RequestHandler[] = [authenticate, tokenRateLimit, scopeToWorkspace, idempotency];
+export const workspaceMember: RequestHandler[] = [authenticate, tokenRateLimit, scopeToWorkspace, responseMeta, idempotency];
 /** Owner of the workspace in the path. */
-export const workspaceOwner: RequestHandler[] = [authenticate, tokenRateLimit, scopeToWorkspace, requireRole("owner"), idempotency];
+export const workspaceOwner: RequestHandler[] = [authenticate, tokenRateLimit, scopeToWorkspace, requireRole("owner"), responseMeta, idempotency];
 /** Owner of some workspace, for routes whose path names an approval or an order. The service checks the workspace. */
-export const anyWorkspaceOwner: RequestHandler[] = [authenticate, tokenRateLimit, requireRole("owner"), idempotency];
+export const anyWorkspaceOwner: RequestHandler[] = [authenticate, tokenRateLimit, requireRole("owner"), responseMeta, idempotency];
 /** Any valid token. The route itself scopes the answer to the caller's workspace. */
 export const authenticated: RequestHandler[] = [authenticate, tokenRateLimit];

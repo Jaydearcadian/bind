@@ -7,7 +7,7 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
 import { ROUTES, type AccessLevel, type ResponseSpec, type RouteSpec } from "./registry.js";
-import { ErrorBody } from "./schemas.js";
+import { ErrorBody, ResponseMetaSchema } from "./schemas.js";
 import { IDEMPOTENT_ROUTES } from "../server/idempotency.js";
 
 /**
@@ -72,15 +72,19 @@ function queryParameters(query: z.ZodTypeAny): Array<Record<string, unknown>> {
   }));
 }
 
-function responsesOf(responses: Record<number, ResponseSpec>): Record<string, unknown> {
+function responsesOf(responses: Record<number, ResponseSpec>, withMeta = false): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const status of Object.keys(responses).map(Number).sort((a, b) => a - b)) {
     const response = responses[status];
     const entry: Record<string, unknown> = { description: response.description };
     if (response.schema) {
+      const schema =
+        withMeta && status >= 200 && status < 300 && response.schema instanceof z.ZodObject
+          ? (response.schema as z.AnyZodObject).extend({ _meta: ResponseMetaSchema.optional() })
+          : response.schema;
       const mime = response.contentType ?? "application/json";
       entry.content = {
-        [mime]: { schema: mime === "application/json" ? schemaOrRef(response.schema) : { type: "string" } },
+        [mime]: { schema: mime === "application/json" ? schemaOrRef(schema) : { type: "string" } },
       };
     } else if (response.contentType) {
       entry.content = { [response.contentType]: { schema: { type: "string" } } };
@@ -115,7 +119,7 @@ function operationOf(route: RouteSpec): Record<string, unknown> {
     tags: route.tags,
     security: NO_BEARER.has(route.access) ? [] : [{ bearerAuth: [] }],
     "x-bind-access": route.access,
-    responses: responsesOf(route.responses),
+    responses: responsesOf(route.responses, IDEMPOTENT_ROUTES.has(`${route.method.toUpperCase()} ${route.path}`)),
   };
   if (parameters.length > 0) operation.parameters = parameters;
   if (route.body) {

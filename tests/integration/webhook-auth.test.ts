@@ -568,7 +568,8 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
 
       const resumed = await call("PUT", `/api/workspaces/${wsC}/agents-paused`, { token: ownerC.token, body: { paused: false } });
       expect(resumed.status).toBe(200);
-      expect(resumed.body).toEqual({ workspaceId: wsC, paused: false });
+      // `_meta` is added beside the existing fields (ADR 0050).
+      expect(resumed.body).toMatchObject({ workspaceId: wsC, paused: false });
       expect(await pausedOf(wsC)).toBe(false);
 
       const audit = await query(
@@ -720,7 +721,7 @@ describe("Webhooks: signed events, bound actors, replay protection and a real pa
 
       const rotated = await call("POST", `/api/workspaces/${wsA}/webhook-secret/rotate`, { token: ownerA.token });
       expect(rotated.status).toBe(200);
-      expect(Object.keys(rotated.body).sort()).toEqual(["secret", "version"]);
+      expect(Object.keys(rotated.body).filter((k) => k !== "_meta").sort()).toEqual(["secret", "version"]);
       expect(rotated.body.version).toBe(2);
       expect(rotated.body.secret).toBe(surfaceSecret(wsA, 2));
       expect(rotated.body.secret).not.toBe(shown.body.secret);

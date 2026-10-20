@@ -1220,6 +1220,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         effectId?: string;
                         /** @enum {boolean} */
                         inDoubt?: true;
@@ -1334,6 +1370,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         approvalId: string;
                         state: string;
                         /** @enum {string} */
@@ -1456,6 +1528,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         approvalId: string;
                         state: string;
                         /** @enum {string} */
@@ -2890,6 +2998,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         allowedTools: string[];
                         derivedFiles: {
                             agentsSpecPath: string;
@@ -3012,6 +3156,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         paused: boolean;
                         workspaceId: string;
                     } & {
@@ -3520,6 +3700,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         connectorId: string;
                         fingerprint: string | null;
                         /** @enum {string} */
@@ -3840,6 +4056,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         orderId: string;
                         /** Format: date-time */
                         promisedFor?: string;
@@ -3864,6 +4116,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         orderId: string;
                         /** Format: date-time */
                         promisedFor?: string;
@@ -4085,6 +4373,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         orderId: string;
                         /** Format: date-time */
                         promisedFor?: string;
@@ -4198,6 +4522,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         /** Format: date-time */
                         createdAt: string;
                         decidedBy: string | null;
@@ -4318,6 +4678,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         /** Format: date-time */
                         createdAt: string;
                         decidedBy: string | null;
@@ -4671,6 +5067,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         docId: string;
                         docType: string;
                         provenance: string;
@@ -6314,6 +6746,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         applied: {
                             [key: string]: unknown;
                         } | null;
@@ -6790,6 +7258,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         /** @enum {string} */
                         provenance: "OWNER_CONFIRMED";
                         workspace: {
@@ -7020,6 +7524,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         approvalId?: string;
                         orderId?: string;
                         state: string;
@@ -7226,6 +7766,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         adapter_type: string;
                         contact_email: string | null;
                         /** Format: date-time */
@@ -7777,6 +8353,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         id: string;
                         label: string;
                         /** Format: date-time */
@@ -7973,6 +8585,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         secret: string;
                         version: number;
                     } & {
@@ -8168,6 +8816,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         alreadyCancelled: boolean;
                         approvalId?: string;
                         state: string;

@@ -63,3 +63,4 @@ a live system: `docs/RELEASE_EVIDENCE.md` is the place for that.
 | [0047](0047-response-and-event-spec.md) | Response model and event surface specification, draft 1 | Accepted | Additive: an idempotency key, `_meta`, error v2, event envelope v1 and outbound webhooks. Draft schemas and tests only; nothing built. |
 | [0048](0048-error-body-v2.md) | Error body v2 is live | Accepted | Every error gains code, category, retryable and requestId, added in one place. Existing text and status are unchanged. |
 | [0049](0049-client-idempotency-keys.md) | Client idempotency keys | Accepted | `Idempotency-Key` on 18 write operations, scoped by workspace, token and key, with replay for 24 hours. |
+| [0050](0050-response-meta.md) | `_meta` on command responses | Accepted | Outcome status, state, next actions for the caller's role and warnings, on the 18 command operations. Additive. |

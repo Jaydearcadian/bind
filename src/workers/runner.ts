@@ -9,6 +9,7 @@ import { redactText } from "../utils/redact.js";
 import { newId } from "../utils/ids.js";
 import { log } from "../observability/logger.js";
 import { recordWorkerTick } from "../observability/metrics.js";
+import { RETENTION_HOURS } from "../server/idempotency.js";
 
 /**
  * The background worker (ADR 0029, ADR 0030). One tick runs five steps in order, each bounded by a batch size:
@@ -23,7 +24,7 @@ import { recordWorkerTick } from "../observability/metrics.js";
  * approvals like a manual one.
  */
 
-export type WorkerStep = "expiry" | "recovery" | "settlement_poll" | "stuck_settling" | "restock_sweep";
+export type WorkerStep = "expiry" | "recovery" | "settlement_poll" | "stuck_settling" | "restock_sweep" | "idempotency_sweep";
 
 export interface TickError {
   step: WorkerStep;
@@ -37,6 +38,8 @@ export interface TickReport {
   stuckSettling: { skipped: boolean; toSubmitted: number; toHold: number; failed: number };
   /** `skipped` is true when the sweep did not run: it is off, or its lock was busy. */
   restockSweep: { skipped: boolean; started: number; failed: number };
+  /** Removes stored API idempotency outcomes older than their retention (ADR 0049). */
+  idempotencySweep: { skipped: boolean; removed: number };
   errors: TickError[];
 }
 
@@ -90,6 +93,7 @@ const STEP_KEY: Record<WorkerStep, keyof Omit<TickReport, "errors">> = {
   settlement_poll: "settlementPoll",
   stuck_settling: "stuckSettling",
   restock_sweep: "restockSweep",
+  idempotency_sweep: "idempotencySweep",
 };
 
 function emptyReport(): TickReport {
@@ -99,6 +103,7 @@ function emptyReport(): TickReport {
     settlementPoll: { skipped: false, polled: 0, finished: 0, pending: 0, held: 0, failed: 0 },
     stuckSettling: { skipped: false, toSubmitted: 0, toHold: 0, failed: 0 },
     restockSweep: { skipped: false, started: 0, failed: 0 },
+    idempotencySweep: { skipped: false, removed: 0 },
     errors: [],
   };
 }
@@ -270,6 +275,23 @@ async function recoverStuckOrder(orderId: string, staleBefore: Date): Promise<"s
 }
 
 /**
+ * Deletes stored API idempotency outcomes past their 24-hour retention (ADR 0049), at most 20 batches of batchSize x 20 rows
+ * per tick. A key that is reused after its row is gone simply runs as a new request, the same as an expired one.
+ */
+async function idempotencySweepStep(cfg: Resolved, report: TickReport): Promise<void> {
+  const limit = cfg.batchSize * 20;
+  for (let batch = 0; batch < 20; batch += 1) {
+    const result = await query(
+      `DELETE FROM api_idempotency
+        WHERE ctid IN (SELECT ctid FROM api_idempotency WHERE created_at < NOW() - make_interval(hours => $1) LIMIT $2);`,
+      [RETENTION_HOURS, limit]
+    );
+    report.idempotencySweep.removed += result.rowCount ?? 0;
+    if ((result.rowCount ?? 0) < limit) break;
+  }
+}
+
+/**
  * Starts a replenishment for each low sku that is not already covered (ADR 0030). A sku is low when its available
  * quantity (on hand less active reservations, as ADR 0027) is below par. It is skipped when any workflow for it was
  * created within the cooldown, or when one is still active. Paused workspaces are not looked at. The oldest deficit
@@ -330,7 +352,7 @@ async function restockSweepStep(cfg: Resolved, report: TickReport): Promise<void
 }
 
 /**
- * Runs one tick: the steps in order. Never throws. The restock sweep runs only when it is enabled. The tick's duration,
+ * Runs one tick: the steps in order (the idempotency sweep last). Never throws. The restock sweep runs only when it is enabled. The tick's duration,
  * its finish time and its step errors are recorded in the metrics registry (docs/decisions/0032).
  */
 export async function runTick(opts: TickOptions = {}): Promise<TickReport> {
@@ -346,6 +368,7 @@ export async function runTick(opts: TickOptions = {}): Promise<TickReport> {
   } else {
     report.restockSweep.skipped = true;
   }
+  await runStep("idempotency_sweep", report, () => idempotencySweepStep(cfg, report));
   recordWorkerTick(
     Number(process.hrtime.bigint() - startedAt) / 1e9,
     report.errors.map((entry) => entry.step)

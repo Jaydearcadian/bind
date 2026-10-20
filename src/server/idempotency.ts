@@ -33,9 +33,28 @@ export const IDEMPOTENT_ROUTES: ReadonlySet<string> = new Set([
   "POST /api/workspaces/:id/suppliers",
 ]);
 
+/**
+ * Fields that are never stored. A secret the API returns once must not sit in the database for a day: the webhook secret is
+ * derived, so nothing else stores it. A replay returns the rest of the answer with `secretOmitted: true`; the owner reads the
+ * current secret from the secret route.
+ */
+const SECRET_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  "POST /api/workspaces/:id/webhook-secret/rotate": ["secret"],
+};
+
+function withoutSecrets(operation: string, body: unknown): unknown {
+  const fields = SECRET_FIELDS[operation];
+  if (!fields || body === null || typeof body !== "object" || Array.isArray(body)) return body;
+  const copy: Record<string, unknown> = { ...(body as Record<string, unknown>) };
+  let removed = false;
+  for (const f of fields) if (f in copy) { delete copy[f]; removed = true; }
+  if (removed) copy.secretOmitted = true;
+  return copy;
+}
+
 export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 /** A stored outcome is replayed for this long. */
-const RETENTION_HOURS = 24;
+export const RETENTION_HOURS = 24;
 /** A first request that never finished (a crash) releases its key after this long. */
 const STALE_LOCK_SECONDS = 300;
 
@@ -141,7 +160,7 @@ export async function idempotency(req: Request, res: Response, next: NextFunctio
         ? query(
             `UPDATE api_idempotency SET state = 'done', status_code = $4, response_body = $5::jsonb
               WHERE workspace_id = $1 AND token_id = $2 AND key = $3;`,
-            [workspaceId, tokenId, key, status, JSON.stringify(body ?? null)]
+            [workspaceId, tokenId, key, status, JSON.stringify(withoutSecrets(operation, body) ?? null)]
           )
         : query(`DELETE FROM api_idempotency WHERE workspace_id = $1 AND token_id = $2 AND key = $3;`, [workspaceId, tokenId, key]);
       // Send only after the outcome is stored, so a client that retries at once finds it.

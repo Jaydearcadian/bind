@@ -45,6 +45,30 @@ export const IsoDateTime = z.string().datetime({ offset: true });
  * and `recovery` appear where they help. Routes may add a documented field (`fields`, `state`, `nextAction`, `reasonCodes`).
  * The health and readiness failures have their own bodies and do not use this schema.
  */
+/** `_meta` on the answers of the command operations (ADR 0050; docs/ecosystem/spec/response-meta-v1.schema.json). */
+export const ResponseMetaSchema = z
+  .object({
+    requestId: z.string(),
+    status: z.enum(["completed", "accepted", "held", "refused"]),
+    state: z.string().optional(),
+    processing: z.object({ remaining: z.array(z.string()).optional(), events: z.string().optional() }).optional(),
+    nextActions: z
+      .array(
+        z.object({
+          id: z.string(),
+          label: z.string(),
+          actor: z.enum(["owner", "staff", "agent", "system"]),
+          method: z.enum(["GET", "POST", "PUT", "DELETE"]),
+          href: z.string().optional(),
+          needsConfirmation: z.boolean().optional(),
+        })
+      )
+      .optional(),
+    warnings: z.array(z.object({ code: z.string(), message: z.string() })).optional(),
+    links: z.record(z.string()).optional(),
+  })
+  .describe("Outcome of the request in one vocabulary, and what the caller's role may do next.");
+
 export const ErrorCategory = z.enum([
   "validation",
   "authentication",

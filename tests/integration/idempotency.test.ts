@@ -65,8 +65,41 @@ describe("Idempotency-Key", () => {
     const again = await pause(wsA, ownerA1.token, true, "k-replay-1");
     expect(again.status).toBe(200);
     expect(again.headers.get("idempotent-replayed")).toBe("true");
-    expect(again.body).toMatchObject(first.body);
+    const { _meta: firstMeta, ...firstRest } = first.body;
+    expect(again.body).toMatchObject(firstRest);
+    expect(firstMeta.requestId).not.toBe(again.body._meta.requestId);
     expect(await isPaused()).toBe(false); // not paused again by the replay
+  });
+
+  it("adds _meta: a missing-key warning without a key, none with one, and a fresh request id on a replay", async () => {
+    const without = await pause(wsA, ownerA1.token, false);
+    expect(without.status).toBe(200);
+    expect(without.body._meta).toMatchObject({ status: "completed", warnings: [{ code: "IDEMPOTENCY_KEY_MISSING" }] });
+    expect(without.body._meta.requestId).toBe(without.headers.get("x-request-id"));
+
+    const first = await pause(wsA, ownerA1.token, true, "k-meta");
+    expect(first.body._meta.warnings).toBeUndefined();
+    expect(first.body._meta.requestId).toBe(first.headers.get("x-request-id"));
+    const again = await pause(wsA, ownerA1.token, true, "k-meta");
+    expect(again.headers.get("idempotent-replayed")).toBe("true");
+    expect(again.body._meta.requestId).toBe(again.headers.get("x-request-id"));
+    expect(again.body._meta.requestId).not.toBe(first.body._meta.requestId);
+  });
+
+  it("never stores a secret: a replayed rotation says the secret was left out", async () => {
+    const send = () =>
+      fetch(`${baseUrl}/api/workspaces/${wsA}/webhook-secret/rotate`, { method: "POST", headers: { Authorization: `Bearer ${ownerA1.token}`, "Idempotency-Key": "k-rotate" } }).then(async (r) => ({
+        headers: r.headers,
+        body: (await r.json()) as Record<string, any>,
+      }));
+    const first = await send();
+    expect(typeof first.body.secret).toBe("string");
+    const again = await send();
+    expect(again.headers.get("idempotent-replayed")).toBe("true");
+    expect(again.body.secret).toBeUndefined();
+    expect(again.body).toMatchObject({ version: first.body.version, secretOmitted: true });
+    const stored = await query<{ response_body: unknown }>(`SELECT response_body FROM api_idempotency WHERE workspace_id = $1 AND key = 'k-rotate';`, [wsA]);
+    expect(JSON.stringify(stored.rows[0].response_body)).not.toContain(first.body.secret);
   });
 
   it("refuses the same key with a different request (422)", async () => {

@@ -77,6 +77,14 @@ owner or refuse them.
 | `submit_feedback` | external request | Stores customer or staff feedback. A repeat is a duplicate. |
 | `propose_menu_change` | external request | Creates a menu proposal. It stays `proposed` until an owner acts. |
 
+## Retrying a command safely
+
+`request_replenishment`, `create_customer_order` and `cancel_customer_order` take an optional `idempotencyKey` (1 to 128 characters
+from `A-Z a-z 0-9 . _ : -`). Each call carries a key: yours when you pass one, otherwise a fresh random one, so a network retry
+inside the call cannot run the command twice. If you retry a call yourself after a timeout, pass the same key again and the
+server returns the first outcome instead of repeating it. Use a new key for a new, intentional command. A key is remembered
+for 24 hours.
+
 ## Reading `get_workspace`
 
 The agent roles in the workspace carry an `allowed_tools` list (for example `create_replenishment_proposal`). Those are the
