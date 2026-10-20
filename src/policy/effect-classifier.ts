@@ -21,6 +21,8 @@ const OPERATION_EFFECT_MAP: Record<string, EffectClass> = {
   "webhooks.ping": EffectClass.EXTERNAL_REQUEST,
   "suppliers.inquire_availability": EffectClass.EXTERNAL_REQUEST,
   "client.send_invoice_draft": EffectClass.EXTERNAL_REQUEST,
+  // A menu proposal is a request for an owner's decision. It changes nothing a customer sees (ADR 0028).
+  "menu.propose_change": EffectClass.EXTERNAL_REQUEST,
 
   // Commercial Commitments (Binding business effects, movement of money, legal agreements)
   "orders.submit": EffectClass.COMMERCIAL_COMMITMENT,
@@ -32,6 +34,8 @@ const OPERATION_EFFECT_MAP: Record<string, EffectClass> = {
   "invoices.issue_and_settle": EffectClass.COMMERCIAL_COMMITMENT,
   // Accepting a customer order is accepting an offer (AGENTS.md). Decided in src/workflows/fulfilment.ts (ADR 0026).
   "orders.accept_customer": EffectClass.COMMERCIAL_COMMITMENT,
+  // Publishing a menu change is an offer to customers: it needs an owner's approval, and an agent needs the role's grant (ADR 0028).
+  "menu.publish_change": EffectClass.COMMERCIAL_COMMITMENT,
 };
 
 /**

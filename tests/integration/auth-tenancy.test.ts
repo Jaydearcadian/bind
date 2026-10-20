@@ -64,6 +64,12 @@ const ANY_ROLE_ROUTES: Array<[string, string]> = [
   ["POST", "/api/workspaces/:id/customer-orders/:orderId/cancel"],
   ["POST", "/api/workspaces/:id/customer-orders/:orderId/fulfil"],
   ["GET", "/api/workspaces/:id/kitchen-capacity"],
+  ["POST", "/api/workspaces/:id/feedback"],
+  ["GET", "/api/workspaces/:id/feedback"],
+  ["GET", "/api/workspaces/:id/feedback/summary"],
+  ["POST", "/api/workspaces/:id/menu-proposals"],
+  ["GET", "/api/workspaces/:id/menu-proposals"],
+  ["GET", "/api/workspaces/:id/menu"],
 ];
 
 /** Owner of the workspace in the path, or of the approval or order whose workspace the service checks. */
@@ -80,6 +86,10 @@ const OWNER_ROUTES: Array<[string, string]> = [
   ["PUT", "/api/workspaces/:id/agents-paused"],
   ["POST", "/api/workspaces/:id/customer-orders/:orderId/accept"],
   ["PUT", "/api/workspaces/:id/kitchen-capacity"],
+  ["POST", "/api/workspaces/:id/menu-proposals/:proposalId/approve"],
+  ["POST", "/api/workspaces/:id/menu-proposals/:proposalId/reject"],
+  ["POST", "/api/workspaces/:id/menu-proposals/:proposalId/cancel"],
+  ["POST", "/api/workspaces/:id/menu-proposals/:proposalId/publish"],
   ["GET", "/api/workspaces/:id/webhook-secret"],
   ["POST", "/api/workspaces/:id/webhook-secret/rotate"],
   ["GET", "/api/workspaces/:id/connectors"],

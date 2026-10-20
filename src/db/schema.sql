@@ -395,3 +395,66 @@ CREATE TABLE IF NOT EXISTS kitchen_capacity (
   used_units INT NOT NULL DEFAULT 0 CHECK (used_units >= 0 AND used_units <= capacity_units),
   UNIQUE (workspace_id, starts_at)
 );
+
+-- Feedback and approval-gated menu proposals (Task 9, ADR 0028). Feedback text is untrusted customer or staff text: it is
+-- stored and counted, never executed or used as an instruction. A proposal may change only its status and decision fields.
+CREATE TABLE IF NOT EXISTS feedback_items (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  source TEXT NOT NULL CHECK (source ~ '^[a-z][a-z0-9_.:-]{1,39}$'),
+  external_id TEXT NOT NULL CHECK (char_length(external_id) BETWEEN 1 AND 120),
+  text TEXT NOT NULL CHECK (char_length(text) BETWEEN 1 AND 2000),   -- untrusted, data only
+  truncated BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (workspace_id, source, external_id)
+);
+
+CREATE TABLE IF NOT EXISTS menu_items (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  price_cents BIGINT NOT NULL CHECK (price_cents >= 0),
+  available BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- A name is taken for good: a removed item keeps its name, so a later item cannot silently reuse it.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_menu_items_name ON menu_items (workspace_id, lower(name));
+
+CREATE TABLE IF NOT EXISTS menu_proposals (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  change JSONB NOT NULL,
+  rationale TEXT CHECK (rationale IS NULL OR char_length(rationale) <= 500),   -- untrusted, data only
+  source_feedback_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status TEXT NOT NULL CHECK (status IN ('proposed','approved','rejected','published','cancelled')),
+  proposed_by TEXT NOT NULL,
+  decided_by TEXT,
+  applied JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_menu_proposals_workspace ON menu_proposals (workspace_id, created_at);
+
+-- Immutable after creation (ADR 0028): only status, decided_by, applied and updated_at may change.
+CREATE OR REPLACE FUNCTION menu_proposal_fields_immutable() RETURNS trigger AS $$
+BEGIN
+  IF NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+     OR NEW.change IS DISTINCT FROM OLD.change
+     OR NEW.rationale IS DISTINCT FROM OLD.rationale
+     OR NEW.source_feedback_ids IS DISTINCT FROM OLD.source_feedback_ids
+     OR NEW.proposed_by IS DISTINCT FROM OLD.proposed_by THEN
+    RAISE EXCEPTION 'menu proposal is immutable after creation';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'menu_proposals_immutable') THEN
+    CREATE TRIGGER menu_proposals_immutable BEFORE UPDATE ON menu_proposals
+      FOR EACH ROW EXECUTE FUNCTION menu_proposal_fields_immutable();
+  END IF;
+END
+$$;

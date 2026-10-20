@@ -24,6 +24,22 @@ import {
   FulfilmentError,
   type OperatorActor,
 } from "../workflows/fulfilment.js";
+import {
+  ingestFeedback,
+  listFeedback,
+  summarizeFeedback,
+  FeedbackError,
+} from "../workflows/feedback.js";
+import {
+  proposeMenuChange,
+  approveMenuProposal,
+  rejectMenuProposal,
+  cancelMenuProposal,
+  publishMenuChange,
+  listMenuProposals,
+  listMenu,
+  MenuError,
+} from "../workflows/menu.js";
 import { SettlementOrderError } from "../workflows/settlement.js";
 import { WorkflowCrashRecoveryRunner } from "../workflows/recovery.js";
 import { WebhookReceiver } from "../adapters/web2/webhook-receiver.js";
@@ -123,6 +139,58 @@ const KitchenCapacityBodySchema = z.object({
     )
     .min(1)
     .max(200),
+});
+
+/**
+ * Feedback and menu failures (ADR 0028). Messages are the services' own fixed texts: they never echo feedback text, a
+ * rationale or a proposed name. Zod errors name the fields only.
+ */
+function sendMenuError(res: Response, err: unknown) {
+  if (err instanceof FeedbackError || err instanceof MenuError) {
+    const status =
+      err.code === "INVALID_INPUT"
+        ? 400
+        : err.code === "PROPOSAL_NOT_FOUND" || err.code === "ITEM_NOT_FOUND"
+          ? 404
+          : err.code === "ROLE_NOT_PERMITTED"
+            ? 403
+            : 409;
+    return res.status(status).json({ error: err.message, code: err.code });
+  }
+  if (err instanceof z.ZodError) {
+    return res.status(400).json({ error: "Invalid request body", fields: err.issues.map((i) => i.path.join(".")) });
+  }
+  return res.status(500).json({ error: "Request could not be completed" });
+}
+
+const FEEDBACK_SUMMARY_DEFAULT_DAYS = 30;
+
+const FeedbackBodySchema = z.object({
+  source: z.string().regex(/^[a-z][a-z0-9_.:-]{1,39}$/),
+  externalId: z.string().trim().min(1).max(120),
+  // Untrusted text. Trimmed and truncated by the service, stored as data, never read as an instruction.
+  text: z.string().max(20000),
+});
+
+const FeedbackSummaryQuerySchema = z.object({
+  since: z.string().datetime({ offset: true }).optional(),
+});
+
+const MenuChangeSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("add_item"),
+    name: z.string().max(400),
+    description: z.string().max(2000).optional(),
+    priceCents: z.number(),
+  }),
+  z.object({ type: z.literal("update_price"), itemId: z.string().min(1).max(64), priceCents: z.number() }),
+  z.object({ type: z.literal("remove_item"), itemId: z.string().min(1).max(64) }),
+]);
+
+const MenuProposalBodySchema = z.object({
+  change: MenuChangeSchema,
+  rationale: z.string().max(2000).optional(),
+  sourceFeedbackIds: z.array(z.string().min(1).max(64)).max(20).optional(),
 });
 
 /** Parses BIND_CORS_ORIGINS: comma-separated origins. Unset or empty means no origin is allowed. */
@@ -648,6 +716,131 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       res.json(await setKitchenCapacity(req.params.id, slots, { kind: "owner", label: req.actor!.label }));
     } catch (err) {
       sendFulfilmentError(res, err);
+    }
+  });
+
+  // Feedback and menu proposals (Task 9, ADR 0028). Feedback is stored as data by any member. A staff proposal is made as
+  // the menu agent (its role check and the pause apply); an owner's is made as the owner. Only an owner approves, publishes
+  // or cancels a change. Publishing is an offer to customers, so an agent may publish only with the grant (it has none).
+  app.post("/api/workspaces/:id/feedback", ...workspaceMember, async (req: Request, res: Response) => {
+    let body: z.infer<typeof FeedbackBodySchema>;
+    try {
+      body = FeedbackBodySchema.parse(req.body);
+    } catch (err) {
+      return sendMenuError(res, err);
+    }
+    try {
+      const result = await ingestFeedback({
+        workspaceId: req.params.id,
+        source: body.source,
+        externalId: body.externalId,
+        text: body.text,
+      });
+      res.status(result.duplicate ? 200 : 201).json(result);
+    } catch (err) {
+      sendMenuError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/feedback", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      res.json(await listFeedback(req.params.id));
+    } catch (err) {
+      sendMenuError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/feedback/summary", ...workspaceMember, async (req: Request, res: Response) => {
+    let query: z.infer<typeof FeedbackSummaryQuerySchema>;
+    try {
+      query = FeedbackSummaryQuerySchema.parse(req.query);
+    } catch (err) {
+      return sendMenuError(res, err);
+    }
+    try {
+      const since = query.since
+        ? new Date(query.since)
+        : new Date(Date.now() - FEEDBACK_SUMMARY_DEFAULT_DAYS * 24 * 3_600_000);
+      const summary = await summarizeFeedback(req.params.id, since);
+      // `sample` is customer and staff text. It is data, flagged here so no client renders it as an instruction.
+      res.json({ since: since.toISOString(), ...summary, untrusted: true });
+    } catch (err) {
+      sendMenuError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/menu-proposals", ...workspaceMember, async (req: Request, res: Response) => {
+    let body: z.infer<typeof MenuProposalBodySchema>;
+    try {
+      body = MenuProposalBodySchema.parse(req.body);
+    } catch (err) {
+      return sendMenuError(res, err);
+    }
+    try {
+      // An owner's token proposes as the owner, so a pause does not block a human (ADR 0028). A staff token proposes as the
+      // menu agent: its role check and the pause apply.
+      const proposal = await proposeMenuChange(
+        {
+          workspaceId: req.params.id,
+          change: body.change,
+          rationale: body.rationale,
+          sourceFeedbackIds: body.sourceFeedbackIds,
+        },
+        req.actor!.role === "owner"
+          ? { kind: "owner", label: req.actor!.label }
+          : { kind: "agent", roleName: "menu_feedback_agent" }
+      );
+      res.status(201).json(proposal);
+    } catch (err) {
+      sendMenuError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/menu-proposals", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      res.json(await listMenuProposals(req.params.id));
+    } catch (err) {
+      sendMenuError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/menu-proposals/:proposalId/approve", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      res.json(await approveMenuProposal(req.params.id, req.params.proposalId, req.actor!.label));
+    } catch (err) {
+      sendMenuError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/menu-proposals/:proposalId/reject", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      res.json(await rejectMenuProposal(req.params.id, req.params.proposalId, req.actor!.label));
+    } catch (err) {
+      sendMenuError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/menu-proposals/:proposalId/cancel", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      res.json(await cancelMenuProposal(req.params.id, req.params.proposalId, { kind: "owner", label: req.actor!.label }));
+    } catch (err) {
+      sendMenuError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/menu-proposals/:proposalId/publish", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      res.json(await publishMenuChange(req.params.id, req.params.proposalId, { kind: "owner", label: req.actor!.label }));
+    } catch (err) {
+      sendMenuError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/menu", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      res.json(await listMenu(req.params.id));
+    } catch (err) {
+      sendMenuError(res, err);
     }
   });
 
