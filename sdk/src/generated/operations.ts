@@ -40,6 +40,7 @@ export const OPERATIONS: { readonly [K in OperationId]: OperationRoute } = {
   "getNeedsAttention": { method: "GET", path: "/api/workspaces/{id}/needs-attention" },
   "getOpenApi": { method: "GET", path: "/api/openapi.json" },
   "getOrder": { method: "GET", path: "/api/workspaces/{id}/orders/{orderId}" },
+  "getPublicConfig": { method: "GET", path: "/api/public-config" },
   "getReady": { method: "GET", path: "/ready" },
   "getTemplateBlueprint": { method: "GET", path: "/api/templates/{id}/blueprint" },
   "getWebhookSecret": { method: "GET", path: "/api/workspaces/{id}/webhook-secret" },

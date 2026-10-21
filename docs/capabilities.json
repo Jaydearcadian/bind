@@ -2,10 +2,10 @@
   "version": 1,
   "source": "docs/openapi.json + docs/ecosystem/exposure.json + sdk/src/client.ts + mcp/src/tools.ts. Generated: do not edit by hand.",
   "counts": {
-    "operations": 84,
+    "operations": 85,
     "mcpTools": 17,
     "exposure:public_api": 74,
-    "exposure:internal_service": 6,
+    "exposure:internal_service": 7,
     "exposure:protocol_primitive": 4,
     "effect:owner_decision": 10,
     "effect:owner_configuration": 15,
@@ -13,7 +13,7 @@
     "effect:operational": 3,
     "effect:credential": 10,
     "effect:data_entry": 2,
-    "effect:read": 37,
+    "effect:read": 38,
     "effect:external_request": 3
   },
   "capabilities": [
@@ -691,6 +691,30 @@
       "stability": "stable",
       "flags": [],
       "note": "One supplier order with its latest match.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getPublicConfig",
+      "method": "GET",
+      "route": "/api/public-config",
+      "summary": "The public browser configuration: the Privy app id for sign-in, or null. Nothing secret (ADR 0070).",
+      "tag": "Monitoring",
+      "authorization": "public",
+      "exposure": "internal_service",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "internal",
+      "flags": [],
+      "note": "Browser sign-in configuration: the public Privy app id or null. Not a product capability (ADR 0070).",
       "idempotency": {
         "clientKey": false,
         "natural": "not documented"

@@ -352,6 +352,11 @@ export interface CreateAppOptions {
    * outside production. `maxActive` caps the demos that are active at once. Omitted, BIND_DEMO_MAX_ACTIVE, else 200.
    */
   demo?: { enabled?: boolean; maxActive?: number };
+  /**
+   * The public browser configuration (GET /api/public-config, ADR 0070). privyAppId: null means unset. Omitted means
+   * PRIVY_APP_ID from the environment. Tests pass a value so they never depend on the process environment.
+   */
+  publicConfig?: { privyAppId?: string | null };
 }
 
 /** The body of a created or reset demo. The token is in it once; the answer is never cached (docs/decisions/0057). */
@@ -453,7 +458,8 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
           styleSrc: ["'self'"],
           imgSrc: ["'self'", "data:"],
           fontSrc: ["'self'"],
-          connectSrc: ["'self'"],
+          // Privy's browser SDK calls auth.privy.io for sign-in (ADR 0070). Nothing else is added to any directive.
+          connectSrc: ["'self'", "https://auth.privy.io"],
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
           formAction: ["'self'"],
@@ -540,6 +546,15 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     }
     log.warn("ready.not_ready", { reason: outcome.reason, error: outcome.error });
     res.status(503).json({ status: "not_ready" });
+  });
+
+  // Public browser configuration (ADR 0070): public and unauthenticated. The Privy app id is shipped to every browser anyway,
+  // so it is the only value here. Never the verification key. Never cached, so a changed id is seen at once.
+  const publicPrivyAppId =
+    options.publicConfig?.privyAppId !== undefined ? options.publicConfig.privyAppId : (config.PRIVY_APP_ID ?? null);
+  app.get("/api/public-config", (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ privyAppId: publicPrivyAppId && publicPrivyAppId.length > 0 ? publicPrivyAppId : null });
   });
 
   // Metrics: aggregate only, behind BIND_METRICS_TOKEN (docs/decisions/0032). Disabled (404) when no token is configured.

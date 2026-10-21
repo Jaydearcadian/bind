@@ -39,6 +39,8 @@ const PUBLIC_ROUTES: Array<[string, string]> = [
   ["GET", "/metrics"],
   ["GET", "/api/templates"],
   ["GET", "/api/templates/:id/blueprint"],
+  // The browser's sign-in config: the public Privy app id or null, never cached (docs/decisions/0070). Its tests are in public-config.test.ts.
+  ["GET", "/api/public-config"],
   // The OpenAPI document, generated from the route registry (docs/decisions/0034). Public, describes no data.
   ["GET", "/api/openapi.json"],
   ["POST", "/api/workspaces/onboard"],

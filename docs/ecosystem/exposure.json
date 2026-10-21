@@ -221,6 +221,16 @@
    "note": "The contract itself."
   },
   {
+   "operationId": "getPublicConfig",
+   "exposure": "internal_service",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "internal",
+   "flags": [],
+   "note": "Browser sign-in configuration: the public Privy app id or null. Not a product capability (ADR 0070)."
+  },
+  {
    "operationId": "getReady",
    "exposure": "internal_service",
    "effect": "read",
