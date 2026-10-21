@@ -6,6 +6,9 @@ import { runMigrations } from "../../src/db/migrate.js";
 import { issueToken, revokeToken } from "../../src/auth/tokens.js";
 import { newId } from "../../src/utils/ids.js";
 import { countOpenStreams, closeAllEventStreams } from "../../src/api/event-streams.js";
+import { upsertAccount } from "../../src/accounts/service.js";
+import { createSession } from "../../src/accounts/sessions.js";
+import { createDemoWorkspace } from "../../src/demo/service.js";
 
 /*
  * The replayable workspace event stream (docs/decisions/0035). Every event is a persisted audit row. The stream is read over
@@ -328,6 +331,7 @@ describe("workspace event stream and poll (docs/decisions/0035)", () => {
     if (tenantIds.length > 0) {
       await query(`DELETE FROM workspaces WHERE id = ANY($1::text[]);`, [tenantIds]);
     }
+    await query(`DELETE FROM accounts WHERE privy_user_id LIKE $1;`, [`did:privy:events-session-${run}-%`]);
     await closePool();
   });
 
@@ -842,5 +846,60 @@ describe("workspace event stream and poll (docs/decisions/0035)", () => {
     expect(message.event).toBe("shutdown");
     expect(message.data).toEqual({});
     await stream.sse!.endedWithin(2000);
+  });
+
+  /**
+   * The next message with this event name. A stream may first deliver rows that committed just before it opened (setup
+   * events of the same tenant or demo), so the test reads past them and asserts on its own marker event.
+   */
+  async function nextNamed(stream: OpenedStream, name: string): Promise<SseMessage> {
+    for (;;) {
+      const message = await stream.sse!.next();
+      if (message.event === name) return message;
+    }
+  }
+
+  it("an account session (bns_) opens the stream and receives the events written after it connected", async () => {
+    const t = await makeTenant("session-stream");
+    const account = await upsertAccount(`did:privy:events-session-${run}-${t.id}`);
+    await query(`INSERT INTO workspace_memberships (account_id, workspace_id, role) VALUES ($1, $2, 'owner');`, [account.id, t.id]);
+    const session = await createSession(account.id, t.id, 60);
+    expect(session).not.toBeNull();
+    expect(session!.token).toMatch(/^bns_[A-Za-z0-9_-]{43}$/);
+
+    const stream = await openStream(baseUrl, t.id, { token: session!.token });
+    expect(stream.status).toBe(200);
+    expect(stream.headers.get("content-type")).toContain("text/event-stream");
+    await record(t.id, "session.step", { units: 7 });
+    const message = await nextNamed(stream, "session.step");
+    expect(message.data.data.units).toBe(7);
+
+    // A session of this workspace is not accepted on another one: the answer is the same 404 a token of another workspace gets.
+    const other = await makeTenant("session-stream-other");
+    const crossed = await openStream(baseUrl, other.id, { token: session!.token });
+    expect(crossed.status).toBe(404);
+  });
+
+  it("a demo account session streams while the demo lives, ends when the demo expires, and is refused afterwards", async () => {
+    const demo = await createDemoWorkspace({ maxActive: 10_000 });
+    tenantIds.push(demo.workspaceId);
+    const account = await upsertAccount(`did:privy:events-session-${run}-${demo.workspaceId}`);
+    await query(`INSERT INTO workspace_memberships (account_id, workspace_id, role) VALUES ($1, $2, 'owner');`, [account.id, demo.workspaceId]);
+    const session = await createSession(account.id, demo.workspaceId, 60);
+    expect(session).not.toBeNull();
+
+    const stream = await openStream(baseUrl, demo.workspaceId, { token: session!.token });
+    expect(stream.status).toBe(200);
+    await record(demo.workspaceId, "session.demo_step", { units: 1 });
+    expect((await nextNamed(stream, "session.demo_step")).event).toBe("session.demo_step");
+
+    await query(`UPDATE workspaces SET demo_expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1;`, [demo.workspaceId]);
+    // The stream checks the demo's expiry on every loop, so it ends within a few poll intervals.
+    await stream.sse!.endedWithin(2000);
+    expect(stream.sse!.ended).toBe(true);
+
+    const refused = await openStream(baseUrl, demo.workspaceId, { token: session!.token });
+    expect(refused.status).toBe(401);
+    expect(refused.sse).toBeNull();
   });
 });
