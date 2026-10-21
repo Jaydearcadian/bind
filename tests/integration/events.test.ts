@@ -848,6 +848,17 @@ describe("workspace event stream and poll (docs/decisions/0035)", () => {
     await stream.sse!.endedWithin(2000);
   });
 
+  /**
+   * The next message with this event name. A stream may first deliver rows that committed just before it opened (setup
+   * events of the same tenant or demo), so the test reads past them and asserts on its own marker event.
+   */
+  async function nextNamed(stream: OpenedStream, name: string): Promise<SseMessage> {
+    for (;;) {
+      const message = await stream.sse!.next();
+      if (message.event === name) return message;
+    }
+  }
+
   it("an account session (bns_) opens the stream and receives the events written after it connected", async () => {
     const t = await makeTenant("session-stream");
     const account = await upsertAccount(`did:privy:events-session-${run}-${t.id}`);
@@ -860,8 +871,7 @@ describe("workspace event stream and poll (docs/decisions/0035)", () => {
     expect(stream.status).toBe(200);
     expect(stream.headers.get("content-type")).toContain("text/event-stream");
     await record(t.id, "session.step", { units: 7 });
-    const message = await stream.sse!.next();
-    expect(message.event).toBe("session.step");
+    const message = await nextNamed(stream, "session.step");
     expect(message.data.data.units).toBe(7);
 
     // A session of this workspace is not accepted on another one: the answer is the same 404 a token of another workspace gets.
@@ -881,7 +891,7 @@ describe("workspace event stream and poll (docs/decisions/0035)", () => {
     const stream = await openStream(baseUrl, demo.workspaceId, { token: session!.token });
     expect(stream.status).toBe(200);
     await record(demo.workspaceId, "session.demo_step", { units: 1 });
-    expect((await stream.sse!.next()).event).toBe("session.demo_step");
+    expect((await nextNamed(stream, "session.demo_step")).event).toBe("session.demo_step");
 
     await query(`UPDATE workspaces SET demo_expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1;`, [demo.workspaceId]);
     // The stream checks the demo's expiry on every loop, so it ends within a few poll intervals.

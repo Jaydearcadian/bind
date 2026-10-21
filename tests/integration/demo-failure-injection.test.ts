@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import type { Server } from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -82,18 +82,39 @@ describe("demo creation and reset with a failing write (docs/decisions/0057)", (
   const app = createApp({ rateLimits: { enabled: false }, metrics: { token: null }, demo: { enabled: true, maxActive: 10_000 } });
   let server: { url: string; close: () => Promise<void> };
   let auditSpy: ReturnType<typeof vi.spyOn>;
+  /** How many `demo.created` audit writes must fail. Only those calls are touched, so a stray recordAudit cannot use the injection. */
+  let demoAuditFailures = 0;
   const logLines: string[] = [];
+  /** Demo ids that existed before this file ran. Any demo id that is not in this set after the file is one this file made. */
+  let baselineDemoIds: string[] = [];
+
+  /** Makes the next `demo.created` audit write reject. Other audit writes pass through to the real method. */
+  function failNextDemoAudit(): void {
+    demoAuditFailures = 1;
+  }
 
   beforeAll(async () => {
     await runMigrations();
+    baselineDemoIds = await demoIds();
     server = await listen(app);
-    auditSpy = vi.spyOn(WorkflowEngine.prototype, "recordAudit");
+    const realRecordAudit = WorkflowEngine.prototype.recordAudit;
+    auditSpy = vi.spyOn(WorkflowEngine.prototype, "recordAudit").mockImplementation(function (this: WorkflowEngine, ...args: any[]) {
+      // Arguments: workspaceId, workflowId, actorType, actorId, effectClass, action, policyDecision, evidence, ...
+      if (args[5] === "demo.created" && demoAuditFailures > 0) {
+        demoAuditFailures -= 1;
+        return Promise.reject(new Error(AUDIT_ERROR));
+      }
+      return (realRecordAudit as (...a: any[]) => Promise<void>).apply(this, args);
+    });
   }, 120_000);
 
   afterAll(async () => {
     auditSpy?.mockRestore();
     setLogSink(null);
     if (server) await server.close();
+    // Every demo this file left behind, including one a regression leaked from a test that did not record its id.
+    const leaked = (await demoIds()).filter((id) => !baselineDemoIds.includes(id));
+    for (const id of leaked) createdDemoIds.add(id);
     const ids = [...createdDemoIds];
     if (ids.length > 0) {
       await query(`DELETE FROM idempotency_keys WHERE workspace_id = ANY($1::text[]);`, [ids]);
@@ -105,9 +126,14 @@ describe("demo creation and reset with a failing write (docs/decisions/0057)", (
     await closePool();
   });
 
+  afterEach(() => {
+    // An injected failure that was not consumed must not reach the next test.
+    demoAuditFailures = 0;
+  });
+
   it("a demo whose audit row cannot be written is not left behind, and the error reaches the caller", async () => {
     const before = await demoIds();
-    auditSpy.mockRejectedValueOnce(new Error(AUDIT_ERROR));
+    failNextDemoAudit();
     await expect(createDemoWorkspace({ maxActive: 10_000 })).rejects.toThrow(AUDIT_ERROR);
 
     // No demo workspace was added, and no owner token exists for one.
@@ -123,9 +149,9 @@ describe("demo creation and reset with a failing write (docs/decisions/0057)", (
 
   it("the route answers 500 with no internal detail when a create cannot be recorded, and creates nothing", async () => {
     const before = await demoIds();
-    auditSpy.mockRejectedValueOnce(new Error(AUDIT_ERROR));
+    failNextDemoAudit();
     const reply = await call(server.url, "POST", "/api/demo");
-    expect(reply.status).toBe(500);
+    expect(reply.status, reply.text).toBe(500);
     // The standard error envelope (ADR 0050) with the generic message and no database detail.
     expect(reply.body.error).toBe("Demo operation failed");
     expect(reply.body.code).toBe("INTERNAL_ERROR");
@@ -136,9 +162,9 @@ describe("demo creation and reset with a failing write (docs/decisions/0057)", (
   it("a reset whose new demo cannot be recorded leaves the visitor's demo working and creates nothing", async () => {
     const demo = await createDemo(server.url);
     const before = await demoIds();
-    auditSpy.mockRejectedValueOnce(new Error(AUDIT_ERROR));
+    failNextDemoAudit();
     const reply = await call(server.url, "POST", `/api/workspaces/${demo.workspaceId}/demo/reset`, { token: demo.token });
-    expect(reply.status).toBe(500);
+    expect(reply.status, reply.text).toBe(500);
     expect(reply.text).not.toContain(AUDIT_ERROR);
 
     // The old demo was never touched: it still exists, and its token works.
@@ -205,8 +231,8 @@ describe("demo creation and reset with a failing write (docs/decisions/0057)", (
     expect(purged.failures).toEqual([]);
     expect((await query(`SELECT id FROM workspaces WHERE id = $1;`, [demo.workspaceId])).rows.length).toBe(0);
     const oldAfter = await call(server.url, "GET", `/api/workspaces/${demo.workspaceId}`, { token: demo.token });
-    expect(oldAfter.status).toBe(401);
+    expect(oldAfter.status, oldAfter.text).toBe(401);
     const freshAfter = await call(server.url, "GET", `/api/workspaces/${fresh.workspaceId}`, { token: fresh.token });
-    expect(freshAfter.status).toBe(200);
+    expect(freshAfter.status, freshAfter.text).toBe(200);
   });
 });
