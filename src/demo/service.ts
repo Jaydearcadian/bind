@@ -85,7 +85,8 @@ function assertCapacity(active: number, maxActive: number): void {
 
 /**
  * Provisions one demo and its owner token, and writes its audit row. The caller holds the create lock and has checked the cap.
- * If the token cannot be issued the workspace is deleted, so no demo is left without an owner.
+ * If the token cannot be issued, or its audit row cannot be recorded, the workspace is deleted and the error is rethrown, so no
+ * half-made demo is left behind and the failure reaches the caller.
  */
 async function provisionDemo(reason: "create" | "reset"): Promise<DemoCredentials> {
   const workspaceId = `ws-demo-${crypto.randomBytes(8).toString("hex")}`;
@@ -97,20 +98,21 @@ async function provisionDemo(reason: "create" | "reset"): Promise<DemoCredential
   let issued: { token: string };
   try {
     issued = await issueToken(workspaceId, "owner", DEMO_OWNER_LABEL, { type: "system", id: "system:demo" });
+    await new WorkflowEngine().recordAudit(
+      workspaceId,
+      null,
+      "system",
+      "system:demo",
+      EffectClass.READ,
+      "demo.created",
+      PolicyDecision.ALLOW,
+      { reason, expiresAt: expiresAt.toISOString() }
+    );
   } catch (err) {
+    // The token and the audit row are both in the workspace's rows, so one delete removes everything written so far.
     await query(`DELETE FROM workspaces WHERE id = $1 AND is_demo;`, [workspaceId]);
     throw err;
   }
-  await new WorkflowEngine().recordAudit(
-    workspaceId,
-    null,
-    "system",
-    "system:demo",
-    EffectClass.READ,
-    "demo.created",
-    PolicyDecision.ALLOW,
-    { reason, expiresAt: expiresAt.toISOString() }
-  );
   return { workspaceId, token: issued.token, expiresAt };
 }
 
