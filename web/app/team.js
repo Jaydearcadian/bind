@@ -279,6 +279,8 @@ function agentCard(role) {
 }
 
 function renderAgents() {
+  // Redrawing must not lose the keyboard: put focus back on the same control afterwards.
+  const focusedId = document.activeElement && document.activeElement.id;
   const wrap = $("agents");
   wrap.removeAttribute("aria-busy");
   wrap.textContent = "";
@@ -287,11 +289,18 @@ function renderAgents() {
     return;
   }
   wrap.append(...state.roles.map(agentCard));
+  if (focusedId) document.getElementById(focusedId)?.focus();
 }
 
 async function loadAgents() {
   const res = await bind.call("getAgents", { params: { id: state.me.workspaceId } });
-  state.roles = res.roles;
+  // Keep cards where they were: saving a role can change its position in the server's order.
+  if (!state.order) state.order = res.roles.map((r) => r.role_name);
+  const rank = (r) => {
+    const i = state.order.indexOf(r.role_name);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  state.roles = res.roles.slice().sort((a, b) => rank(a) - rank(b));
   state.safeTools = res.safeAgentTools;
 }
 

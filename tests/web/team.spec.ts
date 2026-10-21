@@ -54,23 +54,35 @@ test("limits read from the server, change with a preset, refuse an impossible pa
 test("an owner can switch a tool off, rename an agent and turn it off, and each change is stored", async ({ page, request }) => {
   const ws = await makeWorkspace(request);
   await open(page, ws.owner);
-  const agent = page.locator(".agent").first();
+  // The procurement agent, addressed by its role, because card order is not part of the contract.
+  const roleName = "procurement_agent";
+  const agent = page.locator(`.agent[data-role="${roleName}"]`);
   await expect(agent).toBeVisible();
-  const roleName = await agent.getAttribute("data-role");
+  // Each change finishes (the page says Saved and redraws) before the next, as a person would wait.
+  const saved = async () => {
+    await expect(page.locator("#toast")).toHaveText("Saved");
+    await page.evaluate(() => (document.getElementById("toast")!.hidden = true));
+  };
+
   const tool = agent.getByRole("switch", { name: "Read supplier quotes" });
   if (await tool.isChecked()) {
-    await tool.uncheck({ force: true });
+    // Click the visible switch, as a person would (the checkbox itself is visually hidden).
+    await agent.locator(`label[for="tool-${roleName}-get_approved_supplier_quotes"] .switch-track`).click();
+    await expect(tool).not.toBeChecked();
+    await saved();
     await expect.poll(async () => {
       const r = await (await request.get(`/api/workspaces/${ws.id}/agents`, auth(ws.owner))).json();
       return r.roles.find((x: { role_name: string }) => x.role_name === roleName).allowed_tools.includes("get_approved_supplier_quotes");
     }).toBe(false);
   }
-  await agent.getByRole("button", { name: "Rename" }).click();
+  await page.locator(`.agent[data-role="${roleName}"]`).getByRole("button", { name: "Rename" }).click();
   await page.getByLabel("Agent name").fill("Buying assistant");
   await page.getByLabel("Agent name").press("Enter");
-  await expect(page.locator(".agent").first().locator(".agent-name")).toHaveText("Buying assistant");
-  await page.locator(".agent").first().getByRole("switch", { name: "On" }).uncheck({ force: true });
-  await expect(page.locator(".agent").first()).toHaveClass(/is-off/);
+  await saved();
+  await expect(page.locator(`.agent[data-role="${roleName}"]`).locator(".agent-name")).toHaveText("Buying assistant");
+  await page.locator(`label[for="enabled-${roleName}"] .switch-track`).click();
+  await saved();
+  await expect(page.locator(`.agent[data-role="${roleName}"]`)).toHaveClass(/is-off/);
   const r = await (await request.get(`/api/workspaces/${ws.id}/agents`, auth(ws.owner))).json();
   const stored = r.roles.find((x: { role_name: string }) => x.role_name === roleName);
   expect(stored.display_name).toBe("Buying assistant");
