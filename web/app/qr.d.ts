@@ -5,4 +5,5 @@ export interface QrMatrix {
 }
 
 export function qrMatrix(text: string): QrMatrix;
+export function qrMatrixWithMask(text: string, mask: number): QrMatrix;
 export function qrSvgPath(text: string, options?: { margin?: number }): { size: number; d: string };

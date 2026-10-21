@@ -286,31 +286,51 @@ function penalty(m) {
   return score;
 }
 
+/** The symbol for one mask. */
+function symbolWithMask(version, codewords, mask) {
+  const g = drawFunctionPatterns(version);
+  placeData(g, codewords);
+  applyMask(g, mask);
+  drawFormat(g, mask);
+  return g.modules;
+}
+
 /** Tries all eight masks and keeps the one with the lowest penalty (the first on a tie). */
 function bestSymbol(version, codewords) {
   let best = null;
   for (let mask = 0; mask < 8; mask++) {
-    const g = drawFunctionPatterns(version);
-    placeData(g, codewords);
-    applyMask(g, mask);
-    drawFormat(g, mask);
-    const score = penalty(g.modules);
-    if (best === null || score < best.score) best = { score, modules: g.modules };
+    const modules = symbolWithMask(version, codewords, mask);
+    const score = penalty(modules);
+    if (best === null || score < best.score) best = { score, modules };
   }
   return best.modules;
 }
 
-/** Encodes text as a QR code. Returns { size, modules } with modules[row][col] true for a dark module. */
-export function qrMatrix(text) {
+/** The smallest version for a text, and its codewords with ECC. */
+function codewordsFor(text) {
   const bytes = new TextEncoder().encode(String(text));
   const version = chooseVersion(bytes.length);
-  const codewords = addEcc(encodeData(bytes, version), version);
+  return { version, codewords: addEcc(encodeData(bytes, version), version) };
+}
+
+/** Encodes text as a QR code. Returns { size, modules } with modules[row][col] true for a dark module. */
+export function qrMatrix(text) {
+  const { version, codewords } = codewordsFor(text);
   const modules = bestSymbol(version, codewords);
+  return { size: modules.length, modules };
+}
+
+/** Encodes text with a fixed mask (0 to 7) instead of the lowest-penalty one. Used by the tests. */
+export function qrMatrixWithMask(text, mask) {
+  if (!Number.isInteger(mask) || mask < 0 || mask > 7) throw new RangeError(`Mask must be an integer from 0 to 7, got ${mask}`);
+  const { version, codewords } = codewordsFor(text);
+  const modules = symbolWithMask(version, codewords, mask);
   return { size: modules.length, modules };
 }
 
 /** The code as one SVG path of 1x1 squares, with a quiet zone of `margin` modules. size includes the margin. */
 export function qrSvgPath(text, { margin = 4 } = {}) {
+  if (!Number.isInteger(margin) || margin < 0) throw new RangeError(`margin must be a whole number of modules, got ${margin}`);
   const { size, modules } = qrMatrix(text);
   let d = "";
   modules.forEach((row, r) => row.forEach((dark, c) => {
