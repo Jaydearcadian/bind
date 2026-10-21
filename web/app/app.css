@@ -359,3 +359,17 @@ a.nav-item:hover { color: var(--text); background: color-mix(in srgb, var(--bord
 .builders #builders-owner[hidden] { display: none; }
 .line .status { margin-left: 8px; }
 .danger { border-color: color-mix(in srgb, var(--status-refused) 30%, var(--glass-line)); }
+
+/* Help */
+.ico-help { border-radius: 999px; }
+.ico-help::after { content: "?"; position: absolute; inset: 0; display: grid; place-items: center; font: 700 10px/1 var(--font-ui); }
+.help-search { max-width: 520px; }
+.help-list { display: grid; gap: 10px; }
+.help-item { max-width: none; border-radius: var(--radius); background: var(--glass-strong); background-image: var(--sheen); border: 1px solid var(--glass-line); box-shadow: var(--highlight), var(--elev-1); }
+.help-item summary { cursor: pointer; padding: 16px 20px; font-weight: 500; font-size: 1.05rem; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+.help-item summary::-webkit-details-marker { display: none; }
+.help-item summary::after { content: "+"; color: var(--text-muted); font-weight: 400; }
+.help-item[open] summary::after { content: "−"; }
+.help-item summary:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; border-radius: var(--radius); }
+.help-answer { padding: 0 20px 18px; display: grid; gap: 10px; color: var(--text-muted); max-width: 70ch; }
+.help-answer .text-link { justify-self: start; }
