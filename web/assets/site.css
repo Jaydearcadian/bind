@@ -103,6 +103,9 @@ h3 { font-size: 1.08rem; font-weight: 600; line-height: 1.35; letter-spacing: -0
 .cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
 .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 50px; padding: 0 24px; border-radius: 999px; font: 500 16px/1 var(--font-ui); text-decoration: none; border: 1px solid transparent; transition: transform var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard); }
 .btn:hover { transform: translateY(-1px); }
+/* The lift must not move the hit area: a pointer on the bottom edge would flicker hover on and off. This strip fills the gap. */
+.btn { position: relative; }
+.btn::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; }
 .btn:active { transform: translateY(0); }
 .btn-primary { background: var(--text); background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 55%); color: var(--bg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), var(--elev-1); }
 .btn-primary:hover { color: var(--bg); background: color-mix(in srgb, var(--text) 86%, var(--accent)); }
