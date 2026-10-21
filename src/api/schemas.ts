@@ -909,6 +909,9 @@ export const HealthSchema = z
 
 export const ReadySchema = z.object({ status: z.literal("ready") }).passthrough();
 
+/** GET /api/public-config (ADR 0070): the only browser-visible configuration. The Privy app id is public by design. */
+export const PublicConfigSchema = z.object({ privyAppId: z.string().min(1).max(128).nullable() }).strict();
+
 /** The document served by GET /api/openapi.json. Its full shape is checked by the OpenAPI tests, not here. */
 export const OpenApiDocumentSchema = z
   .object({

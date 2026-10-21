@@ -2230,6 +2230,72 @@
         "x-bind-access": "owner-any"
       }
     },
+    "/api/public-config": {
+      "get": {
+        "description": "Access: public. No token is needed.",
+        "operationId": "getPublicConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "privyAppId": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "nullable": true,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "privyAppId"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Public configuration. Never cached."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          }
+        },
+        "security": [],
+        "summary": "The public browser configuration: the Privy app id for sign-in, or null. Nothing secret (ADR 0070).",
+        "tags": [
+          "Monitoring"
+        ],
+        "x-bind-access": "public"
+      }
+    },
     "/api/templates": {
       "get": {
         "description": "Access: public. No token is needed.",
