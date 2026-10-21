@@ -146,6 +146,29 @@ describe("accounts, sessions, invitations and members", () => {
     expect(plaintext.rows).toHaveLength(0);
   });
 
+  it("creates a session from a token signed by the second key of a rotating two-key Privy bundle", async () => {
+    const rotated = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const bundle = `${publicKey.export({ type: "spki", format: "pem" }).toString()}${rotated.publicKey.export({ type: "spki", format: "pem" }).toString()}`;
+    const rotatingApp = createApp({ rateLimits: { enabled: false }, accounts: { verifier: createPrivyVerifier({ appId: APP, verificationKeyPem: bundle }) } });
+    const rs = await new Promise<Server>((resolve) => {
+      const s = rotatingApp.listen(0, "127.0.0.1", () => resolve(s));
+    });
+    try {
+      const addr = rs.address();
+      const base = addr && typeof addr === "object" ? `http://127.0.0.1:${addr.port}` : "";
+      const head = b64({ alg: "ES256", typ: "JWT" });
+      const body = b64({ sub: alice, aud: APP, iss: "privy.io", exp: Math.floor(Date.now() / 1000) + 3600 });
+      const sig = sign("sha256", Buffer.from(`${head}.${body}`), { key: rotated.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url");
+      const r = await call("POST", "/api/auth/session", { base, bearer: `${head}.${body}.${sig}`, body: { workspaceId: wsNew } });
+      expect(r.status).toBe(201);
+      expect(r.body.sessionToken).toMatch(/^bns_[A-Za-z0-9_-]{43}$/);
+      const forged = await call("POST", "/api/auth/session", { base, bearer: `${head}.${body}.${sig.slice(0, -2)}AA`, body: { workspaceId: wsNew } });
+      expect(forged.status).toBe(401);
+    } finally {
+      await new Promise<void>((r) => rs.close(() => r()));
+    }
+  });
+
   it("refuses a session for a workspace the account does not belong to, with the answer a missing workspace gets", async () => {
     const notMember = await session(bob, wsNew);
     const missing = await session(bob, `ws-does-not-exist-${run}`);

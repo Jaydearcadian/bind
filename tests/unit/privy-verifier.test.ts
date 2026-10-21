@@ -86,4 +86,73 @@ describe("Privy access token verification", () => {
     const v = createPrivyVerifier({ appId: APP, verificationKeyPem: pem.replace(/\n/g, "\\n"), now: () => NOW });
     expect((await v.verify(mint({})))?.userId).toBe("did:privy:abc");
   });
+
+  describe("several keys at once (Privy rotates two signing keys)", () => {
+    const second = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const pem2 = second.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const bundle = `${pem}${pem2}`;
+    const rotating = createPrivyVerifier({ appId: APP, verificationKeyPem: bundle, now: () => NOW });
+
+    it("still accepts a single key exactly as before", async () => {
+      const single = createPrivyVerifier({ appId: APP, verificationKeyPem: pem, now: () => NOW });
+      expect((await single.verify(mint({})))?.userId).toBe("did:privy:abc");
+      expect(await single.verify(mint({}, { key: second.privateKey }))).toBeNull();
+    });
+
+    it("accepts a token signed by either key of a two-key bundle", async () => {
+      expect(await rotating.verify(mint({}, { key: privateKey }))).toEqual({ userId: "did:privy:abc", sessionId: "s1" });
+      expect((await rotating.verify(mint({ sub: "did:privy:second" }, { key: second.privateKey })))?.userId).toBe("did:privy:second");
+    });
+
+    it("refuses a token signed by a third key that is not in the bundle", async () => {
+      expect(await rotating.verify(mint({}, { key: other.privateKey }))).toBeNull();
+    });
+
+    it("still applies every claim check to a token from the second key", async () => {
+      expect(await rotating.verify(mint({ aud: "another_app" }, { key: second.privateKey }))).toBeNull();
+      expect(await rotating.verify(mint({ exp: NOW - 120 }, { key: second.privateKey }))).toBeNull();
+      expect(await rotating.verify(mint({ iss: "evil.example" }, { key: second.privateKey }))).toBeNull();
+    });
+
+    it("refuses algorithm tricks with a two-key bundle: none, HS256 keyed with a public key, and ES384", async () => {
+      const body = b64({ sub: "did:privy:abc", aud: APP, exp: NOW + 3600 });
+      expect(await rotating.verify(`${b64({ alg: "none", typ: "JWT" })}.${body}.`)).toBeNull();
+      for (const k of [pem, pem2]) {
+        const hsHead = b64({ alg: "HS256", typ: "JWT" });
+        const mac = createHmac("sha256", k).update(`${hsHead}.${body}`).digest("base64url");
+        expect(await rotating.verify(`${hsHead}.${body}.${mac}`)).toBeNull();
+      }
+      expect(await rotating.verify(mint({}, { key: second.privateKey, header: { alg: "ES384", typ: "JWT" } }))).toBeNull();
+    });
+
+    it("accepts the two-key bundle in the single-line escaped form an environment variable carries", async () => {
+      const escaped = bundle.replace(/\n/g, "\\n");
+      const v = createPrivyVerifier({ appId: APP, verificationKeyPem: escaped, now: () => NOW });
+      expect((await v.verify(mint({}, { key: second.privateKey })))?.userId).toBe("did:privy:abc");
+      expect((await v.verify(mint({}, { key: privateKey })))?.userId).toBe("did:privy:abc");
+      expect(await v.verify(mint({}, { key: other.privateKey }))).toBeNull();
+    });
+
+    it("refuses a bundle that mixes a P-256 key with an RSA, secp256k1 or P-384 key", () => {
+      const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey.export({ type: "spki", format: "pem" }).toString();
+      const k1 = generateKeyPairSync("ec", { namedCurve: "secp256k1" }).publicKey.export({ type: "spki", format: "pem" }).toString();
+      const p384 = generateKeyPairSync("ec", { namedCurve: "P-384" }).publicKey.export({ type: "spki", format: "pem" }).toString();
+      for (const bad of [pem + rsa, rsa + pem, pem + k1, pem + p384]) {
+        expect(() => createPrivyVerifier({ appId: APP, verificationKeyPem: bad })).toThrow(/P-256/);
+      }
+    });
+
+    it("refuses an empty value, a value with no key, stray text beside a key, and more than four keys", () => {
+      expect(() => createPrivyVerifier({ appId: APP, verificationKeyPem: "" })).toThrow();
+      expect(() => createPrivyVerifier({ appId: APP, verificationKeyPem: "   " })).toThrow();
+      expect(() => createPrivyVerifier({ appId: APP, verificationKeyPem: `${pem}\nnot a key` })).toThrow();
+      expect(() => createPrivyVerifier({ appId: APP, verificationKeyPem: `${pem}${pem2}${pem}${pem2}${pem}` })).toThrow(/at most 4/);
+    });
+
+    it("accepts up to four keys", async () => {
+      const four = `${pem}${pem2}${pem}${pem2}`;
+      const v = createPrivyVerifier({ appId: APP, verificationKeyPem: four, now: () => NOW });
+      expect((await v.verify(mint({}, { key: second.privateKey })))?.userId).toBe("did:privy:abc");
+    });
+  });
 });

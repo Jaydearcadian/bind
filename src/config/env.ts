@@ -61,7 +61,7 @@ const envSchema = z.object({
   // Sign-in with Privy (ADR 0051). Both unset: the account routes answer 503 and nothing else changes. The verification key is the
   // app's public key (PEM) from the Privy dashboard; it is not a secret, but it is configuration, never source.
   PRIVY_APP_ID: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(128).optional()),
-  PRIVY_VERIFICATION_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(4096).optional()),
+  PRIVY_VERIFICATION_KEY: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(8192).optional()),
   // How long an account session lasts, in minutes (ADR 0051). Default 60.
   BIND_SESSION_MINUTES: z.preprocess(
     (v) => (v === "" ? undefined : v),
