@@ -291,3 +291,22 @@ a.nav-item:hover { color: var(--text); background: color-mix(in srgb, var(--bord
 .join-text { color: var(--text-muted); }
 #join-ok, #join-bad { display: grid; gap: 14px; }
 #join-ok[hidden], #join-bad[hidden] { display: none; }
+
+/* Connections */
+.health { display: grid; gap: 10px; padding: 18px 20px; border-radius: var(--radius-lg); background: var(--glass); background-image: var(--sheen); border: 1px solid var(--glass-line); box-shadow: var(--highlight); }
+.health-lead { font-family: var(--font-display); font-size: 1.25rem; }
+.health-items { display: flex; flex-wrap: wrap; gap: 8px; }
+.health-item { font-size: 0.88rem; padding: 6px 11px; border-radius: 999px; background: color-mix(in srgb, var(--border) 55%, transparent); }
+.health-item.is-attention { background: var(--status-pending-tint); color: var(--status-pending-text); font-weight: 500; }
+.status { display: inline-block; vertical-align: 2px; margin-left: 4px; font: 500 12px/1 var(--font-ui); padding: 5px 9px; border-radius: 999px; white-space: nowrap; }
+.status-neutral { background: color-mix(in srgb, var(--border) 60%, transparent); color: var(--text-muted); }
+.status-outline { border: 1px solid var(--border); color: var(--text-muted); }
+.status-ok { background: var(--status-approved-tint); color: var(--status-approved-text); }
+.status-pending { background: var(--status-pending-tint); color: var(--status-pending-text); }
+.status-muted { color: var(--text-muted); border: 1px dashed var(--border); }
+.add-form { display: grid; gap: 8px; padding: 16px; border-radius: var(--radius); background: var(--bg); border: 1px solid var(--glass-line); box-shadow: var(--highlight); }
+.add-form label { font-weight: 500; margin-top: 4px; }
+.add-form .help { color: var(--text-muted); font-size: 0.88rem; }
+.add-form .error { color: var(--status-refused-text); background: var(--status-refused-tint); padding: 10px 12px; border-radius: var(--radius-sm); }
+.optional { font-weight: 400; color: var(--text-muted); font-size: 0.88rem; }
+.mono { font-family: var(--font-mono); }

@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Connections · Bind</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/brand/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/brand/tokens.css">
+<link rel="stylesheet" href="/assets/site.css">
+<link rel="stylesheet" href="/app/app.css">
+<script src="/app/boot.js"></script>
+<script type="module" src="/app/connections.js"></script>
+</head>
+<body class="app">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header app-header">
+  <div class="header-row">
+    <a class="lockup" href="/app/" aria-label="Bind, Today"><svg viewBox="0 0 192 58" aria-hidden="true" focusable="false"><g transform="translate(0 7) scale(.8)"><defs><mask id="mk-a" maskUnits="userSpaceOnUse" x="-12" y="-12" width="88" height="88"><rect x="-12" y="-12" width="88" height="88" fill="#fff"/><circle class="orbit" cx="42" cy="14.68" r="8.1" fill="#000"/></mask></defs><path pathLength="100" d="M32 12A20 20 0 1 1 32 52A20 20 0 1 1 32 12" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" mask="url(#mk-a)"/><circle class="bead orbit" cx="42" cy="14.68" r="6.4"/></g><g transform="translate(66 -1)"><g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 10V46"/><circle cx="22" cy="34" r="12"/><path d="M47 22V46"/><path d="M58 46V33A11 11 0 0 1 80 33V46"/><circle cx="103" cy="34" r="12"/><path d="M115 10V46"/></g><circle class="bead" cx="47" cy="11" r="3.4"/></g></svg></a>
+    <p class="ws-name" id="ws-name" aria-live="polite"></p>
+    <div class="header-actions">
+      <button class="pause-btn" id="pause-btn" type="button" hidden><span class="pause-dot" aria-hidden="true"></span><span id="pause-label">Pause all agents</span></button>
+      <div class="account">
+        <button class="account-btn" id="account-btn" type="button" aria-expanded="false" aria-controls="account-menu"><span class="avatar" id="avatar" aria-hidden="true"></span><span class="visually-hidden">Account</span></button>
+        <div class="account-menu" id="account-menu" hidden>
+          <p class="account-who"><b id="account-label"></b><span id="account-role"></span></p>
+          <button class="menu-item" id="sign-out" type="button">Sign out</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="app-frame">
+  <nav class="side-nav" aria-label="App">
+    <ul>
+      <li><a class="nav-item" href="/app/"><span class="nav-ico ico-today" aria-hidden="true"></span>Today</a></li>
+      <li><a class="nav-item" href="/app/activity"><span class="nav-ico ico-activity" aria-hidden="true"></span>Activity</a></li>
+      <li><a class="nav-item" href="/app/team"><span class="nav-ico ico-team" aria-hidden="true"></span>Team and limits</a></li>
+      <li><a class="nav-item is-current" href="/app/connections" aria-current="page"><span class="nav-ico ico-connections" aria-hidden="true"></span>Connections</a></li>
+      <li><span class="nav-item is-soon" aria-disabled="true"><span class="nav-ico ico-data" aria-hidden="true"></span>Business data<em>Soon</em></span></li>
+      <li><a class="nav-item" href="/app/people"><span class="nav-ico ico-people" aria-hidden="true"></span>People</a></li>
+      <li><span class="nav-item is-soon" aria-disabled="true"><span class="nav-ico ico-settings" aria-hidden="true"></span>Settings<em>Soon</em></span></li>
+    </ul>
+  </nav>
+
+  <main id="main" class="app-main">
+    <div class="banner banner-paused" id="paused-banner" hidden role="status">
+      <svg class="bind-mark" data-state="held" viewBox="0 0 64 64" aria-hidden="true"><path class="ring" d="M32 12A20 20 0 1 1 32 52A20 20 0 1 1 32 12"/><circle class="clasp" cx="42" cy="14.68" r="6.4"/></svg>
+      <p><b>All agents are paused.</b> Nothing new is ordered or committed. You can still read everything and cancel work.</p>
+    </div>
+    <div class="banner banner-stale" id="stale-banner" hidden role="status">
+      <p id="stale-text">Can't reach Bind right now. Showing what we had.</p>
+      <button class="btn-small" id="refresh-now" type="button">Refresh now</button>
+    </div>
+
+    <header class="page-head">
+      <p class="eyebrow">What your agents can reach</p>
+      <h1 class="page-title">Connections</h1>
+    </header>
+
+    <section class="health" id="health" aria-live="polite" aria-busy="true"><div class="skeleton"></div></section>
+
+    <section class="panel" aria-labelledby="tools-title" id="tools-panel">
+      <div class="panel-head"><h2 id="tools-title">Tools and services</h2><button class="btn-small" type="button" id="add-tool-btn" hidden>Add</button></div>
+      <p class="panel-lede">Accounts your agents use, like accounting or messaging. Keys are stored encrypted on Bind's server and never shown again, not even to you.</p>
+      <form class="add-form" id="tool-form" hidden novalidate>
+        <label for="tool-name">Name</label>
+        <input id="tool-name" class="text-input" maxlength="60" autocomplete="off" placeholder="Accounting">
+        <label for="tool-kind">What it is</label>
+        <select id="tool-kind" class="text-input">
+          <option value="accounting">Accounting</option>
+          <option value="messaging">Messaging</option>
+          <option value="supplier">A supplier's system</option>
+          <option value="llm">An AI model provider</option>
+          <option value="other">Something else</option>
+        </select>
+        <label for="tool-secret">Key or token</label>
+        <input id="tool-secret" class="text-input mono" type="password" autocomplete="off" spellcheck="false">
+        <p class="help">Sent once over an encrypted connection, then kept encrypted. Agents never see it; Bind's code uses it for them.</p>
+        <p class="error" id="tool-error" role="alert" hidden></p>
+        <div class="form-actions">
+          <button class="btn btn-quiet" type="button" id="tool-cancel">Cancel</button>
+          <button class="btn btn-primary" type="submit" id="tool-save">Save</button>
+        </div>
+      </form>
+      <ul class="lines" id="tools" aria-busy="true"><li class="skeleton"></li></ul>
+    </section>
+
+    <section class="panel" aria-labelledby="suppliers-title">
+      <div class="panel-head"><h2 id="suppliers-title">Suppliers</h2><button class="btn-small" type="button" id="add-supplier-btn" hidden>Add</button></div>
+      <p class="panel-lede">Who your agents may ask for quotes. Only suppliers you approve can be bought from.</p>
+      <form class="add-form" id="supplier-form" hidden novalidate>
+        <label for="supplier-name">Supplier name</label>
+        <input id="supplier-name" class="text-input" maxlength="120" autocomplete="off" placeholder="Harbor Produce">
+        <label for="supplier-email">Contact email <span class="optional">optional</span></label>
+        <input id="supplier-email" class="text-input" type="email" autocomplete="off">
+        <p class="help">Quotes come in by email or phone and are entered in Bind. Connecting a supplier's own ordering system comes later.</p>
+        <label class="check"><input id="supplier-approve" type="checkbox"> I know this supplier and approve buying from them</label>
+        <p class="error" id="supplier-error" role="alert" hidden></p>
+        <div class="form-actions">
+          <button class="btn btn-quiet" type="button" id="supplier-cancel">Cancel</button>
+          <button class="btn btn-primary" type="submit" id="supplier-save">Add supplier</button>
+        </div>
+      </form>
+      <ul class="lines" id="suppliers" aria-busy="true"><li class="skeleton"></li></ul>
+    </section>
+
+    <section class="panel" aria-labelledby="surfaces-title">
+      <div class="panel-head"><h2 id="surfaces-title">Messaging apps</h2></div>
+      <p class="panel-lede">People who can talk to your agents from WhatsApp, Telegram, email and similar apps, and the role each one has here.</p>
+      <ul class="lines" id="surfaces" aria-busy="true"><li class="skeleton"></li></ul>
+    </section>
+
+    <section class="panel" aria-labelledby="agents-ext-title">
+      <div class="panel-head"><h2 id="agents-ext-title">Other agents</h2></div>
+      <p class="panel-lede">Agents run by other businesses, like a supplier's ordering agent. None are connected yet: each one will come through a checked adapter, never by pasting an address.</p>
+    </section>
+  </main>
+</div>
+
+<nav class="tab-bar" aria-label="App">
+  <a class="tab-item" href="/app/"><span class="nav-ico ico-today" aria-hidden="true"></span>Today</a>
+  <a class="tab-item" href="/app/activity"><span class="nav-ico ico-activity" aria-hidden="true"></span>Activity</a>
+  <a class="tab-item" href="/app/team"><span class="nav-ico ico-team" aria-hidden="true"></span>Team</a>
+  <a class="tab-item is-current" href="/app/connections" aria-current="page"><span class="nav-ico ico-connections" aria-hidden="true"></span>Connections</a>
+  <button class="tab-item tab-more" id="more-btn" type="button" aria-expanded="false" aria-controls="more-menu"><span class="nav-ico ico-more" aria-hidden="true"></span>More</button>
+</nav>
+<div class="more-menu" id="more-menu" hidden>
+  <span class="more-item is-soon" aria-disabled="true">Business data<em>Soon</em></span>
+  <a class="more-item" href="/app/people">People and access</a>
+  <span class="more-item is-soon" aria-disabled="true">Settings<em>Soon</em></span>
+  <span class="more-item is-soon" aria-disabled="true">Help<em>Soon</em></span>
+</div>
+
+
+
+<dialog class="sheet sheet-small" id="pause-sheet" aria-labelledby="pause-title">
+  <div class="sheet-inner">
+    <h2 id="pause-title" class="sheet-title">Pause every agent?</h2>
+    <p class="sheet-text">Nothing new will be ordered or committed until you resume. Reading, reviewing and cancelling still work.</p>
+    <div class="sheet-actions">
+      <button class="btn btn-quiet" type="button" data-close>Keep working</button>
+      <button class="btn btn-primary" type="button" id="pause-confirm">Pause all agents</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="sheet sheet-small" id="revoke-sheet" aria-labelledby="revoke-title">
+  <div class="sheet-inner">
+    <h2 id="revoke-title" class="sheet-title">Remove <span id="revoke-name"></span>?</h2>
+    <p class="sheet-text">Its key is destroyed on the server and agents stop using it at once. To use it again you'd add a new key.</p>
+    <p class="error" id="revoke-error" role="alert" hidden></p>
+    <div class="sheet-actions">
+      <button class="btn btn-quiet" type="button" data-close>Keep it</button>
+      <button class="btn btn-primary btn-danger" type="button" id="revoke-confirm">Remove</button>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

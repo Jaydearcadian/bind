@@ -32,6 +32,7 @@ export default defineConfig({
     url: `http://127.0.0.1:${PORT}/health`,
     reuseExistingServer: false,
     timeout: 60000,
-    env: { PORT: String(PORT), BIND_WORKER_ENABLED: "false", BIND_RATE_LIMITS: "off", LOG_LEVEL: "warn" },
+    // The credential key is the same local-only test key vitest.config.ts uses, so Connections can store keys in tests.
+    env: { PORT: String(PORT), BIND_WORKER_ENABLED: "false", BIND_RATE_LIMITS: "off", LOG_LEVEL: "warn", BIND_CREDENTIAL_KEY: "yv+iVFPKAg5AWuP0Hik+sGLxJ8aEqSMH7JRHkQWWEHs=" },
   },
 });
