@@ -1675,6 +1675,131 @@
         "x-bind-access": "public"
       }
     },
+    "/api/me": {
+      "get": {
+        "description": "Access: any valid workspace token. The answer is scoped to the caller's own workspace.",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agentsPaused": {
+                      "type": "boolean"
+                    },
+                    "credential": {
+                      "enum": [
+                        "workspace_token",
+                        "account_session"
+                      ],
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "enum": [
+                        "owner",
+                        "staff"
+                      ],
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    },
+                    "workspaceName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "workspaceId",
+                    "workspaceName",
+                    "role",
+                    "label",
+                    "credential",
+                    "agentsPaused"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The caller's identity in its workspace. Sent with Cache-Control: no-store."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The caller's workspace no longer exists. The same body a missing workspace gets elsewhere."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Who the bearer token is: its workspace, role, label, credential kind and the pause switch. Never a secret.",
+        "tags": [
+          "Workspaces"
+        ],
+        "x-bind-access": "authenticated"
+      }
+    },
     "/api/openapi.json": {
       "get": {
         "description": "Access: public. No token is needed.",

@@ -2,6 +2,7 @@ import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import path from "path";
+import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { z } from "zod";
 import { query } from "../db/client.js";
@@ -492,6 +493,23 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     if ((req.method === "GET" || req.method === "HEAD") && BRAND_FILE.test(req.path)) return brandStatic(req, res, next);
     next();
   });
+  // The browser SDK (ADR 0056): the compiled ES modules in sdk/dist, served at /sdk/ so a page can import /sdk/index.js under
+  // the strict policy. Only .js files with plain names are served: no .d.ts, source map, or path that leaves the folder.
+  // Built by `npm run sdk:build` (also run by `npm run build`). Until then /sdk/ answers 404.
+  const sdkPath = path.resolve(__dirname, "../../sdk/dist");
+  if (!existsSync(path.join(sdkPath, "index.js"))) {
+    log.warn("sdk.browser_build_missing", { path: sdkPath, fix: "run npm run sdk:build; /sdk/ answers 404 until then" });
+  }
+  const sdkStatic = express.static(sdkPath, {
+    index: false,
+    fallthrough: false,
+    setHeaders: (res) => res.setHeader("Cache-Control", "public, max-age=300"),
+  });
+  const SDK_FILE = /^\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.js$/;
+  app.use("/sdk", (req: Request, res: Response, next: NextFunction) => {
+    if ((req.method === "GET" || req.method === "HEAD") && SDK_FILE.test(req.path)) return sdkStatic(req, res, next);
+    next();
+  });
   app.use(
     express.static(webPath, {
       extensions: ["html"],
@@ -557,6 +575,28 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       res.json(wsRes.rows);
     } catch {
       res.status(500).json({ error: "Workspace list unavailable" });
+    }
+  });
+
+  // Who the bearer token is (ADR 0058). A workspace token and an account session both resolve to req.actor. The answer is
+  // built field by field, so no token, session, hash or token id can leave through it.
+  app.get("/api/me", ...authenticated, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const actor = req.actor!;
+    try {
+      const wsRes = await query("SELECT name, agents_paused FROM workspaces WHERE id = $1;", [actor.workspaceId]);
+      const ws = wsRes.rows[0];
+      if (!ws) return res.status(404).json({ error: "Workspace not found" });
+      res.json({
+        workspaceId: actor.workspaceId,
+        workspaceName: String(ws.name),
+        role: actor.role,
+        label: actor.label,
+        credential: actor.tokenId.startsWith("ses_") ? "account_session" : "workspace_token",
+        agentsPaused: ws.agents_paused === true,
+      });
+    } catch {
+      res.status(500).json({ error: "Identity unavailable" });
     }
   });
 

@@ -52,6 +52,8 @@ const PUBLIC_ROUTES: Array<[string, string]> = [
 /** Owner or staff of the workspace in the path (or, for the list, the caller's own workspace). */
 const ANY_ROLE_ROUTES: Array<[string, string]> = [
   ["GET", "/api/workspaces"],
+  // Who the token is (ADR 0058). The route answers for the caller's own workspace only.
+  ["GET", "/api/me"],
   ["GET", "/api/workspaces/:id"],
   ["GET", "/api/workspaces/:id/inventory"],
   ["POST", "/api/workspaces/:id/inventory"],

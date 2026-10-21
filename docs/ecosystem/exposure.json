@@ -449,6 +449,16 @@
    "note": ""
   },
   {
+   "operationId": "getMe",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Who the bearer token is (ADR 0058). Read only; never returns a secret, hash or token id."
+  },
+  {
    "operationId": "listWorkspaces",
    "exposure": "public_api",
    "effect": "read",

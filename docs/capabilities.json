@@ -2,9 +2,9 @@
   "version": 1,
   "source": "docs/openapi.json + docs/ecosystem/exposure.json + sdk/src/client.ts + mcp/src/tools.ts. Generated: do not edit by hand.",
   "counts": {
-    "operations": 83,
+    "operations": 84,
     "mcpTools": 17,
-    "exposure:public_api": 73,
+    "exposure:public_api": 74,
     "exposure:internal_service": 6,
     "exposure:protocol_primitive": 4,
     "effect:owner_decision": 10,
@@ -13,7 +13,7 @@
     "effect:operational": 3,
     "effect:credential": 10,
     "effect:data_entry": 2,
-    "effect:read": 36,
+    "effect:read": 37,
     "effect:external_request": 3
   },
   "capabilities": [
@@ -578,6 +578,30 @@
       "surfaces": {
         "api": true,
         "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getMe",
+      "method": "GET",
+      "route": "/api/me",
+      "summary": "Who the bearer token is: its workspace, role, label, credential kind and the pause switch. Never a secret.",
+      "tag": "Workspaces",
+      "authorization": "authenticated",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Who the bearer token is (ADR 0058). Read only; never returns a secret, hash or token id.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
         "mcp": null
       }
     },

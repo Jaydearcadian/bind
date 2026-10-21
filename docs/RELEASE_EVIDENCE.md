@@ -259,6 +259,45 @@ changing it is a product decision and it has not been changed here.
 - **Searches for other skips.** `it.skip`, `describe.skip`, `test.skip`, `xit`, `xdescribe`, `it.todo`, `test.todo`, `.only`
   (in `tests/` and `contracts/test/`): none found. The only conditional skip is the Anvil file above.
 
+## 9. Addendum: the SDK in the browser (ADR 0056)
+
+Added on 2026-10-20 for the change that serves `sdk/dist` at `/sdk/` (`src/server/app.ts`), builds and copies it for Vercel, and
+adds `tests/web/sdk-browser.spec.ts` and `tests/integration/sdk-browser-serving.test.ts`. The full command list, counts and
+findings are in `docs/decisions/0056-sdk-in-the-browser.md`. Summary by class:
+
+- **LOCAL_PASS.** `scripts/verify-local.sh` exited 0 with PASS=19, FAIL_OR_BLOCKED=0, NOT_RUN_ACCEPTED=0 on the worktree branch at
+  `409c2bb` plus this change. Gates: lint, typecheck, unit (423 tests), integration (586 passed, 10 skipped), contract in-process
+  suite (32), build, sdk:build, mcp:build, audit, spec, sdk and map drift, forge fmt, build, test and coverage, anvil (10), slither,
+  and the browser suite (30 passed, 4 skipped). The gate run used the local database `bind_sdk_a9084`, not `bind_local`, because
+  another session was running the same integration suite on `bind_local` at the time, which caused deadlocks in a first attempt.
+- **LOCAL_PASS (manual).** Production path: `npm run build` then `node dist/index.js` serves `/sdk/index.js` as JavaScript with the
+  file's exact bytes; `/sdk/index.d.ts` is 404. With `sdk/dist` missing, `/sdk/index.js` is 404 and the server still answers
+  `/health`.
+- **LOCAL_PASS (build only).** The Vercel build command was run as written in `vercel.json`; `public/sdk/` holds the 5 compiled
+  `.js` files and nothing else.
+- **NOT_RUN.** A Vercel deployment and its headers; browsers other than Chromium; a live (non-local) URL.
+- **BLOCKED.** None for this change.
+- **LIVE_READ_PASS / VERIFIED_REMOTE.** None. Nothing here contacted a live service.
+- **Pre-existing drift.** `docs/CODEBASE_MAP.md` at `409c2bb` did not match a fresh regeneration (same function totals, large diff in
+  layer ordering). It was regenerated in this change so the map gate passes; the cause of the layer ordering was not investigated.
+
+## 10. Change evidence: `GET /api/me` (ADR 0058)
+
+This section records one change, not the whole release. The gates ran on the working tree whose parent is `409c2bb` (HEAD of
+`claude/capabilities-overview-c6elxr`) and that adds the endpoint, its tests, the regenerated artifacts and ADR 0058. The full
+record is `docs/decisions/0058-who-am-i.md`.
+
+Command: `bash scripts/verify-local.sh`, with `DATABASE_URL` pointing at a database of its own on the same local cluster. Result:
+`PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`. The gates are lint, typecheck, unit (54 files, 425 tests), integration (66 files
+passed and 1 skipped; 592 tests passed and 10 skipped), the contract in-process suite (32 tests), build, sdk:build, mcp:build, the
+dependency audit (0 vulnerabilities), spec, sdk and map drift, forge fmt, build, test (24 tests) and coverage, anvil integration,
+slither, and test:e2e (10 tests).
+
+Classification of this change's evidence. Every gate listed above is LOCAL_PASS, on this machine and this local database. No
+live read, remote or hosted check was made, so none is claimed. The GitHub Actions workflow was not run and is NOT_RUN. No gate is
+BLOCKED for this change. The first full run failed `map drift`, because the code map had been generated before the last test files
+were added; the map was regenerated from the final test set and the second full run passed.
+
 ## Appendix: Claims from earlier sessions (not reproduced; do not rely on them)
 
 Everything in this appendix was written by an earlier session. Task 14 did not reproduce any of it: this environment cannot reach
