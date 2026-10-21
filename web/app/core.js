@@ -233,3 +233,44 @@ export function pauseControl({ bind, me, isPaused, onChange }) {
     set(true);
   });
 }
+
+// ---- Demo workspaces (ADR 0057, 0063) ----------------------------------------------------------------------------------
+
+/** On a demo workspace: a banner on every page with the time left, Reset, and "Make this yours". Nothing on a real one. */
+export function showDemo({ bind, me, ws }) {
+  if (!ws || !ws.is_demo) return;
+  const main = document.querySelector(".app-main");
+  if (!main || document.getElementById("demo-banner")) return;
+  const left = h("span", { class: "demo-left" });
+  const reset = h("button", { class: "btn-small", type: "button" }, "Reset demo");
+  const banner = h(
+    "div",
+    { class: "banner banner-demo", id: "demo-banner", role: "status" },
+    mark("held"),
+    h("p", {}, h("b", {}, "This is a demo. "), "Sample data, simulated suppliers, nothing real is ordered or paid. ", left),
+    h("span", { class: "demo-actions" }, reset, h("a", { class: "btn-small", href: "/start" }, "Make this yours"))
+  );
+  main.prepend(banner);
+  const tick = () => {
+    const ms = Date.parse(ws.demo_expires_at) - Date.now();
+    if (!Number.isFinite(ms)) return (left.textContent = "");
+    if (ms <= 0) return (left.textContent = "It has ended.");
+    const m = Math.round(ms / 60000);
+    left.textContent = m >= 60 ? `Ends in ${Math.floor(m / 60)} h ${m % 60} min.` : `Ends in ${m} min.`;
+  };
+  tick();
+  window.setInterval(tick, 30000);
+  reset.addEventListener("click", async () => {
+    reset.disabled = true;
+    reset.textContent = "Resetting…";
+    try {
+      const res = await bind.call("resetDemo", { params: { id: me.workspaceId } });
+      if (!storeKey(res.token, false)) throw new Error("storage");
+      window.location.reload();
+    } catch (err) {
+      toast(err instanceof BindApiError ? err.message : "Couldn't reset the demo. Try again.");
+      reset.disabled = false;
+      reset.textContent = "Reset demo";
+    }
+  });
+}

@@ -43,8 +43,8 @@ test.describe("landing page", () => {
     await page.locator(".hero").getByRole("link", { name: "Try a demo workspace" }).click();
     await expect(page).toHaveURL(/\/demo$/);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Try a demo workspace.");
-    await expect(page.getByText("Opening with the next release")).toBeVisible();
-    await expect(page.getByText("Simulated suppliers only. Nothing real is ordered or paid.")).toBeVisible();
+    await expect(page.getByText("Suppliers are simulated. Nothing real is ordered or paid.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start the demo" })).toBeVisible();
     await page.goto("/");
     await page.locator(".hero").getByRole("link", { name: "Start your own workspace" }).click();
     await expect(page).toHaveURL(/\/start$/);

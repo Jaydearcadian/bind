@@ -231,3 +231,10 @@ a.nav-item:hover { color: var(--text); background: color-mix(in srgb, var(--bord
 .see-all { max-width: none; }
 @media (max-width: 600px) { .limit-row { grid-template-columns: 1fr; } .agents { grid-template-columns: 1fr; } }
 .agents-section { padding-block: 0; }
+
+/* Demo banner */
+.banner-demo { background: var(--status-pending-tint); color: var(--status-pending-text); flex-wrap: wrap; }
+.banner-demo p { flex: 1; min-width: 220px; }
+.demo-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.demo-actions a { text-decoration: none; }
+.demo-error { color: var(--status-refused-text); background: var(--status-refused-tint); padding: 10px 12px; border-radius: var(--radius-sm); }

@@ -8,6 +8,8 @@
 <link rel="icon" href="/brand/assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/brand/tokens.css">
 <link rel="stylesheet" href="/assets/site.css">
+<link rel="stylesheet" href="/app/app.css">
+<script type="module" src="/app/demo-start.js"></script>
 </head>
 <body>
 <header class="site-header">
@@ -20,16 +22,19 @@
 </header>
 <main id="main" class="simple">
   <div class="wrap simple-inner">
-    <span class="status-chip"><svg class="bind-mark" data-state="held" viewBox="0 0 64 64" aria-hidden="true"><path class="ring" d="M32 12A20 20 0 1 1 32 52A20 20 0 1 1 32 12"/><circle class="clasp" cx="42" cy="14.68" r="6.4"/></svg>Opening with the next release</span>
+    <p class="eyebrow">Demo workspace</p>
     <h1 class="display">Try a demo workspace.</h1>
-    <p class="section-lede">The demo is not open yet. When it is, it will be:</p>
+    <p class="section-lede">A real Bind workspace with sample data, yours for four hours. No sign-in.</p>
     <ul class="simple-list">
-      <li>Yours for four hours, with no sign-in.</li>
-      <li>Filled with sample data, marked as a demo on every page.</li>
-      <li>Simulated suppliers only. Nothing real is ordered or paid.</li>
-      <li>Resettable at any time with one button.</li>
+      <li>Suppliers are simulated. Nothing real is ordered or paid.</li>
+      <li>Every page says it is a demo. Reset it whenever you like.</li>
+      <li>When the four hours are up, it is deleted.</li>
     </ul>
-    <div class="cta-row"><a class="btn btn-quiet" href="/">Back to the home page</a></div>
+    <p class="error demo-error" id="demo-error" role="alert" hidden></p>
+    <div class="cta-row">
+      <button class="btn btn-primary" type="button" id="demo-start">Start the demo</button>
+      <a class="btn btn-quiet" href="/">Back to the home page</a>
+    </div>
   </div>
 </main>
 </body>

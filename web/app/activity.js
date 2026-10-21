@@ -2,7 +2,7 @@
  * Activity (ADR 0059; UX brief: "a timeline by day with filters, and Follow this on any item opening its full history").
  * Built from the workspace event stream's poll route. Staff do not receive owner-only events; the server enforces that.
  */
-import { BindApiError, ago, clearKey, client, h, mark, pauseControl, shell, showPaused, storedKey, toSignIn } from "/app/core.js";
+import { BindApiError, ago, clearKey, client, h, mark, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn } from "/app/core.js";
 import { sentence, tone } from "/app/words.js";
 
 const PAGE = 200;
@@ -202,6 +202,7 @@ async function main() {
   try {
     const ws = await bind.workspace(state.me.workspaceId);
     state.roles = new Map((ws.roles ?? []).map((r) => [r.role_name, r.display_name]));
+    showDemo({ bind, me: state.me, ws: ws.workspace });
     await loadHistory();
   } catch {
     $("stale-banner").hidden = false;

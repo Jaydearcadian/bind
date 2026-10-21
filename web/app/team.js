@@ -3,7 +3,7 @@
  * with sliders and presets, and a card per agent: what it can do, its tools as switches, on or off, and a name the owner can
  * change. Staff see everything read-only. Every change is a server call; the page shows what the server stored.
  */
-import { BindApiError, clearKey, client, h, money, newKey, pauseControl, shell, showPaused, storedKey, toSignIn, toast } from "/app/core.js";
+import { BindApiError, clearKey, client, h, money, newKey, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast } from "/app/core.js";
 
 const key = storedKey();
 if (!key) toSignIn();
@@ -330,6 +330,7 @@ async function main() {
   try {
     const [ws] = await Promise.all([bind.workspace(state.me.workspaceId), loadAgents()]);
     state.ws = ws.workspace;
+    showDemo({ bind, me: state.me, ws: state.ws });
     state.saved = { threshold: Number(state.ws.approval_threshold_cents), daily: Number(state.ws.budget_daily_limit_cents) };
     wireLimits();
     setLimitInputs(state.saved.threshold, state.saved.daily);
