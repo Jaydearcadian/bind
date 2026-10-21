@@ -12,8 +12,39 @@ export const PRIVY_PROVIDER = "google";
 /** Hosts a Google sign-in URL may send the browser to. Exact names only: no suffix or wildcard matching. */
 export const ALLOWED_AUTH_HOSTS = Object.freeze(["auth.privy.io", "accounts.google.com"]);
 
+/** The one host the embedded wallet frame may load from. Exact name, https, default port (ADR 0071). */
+const WALLET_FRAME_HOST = "auth.privy.io";
+
 const PREFIX = "privy:";
 const CANCELLED = "You cancelled the wallet request. Nothing was signed.";
+const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+
+/** An error with a stable code and a plain message. It never carries a cause, a wallet's text or a token. */
+function walletError(code, message) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
+/**
+ * Privy's own embedded Ethereum wallet on a user, or null. An external wallet (injected, WalletConnect, ...) never matches:
+ * it has a different connector_type and wallet_client_type.
+ */
+function findEmbeddedEthereumWallet(user) {
+  const accounts = Array.isArray(user?.linked_accounts) ? user.linked_accounts : [];
+  return (
+    accounts.find(
+      (a) =>
+        a &&
+        a.type === "wallet" &&
+        a.chain_type === "ethereum" &&
+        a.connector_type === "embedded" &&
+        a.wallet_client_type === "privy" &&
+        typeof a.address === "string" &&
+        ADDRESS_PATTERN.test(a.address)
+    ) ?? null
+  );
+}
 
 const parseUrl = (text) => {
   try {
@@ -105,6 +136,8 @@ export function createPrivyAdapter({
   storage = createSessionStorage(),
   location,
   history = globalThis.history,
+  frameDocument,
+  frameWindow,
 } = {}) {
   const here = () => {
     const l = location ?? globalThis.window?.location;
@@ -180,6 +213,142 @@ export function createPrivyAdapter({
     return { address };
   };
 
+  // --- Embedded wallet (ADR 0071). Reads and creation only: no signing and no sending is exposed or performed here.
+  // The wallet frame is created lazily, on the first wallet creation, and never more than once per adapter.
+  let frame = null; // { iframe, origin, url, privy }
+  let walletEnsure = null;
+
+  const documentRef = () => {
+    const d = frameDocument ?? globalThis.document;
+    if (!d?.body) throw walletError("WALLET_FRAME_REFUSED", "This page cannot host the wallet frame.");
+    return d;
+  };
+  const windowRef = () => {
+    const w = frameWindow ?? globalThis.window;
+    if (!w) throw walletError("WALLET_FRAME_REFUSED", "This page cannot host the wallet frame.");
+    return w;
+  };
+
+  // Forwards a frame message only when it comes from the frame's origin and from the frame's own window. Anything else is
+  // dropped silently: no log, no reply.
+  const onFrameMessage = (event) => {
+    const f = frame;
+    if (!f?.privy || event.origin !== f.origin) return;
+    const source = f.iframe.contentWindow;
+    if (!source || event.source !== source) return;
+    let message = event.data;
+    if (typeof message === "string") {
+      try {
+        message = JSON.parse(message);
+      } catch {
+        return;
+      }
+    }
+    if (!message || typeof message !== "object" || typeof message.event !== "string") return;
+    try {
+      f.privy.embeddedWallet.onMessage(message);
+    } catch {
+      // The SDK refuses a message it cannot match. Nothing is logged.
+    }
+  };
+
+  // The SDK posts with the target origin '*'. This poster sends only to the frame's validated origin.
+  const poster = {
+    postMessage(message) {
+      const f = frame;
+      f?.iframe.contentWindow?.postMessage(message, f.origin);
+    },
+    reload() {
+      if (frame) frame.iframe.src = frame.url;
+    },
+  };
+
+  const ensureWalletFrame = (privy) => {
+    try {
+      if (!frame) {
+        let raw;
+        try {
+          raw = privy.embeddedWallet.getURL();
+        } catch {
+          raw = "";
+        }
+        const url = parseUrl(typeof raw === "string" ? raw : "");
+        if (
+          !url ||
+          url.protocol !== "https:" ||
+          url.hostname !== WALLET_FRAME_HOST ||
+          url.port !== "" ||
+          url.username !== "" ||
+          url.password !== ""
+        ) {
+          throw new Error("untrusted wallet frame address");
+        }
+        const d = documentRef();
+        const w = windowRef();
+        w.addEventListener("message", onFrameMessage);
+        const iframe = d.createElement("iframe");
+        iframe.src = url.href;
+        iframe.title = "Privy wallet";
+        iframe.setAttribute("aria-hidden", "true");
+        iframe.setAttribute("tabindex", "-1");
+        iframe.style.display = "none";
+        d.body.appendChild(iframe);
+        frame = { iframe, origin: url.origin, url: url.href, privy: null };
+      }
+      if (frame.privy !== privy) {
+        privy.setMessagePoster(poster);
+        frame.privy = privy;
+      }
+    } catch {
+      throw walletError("WALLET_FRAME_REFUSED", "The wallet frame could not be started. Wallet setup was not started.");
+    }
+  };
+
+  const readEmbeddedWallet = async (privy) => {
+    let res;
+    try {
+      res = await privy.user.get();
+    } catch {
+      throw walletError("PRIVY_UNAVAILABLE", "Bind could not read your account from Privy. Try again.");
+    }
+    return findEmbeddedEthereumWallet(res?.user);
+  };
+
+  const createWallet = async () => {
+    const privy = await client().catch(() => {
+      throw walletError("PRIVY_UNAVAILABLE", "Bind could not reach Privy. Try again.");
+    });
+    let token;
+    try {
+      token = await privy.getAccessToken();
+    } catch {
+      throw walletError("PRIVY_UNAVAILABLE", "Bind could not reach Privy. Try again.");
+    }
+    if (!token) return null;
+
+    const existing = await readEmbeddedWallet(privy);
+    if (existing) return { address: existing.address, created: false };
+
+    ensureWalletFrame(privy);
+    let result;
+    try {
+      // No password and no recovery method: the SDK then uses Privy's own recovery ('privy'), which asks the person for no
+      // passcode. If the app requires a passcode on create, the SDK throws and this returns PASSCODE_REQUIRED instead.
+      result = await privy.embeddedWallet.create({});
+    } catch (err) {
+      if (/Password not provided/.test(String(err?.message ?? ""))) {
+        throw walletError(
+          "PASSCODE_REQUIRED",
+          "This Privy app asks for a recovery passcode on new wallets. Bind does not create one for you, so no wallet was made."
+        );
+      }
+      throw walletError("WALLET_CREATE_FAILED", "The embedded wallet could not be created. Try again.");
+    }
+    const made = findEmbeddedEthereumWallet(result?.user) ?? (await readEmbeddedWallet(privy));
+    if (!made) throw walletError("WALLET_NOT_FOUND", "Privy did not return the new wallet. Try again.");
+    return { address: made.address, created: true };
+  };
+
   return {
     /** The access token for this tab's session, or null when signed out or on any error. */
     async getAccessToken() {
@@ -225,6 +394,36 @@ export function createPrivyAdapter({
         });
       }
       return walletSignIn;
+    },
+
+    /**
+     * The person's Privy embedded Ethereum wallet address, or null when signed out, when none exists, or on any error.
+     * Reads only. It never creates a wallet and never loads the wallet frame.
+     */
+    async getWalletAddress() {
+      try {
+        const privy = await client();
+        if (!(await privy.getAccessToken())) return null;
+        return (await readEmbeddedWallet(privy))?.address ?? null;
+      } catch {
+        return null;
+      }
+    },
+
+    /**
+     * Returns the embedded wallet, creating it once if the signed-in person has none. Null when signed out. Creation uses
+     * Privy's default recovery: no password or passcode is invented. One attempt at a time; a second call shares the first.
+     *
+     * Bind never signs or sends from this wallet. Payments need an owner's approval (AGENTS.md). This wallet is identity and
+     * custody on Privy's side only; Bind's server never sees or stores its key.
+     */
+    ensureWallet() {
+      if (!walletEnsure) {
+        walletEnsure = createWallet().finally(() => {
+          walletEnsure = null;
+        });
+      }
+      return walletEnsure;
     },
 
     /** Signs out of Privy. Best effort: the page clears its own state either way. */

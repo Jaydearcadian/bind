@@ -11,7 +11,10 @@ import { createApp } from "../../src/server/app.js";
  * the policy in ADR 0070.
  */
 
-/** The policy as ADR 0070 states it. Only connect-src differs from ADR 0054: it gains https://auth.privy.io. */
+/**
+ * The policy as ADR 0070 states it. Relative to ADR 0054, connect-src gains https://auth.privy.io and frame-src is added with
+ * the same origin (the hidden Privy wallet frame, ADR 0071). script-src stays 'self'.
+ */
 const EXPECTED_POLICY: Record<string, string[]> = {
   "default-src": ["'self'"],
   "script-src": ["'self'"],
@@ -19,6 +22,7 @@ const EXPECTED_POLICY: Record<string, string[]> = {
   "img-src": ["'self'", "data:"],
   "font-src": ["'self'"],
   "connect-src": ["'self'", "https://auth.privy.io"],
+  "frame-src": ["https://auth.privy.io"],
   "object-src": ["'none'"],
   "base-uri": ["'self'"],
   "form-action": ["'self'"],
@@ -71,12 +75,14 @@ describe("Content-Security-Policy: helmet and vercel.json agree (ADR 0070)", () 
     const vercel = JSON.parse(await fs.readFile(path.resolve(process.cwd(), "vercel.json"), "utf8")) as {
       headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }>;
     };
-    const values = vercel.headers
-      .filter((h) => h.source === "/(.*)")
-      .flatMap((h) => h.headers)
-      .filter((h) => h.key.toLowerCase() === "content-security-policy")
-      .map((h) => h.value);
-    expect(values, "vercel.json must declare exactly one CSP for /(.*)").toHaveLength(1);
+    // Every headers[] entry is scanned, whatever its source, so a second CSP anywhere in the file is caught.
+    const cspEntries = vercel.headers.flatMap((h) =>
+      h.headers
+        .filter((header) => header.key.toLowerCase() === "content-security-policy")
+        .map((header) => ({ source: h.source, value: header.value }))
+    );
+    expect(cspEntries.map((e) => e.source), "vercel.json must declare exactly one CSP header, for /(.*)").toEqual(["/(.*)"]);
+    const values = cspEntries.map((e) => e.value);
     expect(parsePolicy(values[0])).toEqual(parsePolicy(livePolicy));
     expect(parsePolicy(values[0])).toEqual(EXPECTED_POLICY);
   });

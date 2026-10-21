@@ -18,6 +18,7 @@ try {
     adapter.getAccessToken(),
     new Promise((resolve) => setTimeout(() => resolve("TIMEOUT"), 20000)),
   ]);
+  out.walletAddress = await adapter.getWalletAddress();
   out.absent = await adapter.finishOAuth("");
   out.refusal = await adapter.startGoogle("https://evil.example/return").then(() => "navigated", (e) => e.message);
   out.noWallet = await adapter.connectWallet(undefined).then(() => "signed in", (e) => e.message);
@@ -31,6 +32,40 @@ test("GET /app/vendor/privy.js is served as JavaScript", async ({ request }) => 
   const res = await request.get("/app/vendor/privy.js");
   expect(res.status()).toBe(200);
   expect(res.headers()["content-type"]).toMatch(/javascript/);
+});
+
+test("the CSP admits the wallet frame origin and refuses another frame origin (ADR 0070)", async ({ page }) => {
+  test.setTimeout(60000);
+  const base = new URL(test.info().project.use.baseURL ?? "http://127.0.0.1:3210");
+  await page.addInitScript(() => {
+    (window as unknown as { __csp: unknown[] }).__csp = [];
+    document.addEventListener("securitypolicyviolation", (e) => {
+      (window as unknown as { __csp: unknown[] }).__csp.push({ directive: e.effectiveDirective, blocked: e.blockedURI });
+    });
+  });
+  // Nothing reaches a real host: the Privy frame is aborted here, after the policy has already allowed it to start.
+  await page.route("**/*", (route) => {
+    const url = new URL(route.request().url());
+    return url.origin === base.origin ? route.continue() : route.abort("blockedbyclient");
+  });
+  await page.goto("/app/sign-in");
+  // The control frame must be refused by frame-src. That proves the listener sees violations, so the absence below means something.
+  await page.evaluate(() => {
+    for (const src of ["https://auth.privy.io/apps/cmtest000000000000000000/embedded-wallets", "https://evil.example/frame"]) {
+      const frame = document.createElement("iframe");
+      frame.src = src;
+      frame.style.display = "none";
+      document.body.append(frame);
+    }
+  });
+  await page.waitForFunction(
+    () => (window as unknown as { __csp: { blocked: string }[] }).__csp.some((v) => /evil\.example/.test(v.blocked)),
+    undefined,
+    { timeout: 20000 }
+  );
+  const violations = await page.evaluate(() => (window as unknown as { __csp: { directive: string; blocked: string }[] }).__csp);
+  expect(violations.filter((v) => /frame-src/.test(v.directive) && /auth\.privy\.io/.test(v.blocked))).toEqual([]);
+  expect(violations.filter((v) => /frame-src/.test(v.directive) && /evil\.example/.test(v.blocked)).length).toBeGreaterThan(0);
 });
 
 test("the bundle loads and runs under the real CSP without a ReferenceError or script violation", async ({ page }) => {
@@ -74,7 +109,17 @@ test("the bundle loads and runs under the real CSP without a ReferenceError or s
   const violations = await page.evaluate(() => (window as unknown as { __csp: { directive: string; blocked: string }[] }).__csp);
 
   expect(result.error, JSON.stringify(result)).toBeUndefined();
-  expect(result.methods).toEqual(["connectWallet", "finishOAuth", "getAccessToken", "logout", "startGoogle"]);
+  expect(result.methods).toEqual([
+    "connectWallet",
+    "ensureWallet",
+    "finishOAuth",
+    "getAccessToken",
+    "getWalletAddress",
+    "logout",
+    "startGoogle",
+  ]);
+  // Signed out (no session can be reached here), so no wallet address, and nothing created.
+  expect(result.walletAddress).toBeNull();
   expect(result.absent).toBe(false);
   expect(result.refusal).toMatch(/on this site/);
   expect(result.noWallet).toMatch(/No wallet/);

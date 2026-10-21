@@ -460,6 +460,8 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
           fontSrc: ["'self'"],
           // Privy's browser SDK calls auth.privy.io for sign-in (ADR 0070). Nothing else is added to any directive.
           connectSrc: ["'self'", "https://auth.privy.io"],
+          // The hidden Privy wallet frame (ADR 0070, ADR 0071). frame-src alone: it is the directive the browser checks for frames.
+          frameSrc: ["https://auth.privy.io"],
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
           formAction: ["'self'"],

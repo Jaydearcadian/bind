@@ -30,7 +30,27 @@ export interface PrivyAdapter {
   startGoogle(redirectUri: string): Promise<void>;
   finishOAuth(search?: string): Promise<boolean>;
   connectWallet(ethereumProvider: Eip1193Provider | undefined | null): Promise<{ address: string }>;
+  /** The embedded wallet address, or null when signed out, none exists, or on any error. Reads only. */
+  getWalletAddress(): Promise<string | null>;
+  /** Null when signed out. Otherwise the embedded wallet, created once if the person has none (ADR 0071). */
+  ensureWallet(): Promise<{ address: string; created: boolean } | null>;
   logout(): Promise<void>;
+}
+
+/** The minimal document and window surfaces the wallet frame uses. Tests inject fakes; the page uses the globals. */
+export interface PrivyAdapterFrameDocument {
+  createElement(tag: "iframe"): {
+    src: string;
+    title: string;
+    style: { display: string };
+    setAttribute(name: string, value: string): void;
+    contentWindow: { postMessage(message: unknown, targetOrigin: string): void } | null;
+  };
+  body: { appendChild(element: unknown): unknown };
+}
+
+export interface PrivyAdapterFrameWindow {
+  addEventListener(type: "message", listener: (event: unknown) => void): void;
 }
 
 export interface PrivyAdapterOptions {
@@ -39,6 +59,8 @@ export interface PrivyAdapterOptions {
   storage?: SessionStorageLike;
   location?: PrivyAdapterLocation;
   history?: PrivyAdapterHistory | null;
+  frameDocument?: PrivyAdapterFrameDocument;
+  frameWindow?: PrivyAdapterFrameWindow;
 }
 
 export function createSessionStorage(getStore?: () => Storage): SessionStorageLike;
