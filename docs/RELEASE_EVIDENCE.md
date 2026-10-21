@@ -6,6 +6,28 @@ that this task did not reproduce are kept, labelled, in the appendix at the end,
 **Commit the gates ran on:** `407533ac09f7121806836e25db4834be5c91c412` (HEAD of `claude/capabilities-overview-c6elxr` before the
 commit that adds this document; the working tree was clean at that commit).
 
+## 0b. Sign-in with Google or a wallet (ADR 0070 to 0072) and the production deployment: gate run
+
+**Commit the gates ran on and the commit deployed:** `5e6f5d5a1747dd66bff017799815dbef8ffec09e`. Command: `bash scripts/verify-local.sh`. Result: `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`.
+
+| Gate | Outcome | Class |
+| --- | --- | --- |
+| Unit | 57 files, 567 passed | `LOCAL_PASS` |
+| Integration | 638 passed, 10 skipped (the skips recorded in ADR 0057) | `LOCAL_PASS` |
+| Contract | 4 files, 32 passed | `LOCAL_PASS` |
+| Anvil settlement (real node, 10 tests) | passed after the test waited for the node to mine (see below) | `LOCAL_PASS` |
+| Browser E2E, desktop and phone | passed, including `account-signin.spec.ts` (7 scenarios) and `privy-bundle.spec.ts` | `LOCAL_PASS` |
+| Production deployment `https://bind-gilt.vercel.app` | READY; `/health` reports the database connected; `/api/public-config` returns the Privy app id with `no-store`; the CSP `connect-src` is `'self' https://auth.privy.io`; `/app/vendor/privy.js` is served (986,517 bytes) | `VERIFIED_REMOTE` |
+| Privy app settings (read from Privy's public endpoint) | Google and wallet login on; allowed domain is `https://bind-gilt.vercel.app`; Privy's verification key is one of the two public keys set in Vercel | `LIVE_READ_PASS` |
+| Live Google and wallet login through Privy, in a browser on the deployed site | a person must complete it | `NOT_RUN` |
+| Whether Privy's SDK reaches a bare `Buffer` after a real login (embedded-wallet paths) | not traced in a live session | `NOT_RUN` |
+
+**Test fixes made while getting here (no assertion weakened):** `anvil-settlement.test.ts` read the receipt, and the settlement logs, the instant a transaction was submitted, which sometimes beat the node. The tests now wait for the transaction to be mined (a bounded `waitForTransactionReceipt`); every assertion is unchanged and `adapter.confirm` still confirms only once a receipt exists. Run against one long-lived Anvil node, the suite runs out of gas money after about ten runs (the signer's balance is never topped up); the release gate starts a fresh node per run.
+
+**Dependencies added for the browser SDK:** `@privy-io/js-sdk-core` 0.78.0 (newest release at least 14 days old when pinned) and `esbuild` 0.28.2, both exact. `ox` is overridden to 0.14.56 and `viem` held at exactly 2.57.6 (the version already in use); the SDK declares an exact peer `viem@2.56.5`, which is recorded in ADR 0071.
+
+**Known risks:** the Privy bundle is about 964 KiB and is loaded only on the sign-in and invite pages. The app secret was shared in chat and is not used by Bind; it should be rotated in the Privy dashboard. The three server secrets (`BIND_CREDENTIAL_KEY`, `BIND_MASTER_SECRET`, `BIND_WEBHOOK_SECRET`) are set in Vercel for production only, as Sensitive; their values were shown to the owner once and no other copy is kept. Preview deployments use the same database as production (every database variable is set for all three environments).
+
 ## 0a. App screens (ADR 0064 to 0069) and demo follow-ups: gate run
 
 **Commit the gates ran on:** `b74db744875fc2c7067535e97075384b694dc48e` (People and access, Connections, Business data, Settings, Help, Getting started, the QR encoder, and
