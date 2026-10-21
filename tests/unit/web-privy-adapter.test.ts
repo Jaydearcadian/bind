@@ -44,6 +44,17 @@ type FakeOptions = {
   createError?: string;
   /** Makes create succeed without adding a wallet to the user. */
   createAddsNothing?: boolean;
+  /** Makes create add the wallet, then throw: a failure after the wallet exists (for example a failed refresh). */
+  createAddsThenThrows?: boolean;
+  /** Makes create return a user without the new wallet (a refresh that lags); the wallet is still on the account. */
+  createReturnsEmptyUser?: boolean;
+  /** Makes setMessagePoster throw. */
+  posterThrows?: boolean;
+  /**
+   * The app's embedded_wallet_config.mode. In "user-controlled-server-wallets-only" the SDK creates the wallet through
+   * Privy's REST API with the user's access token and does not use the frame (SDK 0.78.0, create()). Default: on-device.
+   */
+  walletMode?: "on-device" | "user-controlled-server-wallets-only";
 };
 
 const FRAME_URL = "https://auth.privy.io/apps/app-1/embedded-wallets?client_id=client-1";
@@ -130,8 +141,11 @@ function fakeSdk(options: FakeOptions = {}) {
         if (options.createError !== undefined) {
           throw Object.assign(new Error(options.createError), { cause: new Error("inner cause") });
         }
+        if (options.walletMode === "user-controlled-server-wallets-only") log.push("POST wallets (server, no frame)");
         if (!options.createAddsNothing) accounts.push(embeddedAccount(NEW_ADDRESS));
-        return { token: "t", user: { id: "did:privy:test-user", linked_accounts: accounts } };
+        if (options.createAddsThenThrows) throw new Error("refresh after creation failed");
+        const user = options.createReturnsEmptyUser ? { id: "did:privy:test-user", linked_accounts: [] } : { id: "did:privy:test-user", linked_accounts: accounts };
+        return { token: "t", user };
       },
       onMessage: (message: unknown) => {
         log.push("onMessage");
@@ -141,6 +155,7 @@ function fakeSdk(options: FakeOptions = {}) {
     /** On the client, as in the SDK (Privy.setMessagePoster). */
     setMessagePoster(poster: (typeof posters)[number]) {
       log.push("setMessagePoster");
+      if (options.posterThrows) throw new Error("poster failed");
       posters.push(poster);
     }
     constructor(opts: { appId: string; storage: SessionStorageLike }) {
@@ -166,12 +181,17 @@ type FakeFrame = {
   title: string;
   attributes: Record<string, string>;
   style: Record<string, string>;
+  isConnected: boolean;
   setAttribute: (name: string, value: string) => void;
-  contentWindow: { posted: Array<[unknown, string]>; postMessage: (message: unknown, targetOrigin: string) => void };
+  remove: () => void;
+  contentWindow: {
+    posted: Array<[unknown, string]>;
+    postMessage: (message: unknown, targetOrigin: string) => void;
+  } | null;
 };
 
 /** A fake iframe element. Its contentWindow records every postMessage it receives, with the target origin. */
-function fakeFrame(tag: string): FakeFrame {
+function fakeFrame(tag: string, onRemove: (el: FakeFrame) => void): FakeFrame {
   const posted: Array<[unknown, string]> = [];
   return {
     tag,
@@ -179,8 +199,13 @@ function fakeFrame(tag: string): FakeFrame {
     title: "",
     attributes: {},
     style: {},
+    isConnected: false,
     setAttribute(name, value) {
       this.attributes[name] = value;
+    },
+    remove() {
+      this.isConnected = false;
+      onRemove(this);
     },
     contentWindow: {
       posted,
@@ -191,25 +216,37 @@ function fakeFrame(tag: string): FakeFrame {
   };
 }
 
-/** A fake document with only what the adapter touches: createElement and body.appendChild. */
+/**
+ * A fake document with what the adapter touches: createElement, body.appendChild and getElementById. `appended` is every
+ * append ever made; `attached` is what is in the page now.
+ */
 function fakeFrameDocument() {
   const created: FakeFrame[] = [];
   const appended: FakeFrame[] = [];
+  const attached: FakeFrame[] = [];
+  const detach = (el: FakeFrame) => {
+    const i = attached.indexOf(el);
+    if (i >= 0) attached.splice(i, 1);
+  };
   return {
     created,
     appended,
+    attached,
     doc: {
       body: {
         appendChild: (el: FakeFrame) => {
           appended.push(el);
+          el.isConnected = true;
+          attached.push(el);
           return el;
         },
       },
       createElement: (tag: string) => {
-        const el = fakeFrame(tag);
+        const el = fakeFrame(tag, detach);
         created.push(el);
         return el;
       },
+      getElementById: (id: string) => attached.find((el) => el.attributes.id === id) ?? null,
     },
   };
 }
@@ -224,8 +261,12 @@ function fakeFrameWindow() {
     addEventListener: (type: string, listener: MessageListener) => {
       if (type === "message") listeners.push(listener);
     },
+    removeEventListener: (type: string, listener: MessageListener) => {
+      const i = listeners.indexOf(listener);
+      if (type === "message" && i >= 0) listeners.splice(i, 1);
+    },
     dispatch: (event: unknown) => {
-      for (const listener of listeners) listener(event);
+      for (const listener of [...listeners]) listener(event);
     },
   };
 }
@@ -832,6 +873,8 @@ describe("Privy adapter: embedded wallet (ADR 0071)", () => {
     ["plain http on the right host", "http://auth.privy.io/embedded-wallets"],
     ["a non-default port", "https://auth.privy.io:8443/embedded-wallets"],
     ["credentials in the URL", "https://user:pw@auth.privy.io/embedded-wallets"],
+    ["a look-alike host", "https://evil-auth.privy.io/embedded-wallets"],
+    ["the host with a trailing dot", "https://auth.privy.io./embedded-wallets"],
     ["a javascript: URL", "javascript:alert(1)"],
     ["an unparseable value", "not a url"],
     ["a non-string value", 42],
@@ -882,7 +925,7 @@ describe("Privy adapter: embedded wallet (ADR 0071)", () => {
     const { adapter, frames } = walletAdapter(sdk);
     await adapter.ensureWallet();
     sdk.posters[0].postMessage('{"event":"privy:wallets:create"}', "*");
-    expect(frames.appended[0].contentWindow.posted).toEqual([['{"event":"privy:wallets:create"}', "https://auth.privy.io"]]);
+    expect(frames.appended[0].contentWindow?.posted).toEqual([['{"event":"privy:wallets:create"}', "https://auth.privy.io"]]);
   });
 
   it("errors carry a code, no cause, and no SDK or wallet text", async () => {
@@ -935,6 +978,151 @@ describe("Privy adapter: embedded wallet (ADR 0071)", () => {
       "logout",
       "startGoogle",
     ]);
+  });
+
+  it("the frame carries the sandbox, allow and id attributes, and no referrer policy or credentialless flag", async () => {
+    const sdk = fakeSdk({ token: "tok", linkedAccounts: [] });
+    const { adapter, frames } = walletAdapter(sdk);
+    await adapter.ensureWallet();
+    const frame = frames.appended[0];
+    expect(frame.attributes.id).toBe("bind-privy-wallet-frame");
+    expect(frame.attributes.sandbox).toBe("allow-scripts allow-same-origin");
+    expect(frame.attributes.sandbox).not.toMatch(/allow-top-navigation|allow-popups/);
+    expect(frame.attributes.allow).toBe("");
+    expect("referrerpolicy" in frame.attributes).toBe(false);
+    expect("credentialless" in frame.attributes).toBe(false);
+  });
+
+  it("recreates the frame when the page removed it, and keeps one live frame and one listener", async () => {
+    const sdk = fakeSdk({ token: "tok", linkedAccounts: [] });
+    const { adapter, frames, win } = walletAdapter(sdk);
+    await adapter.ensureWallet();
+    frames.appended[0].remove();
+    sdk.accounts.length = 0; // no wallet now, so creation runs again
+    expect(await adapter.ensureWallet()).toEqual({ address: NEW_ADDRESS, created: true });
+    expect(frames.created).toHaveLength(2);
+    expect(frames.attached).toHaveLength(1);
+    expect(frames.attached[0]).not.toBe(frames.appended[0]);
+    expect(win.listeners).toHaveLength(1);
+  });
+
+  it("logout removes the frame and its listener, and the next wallet use makes a fresh one", async () => {
+    const sdk = fakeSdk({ token: "tok", linkedAccounts: [] });
+    const { adapter, frames, win } = walletAdapter(sdk);
+    await adapter.ensureWallet();
+    await adapter.logout();
+    expect(frames.attached).toHaveLength(0);
+    expect(win.listeners).toHaveLength(0);
+    sdk.accounts.length = 0;
+    expect(await adapter.ensureWallet()).toEqual({ address: NEW_ADDRESS, created: true });
+    expect(frames.created).toHaveLength(2);
+    expect(frames.attached).toHaveLength(1);
+    expect(win.listeners).toHaveLength(1);
+  });
+
+  it("two adapters on one page share one frame element", async () => {
+    const frames = fakeFrameDocument();
+    const win = fakeFrameWindow();
+    const first = fakeSdk({ token: "tok", linkedAccounts: [] });
+    const second = fakeSdk({ token: "tok", linkedAccounts: [] });
+    const a = adapterFor(first, { frameDocument: frames.doc, frameWindow: win });
+    const b = adapterFor(second, { frameDocument: frames.doc, frameWindow: win });
+    expect((await a.ensureWallet())?.created).toBe(true);
+    expect((await b.ensureWallet())?.created).toBe(true);
+    expect(frames.created).toHaveLength(1);
+    expect(frames.attached).toHaveLength(1);
+    expect(win.listeners).toHaveLength(2);
+  });
+
+  it("refuses to reuse an element with the wallet frame's id that is not this Privy frame", async () => {
+    const frames = fakeFrameDocument();
+    const win = fakeFrameWindow();
+    const rogue = frames.doc.createElement("iframe");
+    rogue.src = "https://evil.example/embedded-wallets";
+    rogue.setAttribute("id", "bind-privy-wallet-frame");
+    frames.doc.body.appendChild(rogue);
+    const sdk = fakeSdk({ token: "tok", linkedAccounts: [] });
+    const adapter = adapterFor(sdk, { frameDocument: frames.doc, frameWindow: win });
+    expect((await rejectionOf(adapter.ensureWallet())).code).toBe("WALLET_FRAME_REFUSED");
+    expect(frames.attached).toEqual([rogue]);
+    expect(creates(sdk.log)).toEqual([]);
+  });
+
+  it("ignores a message whose source window is gone (contentWindow is null)", async () => {
+    const sdk = fakeSdk({ token: "tok", linkedAccounts: [] });
+    const { adapter, frames, win } = walletAdapter(sdk);
+    await adapter.ensureWallet();
+    const frame = frames.appended[0];
+    const source = frame.contentWindow;
+    frame.contentWindow = null;
+    const ready = { event: "privy:iframe:ready", id: "1", data: {} };
+    win.dispatch({ origin: "https://auth.privy.io", source, data: JSON.stringify(ready) });
+    win.dispatch({ origin: "https://auth.privy.io", source: null, data: JSON.stringify(ready) });
+    expect(sdk.onMessages).toEqual([]);
+  });
+
+  it("drops a valid message that arrives before the frame's client is set", async () => {
+    const sdk = fakeSdk({ token: "tok", linkedAccounts: [], posterThrows: true });
+    const { adapter, frames, win } = walletAdapter(sdk);
+    expect((await rejectionOf(adapter.ensureWallet())).code).toBe("WALLET_FRAME_REFUSED");
+    expect(frames.appended).toHaveLength(1);
+    win.dispatch({
+      origin: "https://auth.privy.io",
+      source: frames.appended[0].contentWindow,
+      data: JSON.stringify({ event: "privy:iframe:ready", id: "1", data: {} }),
+    });
+    expect(sdk.onMessages).toEqual([]);
+  });
+
+  it("reload() reloads the frame at its validated URL", async () => {
+    const sdk = fakeSdk({ token: "tok", linkedAccounts: [] });
+    const { adapter, frames } = walletAdapter(sdk);
+    await adapter.ensureWallet();
+    const frame = frames.appended[0];
+    frame.src = "about:blank";
+    sdk.posters[0].reload();
+    expect(frame.src).toBe(FRAME_URL);
+  });
+
+  it("when create fails after the wallet exists, returns it with created=false", async () => {
+    const sdk = fakeSdk({ token: "tok", linkedAccounts: [], createAddsThenThrows: true });
+    const { adapter } = walletAdapter(sdk);
+    expect(await adapter.ensureWallet()).toEqual({ address: NEW_ADDRESS, created: false });
+    expect(creates(sdk.log)).toHaveLength(1);
+  });
+
+  it("when create fails and no wallet exists, reports WALLET_CREATE_FAILED", async () => {
+    const sdk = fakeSdk({ token: "tok", linkedAccounts: [], createError: "boom" });
+    const { adapter } = walletAdapter(sdk);
+    expect((await rejectionOf(adapter.ensureWallet())).code).toBe("WALLET_CREATE_FAILED");
+  });
+
+  it("server-wallet mode: the address comes from the user after create, with no frame message", async () => {
+    const sdk = fakeSdk({ token: "tok", linkedAccounts: [], walletMode: "user-controlled-server-wallets-only" });
+    const { adapter, frames } = walletAdapter(sdk);
+    expect(await adapter.ensureWallet()).toEqual({ address: NEW_ADDRESS, created: true });
+    expect(sdk.log).toContain("POST wallets (server, no frame)");
+    expect(sdk.onMessages).toEqual([]);
+    // The SDK requires a message poster before create, even in this mode, so the frame element is made; nothing needs it to load.
+    expect(frames.appended).toHaveLength(1);
+  });
+
+  it("server-wallet mode: when the refreshed user lacks the wallet, a fresh user read finds it", async () => {
+    const sdk = fakeSdk({
+      token: "tok",
+      linkedAccounts: [],
+      walletMode: "user-controlled-server-wallets-only",
+      createReturnsEmptyUser: true,
+    });
+    const { adapter } = walletAdapter(sdk);
+    expect(await adapter.ensureWallet()).toEqual({ address: NEW_ADDRESS, created: true });
+    const createAt = sdk.log.findIndex((line) => line.startsWith("embeddedWallet.create"));
+    expect(sdk.log.slice(createAt + 1)).toContain("user.get");
+  });
+
+  it("exports exactly the four public names", async () => {
+    const mod = await import("../../scripts/web-entry/privy.js");
+    expect(Object.keys(mod).sort()).toEqual(["ALLOWED_AUTH_HOSTS", "PRIVY_PROVIDER", "createPrivyAdapter", "createSessionStorage"]);
   });
 });
 

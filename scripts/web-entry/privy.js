@@ -15,6 +15,9 @@ export const ALLOWED_AUTH_HOSTS = Object.freeze(["auth.privy.io", "accounts.goog
 /** The one host the embedded wallet frame may load from. Exact name, https, default port (ADR 0071). */
 const WALLET_FRAME_HOST = "auth.privy.io";
 
+/** The fixed id of the one wallet frame on a page. A frame with this id is reused, never duplicated (ADR 0071). */
+const WALLET_FRAME_ID = "bind-privy-wallet-frame";
+
 const PREFIX = "privy:";
 const CANCELLED = "You cancelled the wallet request. Nothing was signed.";
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
@@ -215,7 +218,7 @@ export function createPrivyAdapter({
 
   // --- Embedded wallet (ADR 0071). Reads and creation only: no signing and no sending is exposed or performed here.
   // The wallet frame is created lazily, on the first wallet creation, and never more than once per adapter.
-  let frame = null; // { iframe, origin, url, privy }
+  let frame = null; // { iframe, origin, url, privy, win }: privy is set once the poster is installed
   let walletEnsure = null;
 
   const documentRef = () => {
@@ -263,8 +266,28 @@ export function createPrivyAdapter({
     },
   };
 
+  // Removes this adapter's listener and its frame, and forgets the frame. Used by logout, and when the page removed the frame.
+  // Note: the frame element is shared by id, so disposing it affects any other adapter on the same page.
+  const disposeWalletFrame = () => {
+    const f = frame;
+    frame = null;
+    if (!f) return;
+    try {
+      f.win.removeEventListener("message", onFrameMessage);
+    } catch {
+      // Nothing to undo.
+    }
+    try {
+      f.iframe.remove();
+    } catch {
+      // Already gone.
+    }
+  };
+
   const ensureWalletFrame = (privy) => {
     try {
+      // A frame the page has removed is forgotten, with its listener, so a new one can be made. Still one live frame.
+      if (frame && !frame.iframe.isConnected) disposeWalletFrame();
       if (!frame) {
         let raw;
         try {
@@ -285,15 +308,25 @@ export function createPrivyAdapter({
         }
         const d = documentRef();
         const w = windowRef();
+        // One frame per page. An existing element with the fixed id is reused only if it is this same Privy frame.
+        let iframe = d.getElementById(WALLET_FRAME_ID);
+        if (iframe && iframe.src !== url.href) throw new Error("another wallet frame is on this page");
         w.addEventListener("message", onFrameMessage);
-        const iframe = d.createElement("iframe");
-        iframe.src = url.href;
-        iframe.title = "Privy wallet";
-        iframe.setAttribute("aria-hidden", "true");
-        iframe.setAttribute("tabindex", "-1");
-        iframe.style.display = "none";
-        d.body.appendChild(iframe);
-        frame = { iframe, origin: url.origin, url: url.href, privy: null };
+        if (!iframe) {
+          iframe = d.createElement("iframe");
+          iframe.setAttribute("id", WALLET_FRAME_ID);
+          iframe.src = url.href;
+          iframe.title = "Privy wallet";
+          iframe.setAttribute("aria-hidden", "true");
+          iframe.setAttribute("tabindex", "-1");
+          // The SDK's own page needs script and its origin's storage. The sandbox is not a boundary against this page:
+          // allow-scripts with allow-same-origin lets the page lift its own sandbox. The origin check above is the boundary.
+          iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
+          iframe.setAttribute("allow", "");
+          iframe.style.display = "none";
+          d.body.appendChild(iframe);
+        }
+        frame = { iframe, origin: url.origin, url: url.href, privy: null, win: w };
       }
       if (frame.privy !== privy) {
         privy.setMessagePoster(poster);
@@ -342,6 +375,10 @@ export function createPrivyAdapter({
           "This Privy app asks for a recovery passcode on new wallets. Bind does not create one for you, so no wallet was made."
         );
       }
+      // The call can fail after the wallet exists (in the server-wallet mode, if the refresh after creation fails). Read once,
+      // and report what is true: a wallet that exists is returned as not created by this call.
+      const after = await readEmbeddedWallet(privy).catch(() => null);
+      if (after) return { address: after.address, created: false };
       throw walletError("WALLET_CREATE_FAILED", "The embedded wallet could not be created. Try again.");
     }
     const made = findEmbeddedEthereumWallet(result?.user) ?? (await readEmbeddedWallet(privy));
@@ -416,6 +453,9 @@ export function createPrivyAdapter({
      *
      * Bind never signs or sends from this wallet. Payments need an owner's approval (AGENTS.md). This wallet is identity and
      * custody on Privy's side only; Bind's server never sees or stores its key.
+     *
+     * This method does not check how the person signed in. The caller decides: the sign-in page calls it only after a Google
+     * return (ADR 0071), never after a wallet login or a quiet re-entry.
      */
     ensureWallet() {
       if (!walletEnsure) {
@@ -433,6 +473,8 @@ export function createPrivyAdapter({
         if (await privy.getAccessToken()) await privy.auth.logout();
       } catch {
         // Nothing to undo if Privy never started.
+      } finally {
+        disposeWalletFrame();
       }
     },
   };

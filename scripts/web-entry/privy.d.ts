@@ -38,19 +38,25 @@ export interface PrivyAdapter {
 }
 
 /** The minimal document and window surfaces the wallet frame uses. Tests inject fakes; the page uses the globals. */
+export interface PrivyAdapterFrameElement {
+  src: string;
+  title: string;
+  style: { display: string };
+  isConnected: boolean;
+  setAttribute(name: string, value: string): void;
+  remove(): void;
+  contentWindow: { postMessage(message: unknown, targetOrigin: string): void } | null;
+}
+
 export interface PrivyAdapterFrameDocument {
-  createElement(tag: "iframe"): {
-    src: string;
-    title: string;
-    style: { display: string };
-    setAttribute(name: string, value: string): void;
-    contentWindow: { postMessage(message: unknown, targetOrigin: string): void } | null;
-  };
-  body: { appendChild(element: unknown): unknown };
+  createElement(tag: "iframe"): PrivyAdapterFrameElement;
+  getElementById(id: string): PrivyAdapterFrameElement | null;
+  body: { appendChild(element: PrivyAdapterFrameElement): unknown };
 }
 
 export interface PrivyAdapterFrameWindow {
   addEventListener(type: "message", listener: (event: unknown) => void): void;
+  removeEventListener(type: "message", listener: (event: unknown) => void): void;
 }
 
 export interface PrivyAdapterOptions {
