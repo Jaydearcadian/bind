@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build:vercel && npm run sdk:build && rm -rf public && mkdir -p public/brand && cp -r web/. public/ && cp docs/brand/tokens.css public/brand/ && cp -r docs/brand/fonts public/brand/fonts && cp -r docs/brand/assets public/brand/assets && node scripts/copy-sdk-browser.mjs public/sdk",
+  "buildCommand": "bash scripts/vercel-build.sh",
   "outputDirectory": "public",
   "functions": {
     "api/index.js": {
