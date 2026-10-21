@@ -1,6 +1,8 @@
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
-import { createPrivateKey, sign } from "node:crypto";
-import { PRIVY_TEST_APP_ID, PRIVY_TEST_PRIVATE_KEY } from "./support/privy-test-key.js";
+import { auth, installAdapter, newUser, privyToken, tamper } from "./support/privy-stub.js";
+
+const run = Date.now();
+let seq = 0;
 
 /*
  * Signing in with an account (ADR 0072) in a real browser against the real server. The Privy SDK needs the live Privy
@@ -9,68 +11,6 @@ import { PRIVY_TEST_APP_ID, PRIVY_TEST_PRIVATE_KEY } from "./support/privy-test-
  * after the adapter (verification, accounts, memberships, sessions) is the real server. Live Google and wallet login against
  * Privy itself is NOT_RUN here: a person completes it on the deployed site.
  */
-
-const APP_ID = PRIVY_TEST_APP_ID;
-const PRIVATE_PEM = PRIVY_TEST_PRIVATE_KEY;
-const run = Date.now();
-let seq = 0;
-
-function privyToken(userId: string, overrides: Record<string, unknown> = {}, key = PRIVATE_PEM) {
-  const b64 = (v: object) => Buffer.from(JSON.stringify(v)).toString("base64url");
-  const head = b64({ alg: "ES256", typ: "JWT" });
-  const body = b64({ sub: userId, aud: APP_ID, iss: "privy.io", exp: Math.floor(Date.now() / 1000) + 3600, ...overrides });
-  const sig = sign("sha256", Buffer.from(`${head}.${body}`), { key: createPrivateKey(key), dsaEncoding: "ieee-p1363" });
-  return `${head}.${body}.${sig.toString("base64url")}`;
-}
-/** Flips a real bit of the signature (the last base64 character holds unused bits, so editing it can change nothing). */
-function tamper(token: string) {
-  const [h, b, sig] = token.split(".");
-  const bytes = Buffer.from(sig, "base64url");
-  bytes[10] ^= 0xff;
-  return `${h}.${b}.${bytes.toString("base64url")}`;
-}
-const newUser = () => `did:privy:acct-${run}-${++seq}`;
-const auth = (t: string) => ({ headers: { Authorization: `Bearer ${t}` } });
-
-/** The stand-in for the Privy SDK. Its "session" lives in sessionStorage like the real SDK's, so it survives page changes in a tab. */
-async function installAdapter(page: Page, token: string | null, walletToken?: string) {
-  await page.addInitScript(
-    ({ t, w }) => {
-      const KEY = "stub-privy-token";
-      // Seed once per tab: the init script runs on every page load, and a later sign-out must stay signed out.
-      if (t && !sessionStorage.getItem("stub-privy-seeded")) {
-        sessionStorage.setItem("stub-privy-seeded", "1");
-        sessionStorage.setItem(KEY, t);
-      }
-      const w2 = window as unknown as Record<string, unknown>;
-      w2.__calls = [];
-      (w2.ethereum as unknown) = w ? {} : undefined;
-      w2.bindPrivyAdapter = {
-        async getAccessToken() {
-          return sessionStorage.getItem(KEY);
-        },
-        async startGoogle(redirect: string) {
-          (w2.__calls as string[]).push(`google:${redirect}`);
-        },
-        async finishOAuth(search: string) {
-          (w2.__calls as string[]).push(`finish:${search}`);
-          if (!/privy_oauth_code=/.test(search)) return false;
-          if (w) sessionStorage.setItem(KEY, w);
-          return true;
-        },
-        async connectWallet() {
-          (w2.__calls as string[]).push("wallet");
-          if (w) sessionStorage.setItem(KEY, w);
-        },
-        async logout() {
-          (w2.__calls as string[]).push("logout");
-          sessionStorage.removeItem(KEY);
-        },
-      };
-    },
-    { t: token, w: walletToken ?? null }
-  );
-}
 
 async function makeOwnerWorkspace(request: APIRequestContext) {
   const id = `ws-acct-${run}-${++seq}`;
