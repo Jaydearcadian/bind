@@ -192,6 +192,26 @@ export function shell({ me, onSignOut }) {
     });
   }
   document.getElementById("sign-out")?.addEventListener("click", onSignOut);
+
+  // Phones: "More" opens the areas that don't fit in the tab bar.
+  const moreBtn = document.getElementById("more-btn");
+  const moreMenu = document.getElementById("more-menu");
+  if (moreBtn && moreMenu) {
+    const setMore = (open) => {
+      moreMenu.hidden = !open;
+      moreBtn.setAttribute("aria-expanded", String(open));
+    };
+    moreBtn.addEventListener("click", () => setMore(moreMenu.hidden));
+    document.addEventListener("click", (e) => {
+      if (!moreMenu.hidden && !moreMenu.contains(e.target) && !moreBtn.contains(e.target)) setMore(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !moreMenu.hidden) {
+        setMore(false);
+        moreBtn.focus();
+      }
+    });
+  }
 }
 
 // ---- Pause (shared by every app page) --------------------------------------------------------------------------------

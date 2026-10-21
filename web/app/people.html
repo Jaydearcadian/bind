@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>People and access · Bind</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/brand/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/brand/tokens.css">
+<link rel="stylesheet" href="/assets/site.css">
+<link rel="stylesheet" href="/app/app.css">
+<script src="/app/boot.js"></script>
+<script type="module" src="/app/people.js"></script>
+</head>
+<body class="app">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header app-header">
+  <div class="header-row">
+    <a class="lockup" href="/app/" aria-label="Bind, Today"><svg viewBox="0 0 192 58" aria-hidden="true" focusable="false"><g transform="translate(0 7) scale(.8)"><defs><mask id="mk-a" maskUnits="userSpaceOnUse" x="-12" y="-12" width="88" height="88"><rect x="-12" y="-12" width="88" height="88" fill="#fff"/><circle class="orbit" cx="42" cy="14.68" r="8.1" fill="#000"/></mask></defs><path pathLength="100" d="M32 12A20 20 0 1 1 32 52A20 20 0 1 1 32 12" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" mask="url(#mk-a)"/><circle class="bead orbit" cx="42" cy="14.68" r="6.4"/></g><g transform="translate(66 -1)"><g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 10V46"/><circle cx="22" cy="34" r="12"/><path d="M47 22V46"/><path d="M58 46V33A11 11 0 0 1 80 33V46"/><circle cx="103" cy="34" r="12"/><path d="M115 10V46"/></g><circle class="bead" cx="47" cy="11" r="3.4"/></g></svg></a>
+    <p class="ws-name" id="ws-name" aria-live="polite"></p>
+    <div class="header-actions">
+      <button class="pause-btn" id="pause-btn" type="button" hidden><span class="pause-dot" aria-hidden="true"></span><span id="pause-label">Pause all agents</span></button>
+      <div class="account">
+        <button class="account-btn" id="account-btn" type="button" aria-expanded="false" aria-controls="account-menu"><span class="avatar" id="avatar" aria-hidden="true"></span><span class="visually-hidden">Account</span></button>
+        <div class="account-menu" id="account-menu" hidden>
+          <p class="account-who"><b id="account-label"></b><span id="account-role"></span></p>
+          <button class="menu-item" id="sign-out" type="button">Sign out</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="app-frame">
+  <nav class="side-nav" aria-label="App">
+    <ul>
+      <li><a class="nav-item" href="/app/"><span class="nav-ico ico-today" aria-hidden="true"></span>Today</a></li>
+      <li><a class="nav-item" href="/app/activity"><span class="nav-ico ico-activity" aria-hidden="true"></span>Activity</a></li>
+      <li><a class="nav-item" href="/app/team"><span class="nav-ico ico-team" aria-hidden="true"></span>Team and limits</a></li>
+      <li><span class="nav-item is-soon" aria-disabled="true"><span class="nav-ico ico-connections" aria-hidden="true"></span>Connections<em>Soon</em></span></li>
+      <li><span class="nav-item is-soon" aria-disabled="true"><span class="nav-ico ico-data" aria-hidden="true"></span>Business data<em>Soon</em></span></li>
+      <li><a class="nav-item is-current" href="/app/people" aria-current="page"><span class="nav-ico ico-people" aria-hidden="true"></span>People</a></li>
+      <li><span class="nav-item is-soon" aria-disabled="true"><span class="nav-ico ico-settings" aria-hidden="true"></span>Settings<em>Soon</em></span></li>
+    </ul>
+  </nav>
+
+  <main id="main" class="app-main">
+    <div class="banner banner-paused" id="paused-banner" hidden role="status">
+      <svg class="bind-mark" data-state="held" viewBox="0 0 64 64" aria-hidden="true"><path class="ring" d="M32 12A20 20 0 1 1 32 52A20 20 0 1 1 32 12"/><circle class="clasp" cx="42" cy="14.68" r="6.4"/></svg>
+      <p><b>All agents are paused.</b> Nothing new is ordered or committed. You can still read everything and cancel work.</p>
+    </div>
+    <div class="banner banner-stale" id="stale-banner" hidden role="status">
+      <p id="stale-text">Can't reach Bind right now. Showing what we had.</p>
+      <button class="btn-small" id="refresh-now" type="button">Refresh now</button>
+    </div>
+
+    <header class="page-head">
+      <p class="eyebrow">Who can open this workspace</p>
+      <h1 class="page-title">People and access</h1>
+    </header>
+
+    <section class="panel staff-only" id="staff-note" hidden>
+      <h2 class="panel-h">Only owners manage people</h2>
+      <p class="panel-lede">Ask an owner of this workspace if someone needs to join or leave.</p>
+    </section>
+
+    <div class="people-grid" id="owner-area" hidden>
+      <section class="panel invite" aria-labelledby="invite-title">
+        <div class="panel-head"><h2 id="invite-title">Invite someone</h2></div>
+        <p class="panel-lede">They join as staff: they can see everything and propose work, but can't approve spending or change limits. You can make them an owner after they join.</p>
+        <form id="invite-form" class="invite-form" novalidate>
+          <label for="invite-label">Who is it for?</label>
+          <input id="invite-label" class="text-input" maxlength="80" autocomplete="off" placeholder="Sam, evening shift" aria-describedby="invite-error">
+          <label for="invite-expiry">The link works for</label>
+          <select id="invite-expiry" class="text-input">
+            <option value="24">1 day</option>
+            <option value="72" selected>3 days</option>
+            <option value="168">7 days</option>
+          </select>
+          <p class="error" id="invite-error" role="alert" hidden></p>
+          <button class="btn btn-primary" type="submit" id="invite-submit">Make invite link</button>
+        </form>
+        <div class="invite-made" id="invite-made" hidden>
+          <p class="invite-made-title">Send this to <b id="invite-for"></b></p>
+          <div class="link-row">
+            <input id="invite-link" class="text-input mono" readonly aria-label="Invite link">
+            <button class="btn-small" type="button" id="invite-copy">Copy</button>
+          </div>
+          <div class="qr" id="invite-qr" hidden></div>
+          <p class="help">Shown once. It works for one person, until <span id="invite-until"></span>. Anyone holding it can use it, so send it only to them.</p>
+          <button class="btn btn-quiet" type="button" id="invite-another">Invite someone else</button>
+        </div>
+        <p class="note-soon" id="join-note">Joining needs Google or wallet sign-in, which opens with the next release. Links you make now keep working until they expire.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="waiting-title">
+        <div class="panel-head"><h2 id="waiting-title">Waiting to join</h2></div>
+        <ul class="lines" id="invites" aria-busy="true"><li class="skeleton"></li></ul>
+        <details class="past" id="past-wrap" hidden>
+          <summary>Used, expired and cancelled</summary>
+          <ul class="lines" id="past-invites"></ul>
+        </details>
+      </section>
+
+      <section class="panel members" aria-labelledby="members-title">
+        <div class="panel-head"><h2 id="members-title">People</h2></div>
+        <ul class="lines" id="members" aria-busy="true"><li class="skeleton"></li></ul>
+        <p class="help">Builders and tools that use access keys are listed in Settings, under For builders.</p>
+      </section>
+    </div>
+  </main>
+</div>
+
+<nav class="tab-bar" aria-label="App">
+  <a class="tab-item" href="/app/"><span class="nav-ico ico-today" aria-hidden="true"></span>Today</a>
+  <a class="tab-item" href="/app/activity"><span class="nav-ico ico-activity" aria-hidden="true"></span>Activity</a>
+  <a class="tab-item" href="/app/team"><span class="nav-ico ico-team" aria-hidden="true"></span>Team</a>
+  <span class="tab-item is-soon" aria-disabled="true"><span class="nav-ico ico-connections" aria-hidden="true"></span>Connections</span>
+  <button class="tab-item tab-more is-current" id="more-btn" type="button" aria-expanded="false" aria-controls="more-menu"><span class="nav-ico ico-more" aria-hidden="true"></span>More</button>
+</nav>
+<div class="more-menu" id="more-menu" hidden>
+  <span class="more-item is-soon" aria-disabled="true">Business data<em>Soon</em></span>
+  <a class="more-item is-current" href="/app/people" aria-current="page">People and access</a>
+  <span class="more-item is-soon" aria-disabled="true">Settings<em>Soon</em></span>
+  <span class="more-item is-soon" aria-disabled="true">Help<em>Soon</em></span>
+</div>
+
+
+
+<dialog class="sheet sheet-small" id="pause-sheet" aria-labelledby="pause-title">
+  <div class="sheet-inner">
+    <h2 id="pause-title" class="sheet-title">Pause every agent?</h2>
+    <p class="sheet-text">Nothing new will be ordered or committed until you resume. Reading, reviewing and cancelling still work.</p>
+    <div class="sheet-actions">
+      <button class="btn btn-quiet" type="button" data-close>Keep working</button>
+      <button class="btn btn-primary" type="button" id="pause-confirm">Pause all agents</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="sheet sheet-small" id="remove-sheet" aria-labelledby="remove-title">
+  <div class="sheet-inner">
+    <h2 id="remove-title" class="sheet-title">Remove <span id="remove-name"></span>?</h2>
+    <p class="sheet-text">They are signed out of this workspace at once and can't open it again unless someone invites them back. What they did stays in Activity.</p>
+    <p class="error" id="remove-error" role="alert" hidden></p>
+    <div class="sheet-actions">
+      <button class="btn btn-quiet" type="button" data-close>Keep them</button>
+      <button class="btn btn-primary btn-danger" type="button" id="remove-confirm">Remove</button>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
