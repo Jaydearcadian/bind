@@ -6,6 +6,21 @@ that this task did not reproduce are kept, labelled, in the appendix at the end,
 **Commit the gates ran on:** `407533ac09f7121806836e25db4834be5c91c412` (HEAD of `claude/capabilities-overview-c6elxr` before the
 commit that adds this document; the working tree was clean at that commit).
 
+## 0c. Embedded wallet for Google sign-in (ADR 0073): gate run and deployment
+
+**Commit the gates ran on and the commit deployed:** `28f13c4df9ab72e6f48f14bd1d1d4bff66cc7580`. Command: `bash scripts/verify-local.sh`. Result: `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0` (unit 57 files and 606 tests, integration 638 passed and 10 skipped, contract 32, browser E2E including `wallet.spec.ts`, `account-signin.spec.ts` and `privy-bundle.spec.ts`).
+
+| Check | Outcome | Class |
+| --- | --- | --- |
+| Wallet created once at a first Google sign-in, reused after, never blocks sign-in, retry in Settings, none for a wallet login or a quiet re-entry, none with an access key | stand-in Privy adapter against the real server | `LOCAL_PASS` |
+| Adapter safety (88 unit tests): one creation under concurrency, external wallet never mistaken for the embedded one, frame only on the exact `auth.privy.io` host, messages accepted only from that frame's origin and window, the poster never uses `*`, no signing or sending method exists | fakes | `LOCAL_PASS` |
+| Production `https://bind-gilt.vercel.app` | serves the new bundle (989,874 bytes); `/api/public-config` returns the app id; CSP `connect-src 'self' https://auth.privy.io` and `frame-src https://auth.privy.io`; `/health` database connected | `VERIFIED_REMOTE` |
+| Privy app settings (public endpoint) | embedded wallet mode `user-controlled-server-wallets-only`, no password required, create-on-login off, no custom API host | `LIVE_READ_PASS` |
+| Creating a real wallet through Privy for a Google sign-in | a person must sign in with Google on the deployed site and open Settings | `NOT_RUN` |
+| The wallet frame's sandbox flags and the live frame handshake | unused in this Privy mode, never exercised live | `NOT_RUN` |
+
+**Known risks:** under this Privy mode the new wallet's shape in the user record is read from the SDK's refreshed user; if Privy lists it differently the page reports "wallet not found" rather than creating a second one. The real custody and recovery behaviour of this mode is Privy's and is not verified here. `scripts/` is outside the ESLint scope.
+
 ## 0b. Sign-in with Google or a wallet (ADR 0070 to 0072) and the production deployment: gate run
 
 **Commit the gates ran on and the commit deployed:** `5e6f5d5a1747dd66bff017799815dbef8ffec09e`. Command: `bash scripts/verify-local.sh`. Result: `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`.
