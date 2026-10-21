@@ -564,7 +564,8 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
         credential: actor.tokenId.startsWith("ses_") ? "account_session" : "workspace_token",
         agentsPaused: ws.agents_paused === true,
       });
-    } catch {
+    } catch (err: unknown) {
+      log.error("me.unavailable", { requestId: req.id, error: err instanceof Error ? err.message : String(err) });
       res.status(500).json({ error: "Identity unavailable" });
     }
   });

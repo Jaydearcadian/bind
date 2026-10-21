@@ -195,6 +195,16 @@ describe("GET /api/me: who the bearer token is (ADR 0058)", () => {
     expect(r.body).toMatchObject({ error: "Authentication required" });
   });
 
+  it("an expired account session gets 401 at once", async () => {
+    const extra = await call("POST", "/api/auth/session", { bearer: privyToken(alice), body: { workspaceId: WS_ACCOUNT } });
+    expect(extra.status).toBe(201);
+    expect((await get(extra.body.sessionToken)).status).toBe(200);
+    await query(`UPDATE account_sessions SET expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1;`, [await sessionIdOf(extra.body.sessionToken)]);
+    const r = await get(extra.body.sessionToken);
+    expect(r.status).toBe(401);
+    expect(r.body).toMatchObject({ error: "Authentication required" });
+  });
+
   it("the answer is the token's own workspace only, never another tenant's", async () => {
     const other = await issueToken(WS_OTHER, "owner", "other-founder");
     const r = await get(other.token);
@@ -235,9 +245,10 @@ describe("GET /api/me: who the bearer token is (ADR 0058)", () => {
     expect(spec?.contractTested).toBe(true);
   });
 
-  it("the schema is closed: an extra field fails it", () => {
+  it("the schema is passthrough like the others: an additive field is accepted, a wrong type is not", () => {
     const base = { workspaceId: "w", workspaceName: "n", role: "owner", label: "l", credential: "workspace_token", agentsPaused: false };
     expect(MeSchema.safeParse(base).success).toBe(true);
-    expect(MeSchema.safeParse({ ...base, tokenId: "tok_x" }).success).toBe(false);
+    expect(MeSchema.safeParse({ ...base, futureField: "ok" }).success).toBe(true);
+    expect(MeSchema.safeParse({ ...base, role: "admin" }).success).toBe(false);
   });
 });

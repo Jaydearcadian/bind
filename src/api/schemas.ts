@@ -249,7 +249,10 @@ export const WorkspaceRowSchema = z
   })
   .passthrough();
 
-/** GET /api/me (ADR 0058): who the bearer token is. Closed on purpose: no secret, hash or token id can appear in it. */
+/**
+ * GET /api/me (ADR 0058): who the bearer token is. The server builds this answer field by field, so no secret, hash or token id
+ * can reach it. Passthrough like the other response schemas, so an additive field does not break the contract.
+ */
 export const MeSchema = z
   .object({
     workspaceId: z.string(),
@@ -259,7 +262,7 @@ export const MeSchema = z
     credential: z.enum(["workspace_token", "account_session"]),
     agentsPaused: z.boolean(),
   })
-  .strict();
+  .passthrough();
 
 export const AgentRoleRowSchema = z
   .object({

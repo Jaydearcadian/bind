@@ -12,7 +12,7 @@ agents are paused, before it can show the right screens.
 ## Decision
 
 - `GET /api/me`, operationId `getMe`, access `authenticated` (any valid token; the answer is the caller's own workspace only).
-- The answer is exactly six fields, from `MeSchema` (`src/api/schemas.ts`, `.strict()`, so the OpenAPI document also closes it):
+- The answer carries six fields, from `MeSchema` (`src/api/schemas.ts`, `.passthrough()` like the other response schemas, so an additive field does not break the contract). The server builds the answer field by field, so no secret can reach it:
   `workspaceId`, `workspaceName`, `role`, `label`, `credential`, `agentsPaused`.
 - `workspaceName` and `agentsPaused` are read from the `workspaces` row. `credential` is `account_session` when `req.actor.tokenId`
   starts with `ses_`, otherwise `workspace_token`. `label` is the actor's label. Each field is set by name, so no token, session id,
@@ -59,6 +59,22 @@ been produced by an earlier tree, so regenerating it rewrote that table as well 
 1616 functions). The map was first regenerated before the last test files were added, which made `map drift` fail. It was
 regenerated again from the final test set, and the drift gate then passed.
 
+## Follow-up after review (2026-10-21)
+
+The reviewer approved the first commit (941033e). The coordinator then asked for three changes, made on this branch after
+merging the latest `claude/capabilities-overview-c6elxr` (4f189b6, a fast-forward):
+
+1. `MeSchema` is `.passthrough()`, like every other response schema, instead of `.strict()`. An additive field no longer breaks the
+   contract. The no-secret guarantee rests on the server building the answer field by field and on the HTTP test that searches
+   every answer for token shapes.
+2. `tests/integration/me.test.ts` gained an expired-session case: the session's `expires_at` is set to the past and the route answers 401.
+   The closed-schema unit assertion became a passthrough assertion (an additive field passes, a wrong `role` value fails).
+3. The 500 path of `GET /api/me` logs `me.unavailable` with the request id and the error message, through `log.error`, as
+   `src/server/idempotency.ts` does. The response body is unchanged: `{ error: "Identity unavailable" }`.
+
+The generated files were regenerated with the npm scripts. The code map changed more than this follow-up alone, because the merged
+coordinator work changed the stack. The run below is the record for the final tree.
+
 ## Commands and results
 
 Run from the worktree root, after `npm ci` (ran with Node v22.22.0). Integration and the full gate ran against
@@ -69,10 +85,14 @@ Run from the worktree root, after `npm ci` (ran with Node v22.22.0). Integration
 | `npm run lint` | exit 0 |
 | `npm run typecheck` | exit 0 |
 | `npx vitest run tests/unit` | 54 files passed; 425 tests passed |
-| `npx vitest run tests/integration` | 66 files passed, 1 skipped; 592 tests passed, 10 skipped |
-| `npx vitest run tests/integration/me.test.ts` | 12 tests passed |
+| `npx vitest run tests/integration` | 68 files passed, 1 skipped; 609 tests passed, 10 skipped (a standalone run of the same command on this tree printed 67 and 599; see the note below) |
+| `npx vitest run tests/integration/me.test.ts` | 13 tests passed |
 | `npx vitest run tests/unit/sdk.test.ts` | 20 tests passed (18 existing, 2 new) |
-| `bash scripts/verify-local.sh` | `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0` |
+| `bash scripts/verify-local.sh` | `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`; its integration gate printed 68 passed, 1 skipped; 609 passed, 10 skipped |
+
+Note on the integration counts: `tests/integration` holds 68 `*.test.ts` files on disk. The runner reported 67 + 1 skipped in one run
+and 68 + 1 skipped in the verify run, both on the same tree. The extra file in the verify run was not identified. Every file that ran
+passed.
 
 Gates inside `verify-local.sh`, all PASS: lint, typecheck, unit, integration, the contract in-process suite (4 files, 32 tests),
 build, sdk:build, mcp:build, audit (`found 0 vulnerabilities`), spec drift, sdk drift, map drift, forge fmt --check, forge build,

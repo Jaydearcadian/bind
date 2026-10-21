@@ -2385,6 +2385,8 @@ export interface operations {
                         role: "owner" | "staff";
                         workspaceId: string;
                         workspaceName: string;
+                    } & {
+                        [key: string]: unknown;
                     };
                 };
             };

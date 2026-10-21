@@ -283,13 +283,14 @@ findings are in `docs/decisions/0056-sdk-in-the-browser.md`. Summary by class:
 
 ## 10. Change evidence: `GET /api/me` (ADR 0058)
 
-This section records one change, not the whole release. The gates ran on the working tree whose parent is `409c2bb` (HEAD of
-`claude/capabilities-overview-c6elxr`) and that adds the endpoint, its tests, the regenerated artifacts and ADR 0058. The full
+This section records one change, not the whole release. The gates ran on the working tree of this branch. It contains the endpoint (first commit `941033e`, parent `409c2bb`),
+its follow-up changes (passthrough schema, expired-session test, 500-path logging), the regenerated artifacts and ADR 0058.
+The branch was merged with the latest `claude/capabilities-overview-c6elxr` (`4f189b6`) before the follow-up. The full
 record is `docs/decisions/0058-who-am-i.md`.
 
 Command: `bash scripts/verify-local.sh`, with `DATABASE_URL` pointing at a database of its own on the same local cluster. Result:
-`PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`. The gates are lint, typecheck, unit (54 files, 425 tests), integration (66 files
-passed and 1 skipped; 592 tests passed and 10 skipped), the contract in-process suite (32 tests), build, sdk:build, mcp:build, the
+`PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`. The gates are lint, typecheck, unit (54 files, 425 tests), integration (68 files
+passed and 1 skipped; 609 tests passed and 10 skipped), the contract in-process suite (32 tests), build, sdk:build, mcp:build, the
 dependency audit (0 vulnerabilities), spec, sdk and map drift, forge fmt, build, test (24 tests) and coverage, anvil integration,
 slither, and test:e2e (10 tests).
 

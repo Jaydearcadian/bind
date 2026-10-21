@@ -1592,7 +1592,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": false,
+                  "additionalProperties": true,
                   "properties": {
                     "agentsPaused": {
                       "type": "boolean"
