@@ -12,3 +12,5 @@ cp docs/brand/tokens.css public/brand/
 cp -r docs/brand/fonts public/brand/fonts
 cp -r docs/brand/assets public/brand/assets
 node scripts/copy-sdk-browser.mjs public/sdk
+# The sign-in page imports the Privy bundle (ADR 0071). Fail the build here rather than ship a page that cannot load it.
+test -s public/app/vendor/privy.js

@@ -3,30 +3,46 @@
 Status: Accepted. Follows ADR 0051 (Privy for sign-in) and ADR 0059 (access keys on the website). Sign-in still works with an access key; this adds Google and wallet sign-in beside it.
 
 ## Decision
-- The sign-in page gets Privy's browser SDK (`@privy-io/js-sdk-core@0.79.0`, exact pin) as a bundle served from our own origin. The site's CSP is `script-src 'self'` with no CDN, so no script is loaded from Privy's or any other host.
-- `scripts/build-web-bundle.mjs` (npm script `web:bundle`, esbuild 0.28.2 exact pin) bundles `scripts/web-entry/privy.js` into `web/app/vendor/privy.js`. The output is generated, gitignored, and built by `scripts/vercel-build.sh` and the web Playwright server. It is not committed.
-- The adapter is `createPrivyAdapter({ appId, Privy, storage, location })`. `Privy`, `storage` and `location` can be replaced in tests. It exposes `getAccessToken`, `startGoogle`, `finishOAuth`, `connectWallet` and `logout`.
-- One Privy client is constructed on first use and initialized once. If initialization fails, the next call tries again.
-- Privy's tokens and its PKCE state live in `sessionStorage`, so they last for this browser tab only. They never go to `localStorage`. Keys are namespaced `privy:`, so the SDK never reads other keys in the tab, such as Bind's access key. If `sessionStorage` throws, values are held in memory for the page load.
-- A wallet sign-in is identity only. It proves control of an address through Sign-In With Ethereum and grants no payment authority. Spending limits and approvals stay in Bind's policy code (AGENTS.md: authority is enforced outside the model and the login).
-- The adapter never logs or echoes the OAuth code, state or tokens. Its error messages are generic.
+- The sign-in page gets Privy's browser SDK (`@privy-io/js-sdk-core@0.78.0`, exact pin) as a bundle served from our own origin. The site's CSP is `script-src 'self'` with no CDN, so no script is loaded from Privy's or any other host.
+- The bundle is an ES module. The page loads it with `import()`.
+- `scripts/build-web-bundle.mjs` (npm script `web:bundle`, esbuild 0.28.2 exact pin) bundles `scripts/web-entry/privy.js` into `web/app/vendor/privy.js`. The output is generated and gitignored. `scripts/vercel-build.sh` builds it and then fails the build if `public/app/vendor/privy.js` is missing or empty. The web Playwright server builds it too. It is not committed.
+- SDK version. 0.78.1 was considered, but it was published 2026-10-07, 13 days 21 hours before this change, so it fails the 14-day rule. 0.78.0 (published 2026-10-02) is the newest release that passes.
+- The adapter is `createPrivyAdapter({ appId, Privy, storage, location, history })`. `Privy`, `storage`, `location` and `history` can be replaced in tests. Browser globals are read only when used, so importing the module needs no window. It exposes `getAccessToken`, `startGoogle`, `finishOAuth`, `connectWallet` and `logout`.
+- One Privy client is constructed on first use and initialized once. If initialization fails, the next call tries again. A failed attempt clears only its own slot, never a newer one.
+- Google sign-in:
+  - `startGoogle` refuses, before any network call, a return address that is not on this site (same origin as the page).
+  - It assigns the browser only to an `https:` URL whose host is exactly one of `auth.privy.io` or `accounts.google.com` (`ALLOWED_AUTH_HOSTS`). Suffix and wildcard matching are not used. Anything else, including `javascript:`, `data:`, `http:` and lookalike hosts, is refused without navigating.
+  - `finishOAuth` always uses provider `google`. It ignores any `privy_oauth_provider` parameter.
+  - `finishOAuth` removes the Privy parameters from the address bar before calling `loginWithCode`, so codes stay out of history even when the login fails. An absent history object is tolerated.
+  - Errors carry no `cause` and never include the code or state. Nothing is logged.
+- Storage:
+  - Privy's tokens and PKCE state live in `sessionStorage`, so they last for this tab only. They never go to `localStorage`.
+  - Keys are namespaced `privy:`. The SDK never reads other keys in the tab, such as Bind's access key.
+  - Writes go to an in-memory mirror first. Reads prefer the mirror and read `sessionStorage` only when the mirror has no entry.
+  - When a `sessionStorage` write fails, the stored value for that key is removed, so an older value cannot win.
+  - Non-JSON garbage under a `privy:` key is dropped, not parsed.
+- Concurrency: `startGoogle` and `connectWallet` allow one attempt at a time. A second call while one is running returns the same pending promise. The slot is cleared when the attempt settles.
+- A wallet sign-in is identity only. It proves control of an address through Sign-In With Ethereum and grants no payment authority. Spending limits and approvals stay in Bind's policy code, as AGENTS.md requires.
+- Wallet errors: code 4001 and `ACTION_REJECTED` become a "cancelled" message. -32002 becomes "a request is already pending in your wallet". The wallet's own text is never shown. A signature that is not a string is refused.
+- Content-Security-Policy: the connect-src entry for `https://auth.privy.io` is ADR 0070, a separate change. Until it lands, the production policy (`connect-src 'self'`) refuses the SDK's own calls to Privy in the browser, and the adapter's network-dependent calls fail.
+
+## Dependencies
+- `ox` override (`"overrides": { "ox": "0.14.56" }`). `@privy-io/js-sdk-core@0.78.0` has an optional peer on `permissionless`, which has an optional peer on `ox@^0.8`. viem 2.57.6 needs `ox@0.14.56`. npm reports ERESOLVE on that chain. Still needed with 0.78.0, as checked on 2026-10-21. `--legacy-peer-deps` was rejected because it removed unrelated lock entries (`langchain`, `langgraph`, `react`, `vue`).
+- `viem` held at 2.57.6. The SDK declares an optional peer on `viem@2.56.5` (exact). Without a pin, npm moves the server's viem down to 2.56.5. Root `viem` is therefore pinned to `2.57.6` (the version the base commit had), with a matching override, because npm refuses an override that conflicts with a direct dependency range. Result: `npm ls viem` reports no invalid peer. The mismatch is still real: `@privy-io/ethereum` declares an exact `viem@2.56.5`, and this build runs 2.57.6. Its code paths are not used by the adapter, but an upgrade of viem or the SDK should recheck this.
+- `esbuild@0.28.2` was already in `node_modules` through `tsx` and `vite`. It is now a direct devDependency at the same version.
+- A unit test checks that the installed `ox` is the pinned override.
+
+## Buffer
+- The bundle contains bare `Buffer` references. A static trace of the minified code finds them only in transaction serialization (`CM` calls `OM`), in the embedded-wallet raw-sign branches (`secp256k1_sign`, `eth_sign`) and in Solana signing. None is reached by `initialize`, `getAccessToken`, `oauth.generateURL`, `oauth.loginWithCode`, `siwe.init`, `siwe.loginWithSiwe` or `logout` in the paths the adapter takes before the network. No shim was added, because none is needed for these paths.
+- Limits: the Chromium check cannot reach the post-login steps, because Privy's network calls are refused in that environment. A live login is needed to see whether Privy's embedded-wallet setup after login touches `Buffer`. Such a use would appear as a ReferenceError in the browser console, and the Playwright spec fails on any ReferenceError logged to the page.
 
 ## Evidence
-- `tests/unit/web-privy-adapter.test.ts` (27 tests, Vitest, no network): one construction and one initialize across calls; token pass-through and null on error; Google start navigates only to an https URL returned by Privy; OAuth return parses code, state and provider and throws without echoing them; wallet sign-in orders account request, SIWE init with the page's host and origin, `personal_sign`, then `loginWithSiwe`; missing wallet and user rejection fail clearly; logout swallows errors; the default storage falls back to memory; `npm run web:bundle` produces a bundle under 3 MB with no `eval(`, `new Function(` or `Function(`. `LOCAL_PASS`.
-- A bundle load in Chromium under a strict CSP (`script-src 'self'`, no `unsafe-eval`) imported the module, created the adapter and resolved calls with zero CSP violations. Privy's network calls were blocked in that harness, so `getAccessToken` returned null. `LOCAL_PASS`, and not a live test.
-- Live Google and wallet sign-in against Privy's service and the deployed site are `NOT_RUN`. A person must complete both on the deployed site before either is claimed to work.
-
-## Consequences and notes
-- Dependency resolution. The SDK's optional peer chain (`permissionless`, then `ox@^0.8`) conflicts with viem's `ox@0.14.56`, so `npm ci` fails with ERESOLVE. The root `package.json` now has `"ox": "0.14.56"` under `overrides`, so `ox` stays at the version viem uses. `--legacy-peer-deps` was rejected because it removed unrelated entries from the lockfile (`langchain`, `langgraph`, `react`, `vue`). The SDK requires `viem@2.57.7`, so viem moved from 2.57.6 to 2.57.7 (patch). `esbuild@0.28.2` was already in `node_modules` through `tsx` and `vite`.
-- The SDK released 0.79.0 on 2026-10-16. The version was pinned as requested, five days before this change.
-- The SDK's `Storage` interface is `get`, `put`, `del` and `getKeys`, not the `getItem`/`setItem` shape. The wrapper implements the SDK's interface.
-- SDK 0.79.0 returns only `privy_oauth_code` and `privy_oauth_state` on the return URL. It never sends `privy_oauth_provider`, so the adapter reads that parameter when present and otherwise uses `google`. The provider only feeds analytics inside the SDK.
-- The SDK has no fetch hook, so the adapter takes no `fetchImpl`.
-- Parts of the bundle use `Buffer` (viem and Privy signing helpers). The adapter's flows do not reach them. A live test would confirm this, and an unexpected use would surface as a ReferenceError in the browser.
-- The bundle is about 964 KiB, minified.
-- Wiring the adapter into the sign-in page needs the public configuration endpoint (`GET /api/public-config`, another change) for `appId`. That wiring is not part of this change.
-- `scripts/` is outside the ESLint scope, so the new `.js` and `.mjs` files are not linted. The `.ts` tests are.
+- `tests/unit/web-privy-adapter.test.ts`: 49 tests, Vitest, no network. They cover construction and initialize once; retry after failed start; module import without a window; token pass-through; Google start with each refused URL and return address; the allowed hosts; one Google start at a time; OAuth return parsing; provider fixed to `google`; address-bar scrub before `loginWithCode`, also when the login fails; absent history; console silence and no `cause` on both success and failure; wallet order (account, SIWE init, `personal_sign`, login); wallet error mapping; non-string signature; one wallet sign-in at a time; logout; default storage with stubbed `sessionStorage` and `localStorage` (no `localStorage` access); `privy:` namespace; garbage handling; the in-memory preference; the failed-write removal; the bundle build within 60 s, under 3 MB, ES module, and free of `eval(`, `new Function(` and `Function(`; the pinned `ox`.
+- `tests/web/privy-bundle.spec.ts` (Playwright, real server, real helmet CSP): `/app/vendor/privy.js` returns 200 as JavaScript. A same-origin module imports the bundle, creates the adapter, and calls the local-only methods. It asserts no uncaught exception, no `ReferenceError` in the console, and no `script-src` or `unsafe-eval` violation. Its last run logged `token=null` and 4 `connect-src` refusals (the ADR 0070 gap).
+- Chromium check of the bundle under a strict CSP (scratchpad, earlier run): import, adapter creation and calls with zero CSP violations; Privy's network calls were blocked in that harness.
+- Live Google and live wallet sign-in against Privy's service and the deployed site: `NOT_RUN`. A person must complete both on the deployed site before either is claimed to work.
 
 ## Not done
-- Live Google sign-in and live wallet sign-in on the deployed site: `NOT_RUN`.
-- Sign-in page UI for the two new options.
+- The connect-src entry for `https://auth.privy.io` (ADR 0070).
+- Sign-in page UI for the two new options. The `appId` comes from `GET /api/public-config`, another change.
+- Live Google and wallet sign-in.
