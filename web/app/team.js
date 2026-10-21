@@ -150,7 +150,20 @@ function switchEl(id, label, checked, disabled, onChange) {
   return h("label", { class: "switch", for: id }, input, h("span", { class: "switch-track", "aria-hidden": "true" }), h("span", { class: "switch-label" }, label));
 }
 
-async function saveRole(role, patch, revert) {
+// Saves run one at a time, and each applies its change to the latest known copy of the role, so a quick second change can
+// never overwrite the first with stale fields.
+let saving = Promise.resolve();
+function saveRole(role, patch, revert) {
+  saving = saving.then(() => saveRoleNow(role.role_name, patch, revert));
+  return saving;
+}
+
+async function saveRoleNow(roleName, patch, revert) {
+  const role = state.roles.find((r) => r.role_name === roleName);
+  if (!role) return;
+  // A patch may be a function of the latest role (a tool switch adds or removes one tool from whatever is current).
+  if (typeof patch === "function") patch = patch(role);
+  if (!patch) return revert?.();
   const body = {
     roleName: role.role_name,
     displayName: patch.displayName ?? role.display_name,
@@ -162,6 +175,8 @@ async function saveRole(role, patch, revert) {
   };
   try {
     await bind.call("upsertAgentRole", { params: { id: state.me.workspaceId }, body, idempotencyKey: newKey() });
+    // Keep the local copy current at once, then read back what the server stored.
+    Object.assign(role, { display_name: body.displayName, allowed_tools: body.allowedTools, enabled: body.enabled });
     await loadAgents();
     renderAgents();
     toast("Saved");
@@ -214,13 +229,19 @@ function agentCard(role) {
       "li",
       {},
       switchEl(`tool-${id}-${t}`, TOOL_WORDS[t] ?? t.replace(/_/g, " "), on, !isOwner, (input) => {
-        const next = input.checked ? [...new Set([...role.allowed_tools, t])] : role.allowed_tools.filter((x) => x !== t);
-        if (next.length === 0) {
-          input.checked = true;
-          toast("An agent needs at least one tool. Turn the agent off instead.");
-          return;
-        }
-        saveRole(role, { allowedTools: next }, () => (input.checked = !input.checked));
+        const want = input.checked;
+        saveRole(
+          role,
+          (latest) => {
+            const next = want ? [...new Set([...latest.allowed_tools, t])] : latest.allowed_tools.filter((x) => x !== t);
+            if (next.length === 0) {
+              toast("An agent needs at least one tool. Turn the agent off instead.");
+              return null;
+            }
+            return { allowedTools: next };
+          },
+          () => (input.checked = !want)
+        );
       })
     );
   });
