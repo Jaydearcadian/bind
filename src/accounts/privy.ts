@@ -62,6 +62,12 @@ function parseVerificationKeys(pemBundle: string): KeyObject[] {
     if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
       throw new Error("The Privy verification key must be an ECDSA P-256 public key.");
     }
+    // createPublicKey reads only the first DER structure of a block, so a block with trailing key data would silently
+    // drop a key. The block's body must be exactly the one key it parsed to.
+    const body = block.replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "").replace(/\s+/g, "");
+    if (body !== key.export({ type: "spki", format: "der" }).toString("base64")) {
+      throw new Error("Each Privy verification key block must contain exactly one public key.");
+    }
     return key;
   });
 }

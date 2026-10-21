@@ -162,7 +162,9 @@ describe("accounts, sessions, invitations and members", () => {
       const r = await call("POST", "/api/auth/session", { base, bearer: `${head}.${body}.${sig}`, body: { workspaceId: wsNew } });
       expect(r.status).toBe(201);
       expect(r.body.sessionToken).toMatch(/^bns_[A-Za-z0-9_-]{43}$/);
-      const forged = await call("POST", "/api/auth/session", { base, bearer: `${head}.${body}.${sig.slice(0, -2)}AA`, body: { workspaceId: wsNew } });
+      const sigBytes = Buffer.from(sig, "base64url");
+      sigBytes[sigBytes.length - 1] ^= 0xff;
+      const forged = await call("POST", "/api/auth/session", { base, bearer: `${head}.${body}.${sigBytes.toString("base64url")}`, body: { workspaceId: wsNew } });
       expect(forged.status).toBe(401);
     } finally {
       await new Promise<void>((r) => rs.close(() => r()));

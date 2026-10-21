@@ -149,10 +149,23 @@ describe("Privy access token verification", () => {
       expect(() => createPrivyVerifier({ appId: APP, verificationKeyPem: `${pem}${pem2}${pem}${pem2}${pem}` })).toThrow(/at most 4/);
     });
 
-    it("accepts up to four keys", async () => {
-      const four = `${pem}${pem2}${pem}${pem2}`;
+    it("refuses a single PEM block that holds two DER keys, since the second would be silently dropped", () => {
+      const der1 = publicKey.export({ type: "spki", format: "der" });
+      const der2 = second.publicKey.export({ type: "spki", format: "der" });
+      const b64Body = Buffer.concat([der1, der2]).toString("base64").match(/.{1,64}/g)!.join("\n");
+      const oneBlock = `-----BEGIN PUBLIC KEY-----\n${b64Body}\n-----END PUBLIC KEY-----\n`;
+      expect(() => createPrivyVerifier({ appId: APP, verificationKeyPem: oneBlock })).toThrow();
+      expect(() => createPrivyVerifier({ appId: APP, verificationKeyPem: oneBlock.replace(/\n/g, "\\n") })).toThrow();
+    });
+
+    it("accepts up to four distinct keys and refuses a fifth one", async () => {
+      const pairs = Array.from({ length: 5 }, () => generateKeyPairSync("ec", { namedCurve: "P-256" }));
+      const pemOf = (i: number) => pairs[i].publicKey.export({ type: "spki", format: "pem" }).toString();
+      const four = [0, 1, 2, 3].map(pemOf).join("");
       const v = createPrivyVerifier({ appId: APP, verificationKeyPem: four, now: () => NOW });
-      expect((await v.verify(mint({}, { key: second.privateKey })))?.userId).toBe("did:privy:abc");
+      expect((await v.verify(mint({}, { key: pairs[3].privateKey })))?.userId).toBe("did:privy:abc");
+      expect(await v.verify(mint({}, { key: pairs[4].privateKey }))).toBeNull();
+      expect(() => createPrivyVerifier({ appId: APP, verificationKeyPem: [0, 1, 2, 3, 4].map(pemOf).join("") })).toThrow(/at most 4/);
     });
   });
 });
