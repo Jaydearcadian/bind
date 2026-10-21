@@ -61,6 +61,7 @@ export const ERROR_CODES: Readonly<Record<string, ErrorShape>> = {
   DEMO_DISABLED: { category: "not_found", retryable: false },
   NOT_A_DEMO: { category: "conflict", retryable: false },
   DEMO_CAPACITY_REACHED: { category: "unavailable", retryable: true },
+  DEMO_BUSY: { category: "unavailable", retryable: true },
   RATE_LIMITED: { category: "rate_limited", retryable: true },
   TOO_MANY_STREAMS: { category: "rate_limited", retryable: true },
   UNAVAILABLE: { category: "unavailable", retryable: true },

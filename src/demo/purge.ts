@@ -30,9 +30,16 @@ export function childOfRoot(root: string, name: string): string {
   return target;
 }
 
-/** Removes the files one demo generated. Refuses an id that is not a demo id. Idempotent: missing folders are fine. */
+/**
+ * Removes the files one demo generated. Refuses an id that is not a demo id, and refuses a workspace row that exists and is not
+ * a demo (a real workspace with a demo-shaped id is never touched). Idempotent: missing folders are fine.
+ */
 export async function removeDemoArtifacts(workspaceId: string): Promise<void> {
   if (!isDemoWorkspaceId(workspaceId)) throw new Error("refusing to remove artifacts of a workspace that is not a demo");
+  const row = await query(`SELECT is_demo FROM workspaces WHERE id = $1;`, [workspaceId]);
+  if (row.rows.length > 0 && row.rows[0].is_demo !== true) {
+    throw new Error("refusing to remove artifacts of a workspace that is not a demo");
+  }
   const templateDir = childOfRoot(templatesArtifactsDir(), workspaceId);
   const workflows = await query(`SELECT id FROM workflows WHERE workspace_id = $1;`, [workspaceId]);
   const workflowDirs = workflows.rows.map((row) => childOfRoot(workflowsArtifactsDir(), String(row.id)));

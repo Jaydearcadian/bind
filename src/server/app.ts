@@ -27,7 +27,7 @@ import {
 } from "../accounts/service.js";
 import { authenticated, workspaceMember, workspaceOwner, anyWorkspaceOwner } from "../auth/middleware.js";
 import { provisionWorkspace, listTemplates } from "../templates/registry.js";
-import { createDemoWorkspace, resetDemoWorkspace, DemoError, type DemoCredentials } from "../demo/service.js";
+import { createDemoWorkspace, resetDemoWorkspace, DemoError, DEMO_LOCK_WAIT_MS, type DemoCredentials } from "../demo/service.js";
 import { DEFAULT_DEMO_MAX_ACTIVE, demoEnabled, effectiveSettlementMode } from "../demo/policy.js";
 import { isDemoWorkspace } from "../demo/status.js";
 import { AgentsPausedError, ProcurementWorkflowRunner } from "../workflows/procurement.js";
@@ -367,6 +367,7 @@ function sendDemoDisabled(res: Response) {
 function sendDemoError(res: Response, err: unknown) {
   if (err instanceof DemoError) {
     if (err.code === "NOT_A_DEMO") return res.status(409).json({ error: err.message, code: err.code });
+    if (err.code === "DEMO_BUSY") res.setHeader("Retry-After", String(Math.ceil(DEMO_LOCK_WAIT_MS / 1000)));
     return res.status(503).json({ error: err.message, code: err.code });
   }
   return res.status(500).json({ error: "Demo operation failed" });
@@ -1626,8 +1627,12 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   });
 
   async function handleSurfaceEvent(req: Request, res: Response, event: SocialSurfaceEvent) {
-    // (2) The workspace must exist. An unknown one gets the same 401 as a bad signature, so existence is not revealed.
-    const wsRes = await query(`SELECT webhook_secret_version FROM workspaces WHERE id = $1;`, [event.workspaceId]);
+    // (2) The workspace must exist and must not be an expired demo (docs/decisions/0057). An unknown or expired one gets the
+    // same 401 as a bad signature, so existence is not revealed.
+    const wsRes = await query(
+      `SELECT webhook_secret_version FROM workspaces WHERE id = $1 AND (NOT is_demo OR demo_expires_at > NOW());`,
+      [event.workspaceId]
+    );
     if (wsRes.rows.length === 0) {
       return res.status(401).json(WEBHOOK_UNAUTHORIZED);
     }

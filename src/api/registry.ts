@@ -334,7 +334,7 @@ export const ROUTES: RouteSpec[] = [
     responses: {
       201: ok("Created. The owner token is in the body and is shown only here. Never cached.", DemoCreatedSchema),
       404: err("Demo workspaces are off on this server (code DEMO_DISABLED). They are off in production unless BIND_DEMO_ENABLED=true."),
-      503: err("The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or demo creation is busy. Retry later."),
+      503: err("The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or another create holds the lock (code DEMO_BUSY, Retry-After: 3)."),
     },
     contractTested: true,
   }),
@@ -349,7 +349,7 @@ export const ROUTES: RouteSpec[] = [
       201: ok("Created. The new owner token is in the body and is shown only here. Never cached.", DemoCreatedSchema),
       404: err("Demo workspaces are off on this server (code DEMO_DISABLED)."),
       409: err("This workspace is not a demo (code NOT_A_DEMO). Nothing is changed."),
-      503: err("The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or the reset is busy. Retry later."),
+      503: err("The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or another create holds the lock (code DEMO_BUSY, Retry-After: 3)."),
     },
     contractTested: true,
   }),

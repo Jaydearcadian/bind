@@ -13,6 +13,12 @@ import { ProcurementWorkflowRunner } from "../../src/workflows/procurement.js";
 import { setLogSink } from "../../src/observability/logger.js";
 import { SimulatedSupplierAdapter } from "../../src/adapters/suppliers/simulated.js";
 import { DEMO_TTL_MS } from "../../src/demo/policy.js";
+import { purgeExpiredDemos, removeDemoArtifacts } from "../../src/demo/purge.js";
+import { acquireAdvisoryLock } from "../../src/db/advisory-lock.js";
+import { HybridMarketBenchmarkAdapter } from "../../src/adapters/marketBenchmark.js";
+import { upsertAccount } from "../../src/accounts/service.js";
+import { createSession } from "../../src/accounts/sessions.js";
+import { signPayload, workspaceWebhookSecret } from "../../src/webhooks/signing.js";
 
 /**
  * Demo workspaces (docs/decisions/0057). Real PostgreSQL and real HTTP through createApp; nothing is mocked except where a
@@ -25,6 +31,9 @@ const WS_REAL = `ws-demo-real-${run}`;
 const FLOUR = "FOOD-FLOUR-50LB"; // low: 3 on hand, par 6, 10 to order at $24.50 (under the $250 approval threshold)
 const BUTTER = "FOOD-BUTTER-36LB"; // low: 2 on hand, par 4, 4 to order at $98.00 (needs owner approval)
 const RESET_WINDOW_MS = 60 * 60_000;
+/** A real workspace whose id has the demo shape. It must never be treated as a demo. */
+const LOOKALIKE = `ws-demo-${run.toString(16).padStart(16, "0")}`;
+const BUTTER_SKU = "FOOD-BUTTER-36LB";
 
 const createdDemoIds = new Set<string>();
 
@@ -39,10 +48,11 @@ async function call(
   base: string,
   method: string,
   routePath: string,
-  opts: { token?: string; body?: unknown } = {}
+  opts: { token?: string; body?: unknown; headers?: Record<string, string> } = {}
 ): Promise<Reply> {
   const headers: Record<string, string> = {};
   if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
+  Object.assign(headers, opts.headers ?? {});
   let payload: string | undefined;
   if (opts.body !== undefined) {
     payload = JSON.stringify(opts.body);
@@ -135,10 +145,20 @@ describe("demo workspaces (docs/decisions/0057)", () => {
     const ids = [...createdDemoIds];
     await query(`DELETE FROM idempotency_keys WHERE workspace_id = ANY($1::text[]);`, [ids]);
     await query(`DELETE FROM workspaces WHERE id = ANY($1::text[]);`, [ids]);
+    // Workflow evidence folders written by a settled demo order (settlement writes them for a decision record).
+    const workflows = await query(`SELECT id FROM workflows WHERE workspace_id = ANY($1::text[]);`, [ids]);
+    await query(`DELETE FROM workspaces WHERE id = ANY($1::text[]);`, [ids]);
     await query(`DELETE FROM workspaces WHERE id = $1;`, [WS_REAL]);
+    await query(`DELETE FROM workspaces WHERE id = $1;`, [LOOKALIKE]);
+    await query(`DELETE FROM accounts WHERE privy_user_id LIKE $1;`, [`did:privy:demo-${run}-%`]);
+    await query(`DELETE FROM inbound_webhooks WHERE provider LIKE ANY($1::text[]);`, [ids.map((id) => `surface:${id}:%`)]);
     for (const id of ids) {
       await fs.rm(templateDirOf(id), { recursive: true, force: true });
     }
+    for (const row of workflows.rows) {
+      await fs.rm(workflowDirOf(String(row.id)), { recursive: true, force: true });
+    }
+    await fs.rm(workflowDirOf(LOOKALIKE), { recursive: true, force: true });
     await closePool();
   });
 
@@ -487,4 +507,285 @@ describe("demo workspaces (docs/decisions/0057)", () => {
     expect(await countRows("workflows", demo.workspaceId)).toBe(0);
     expect(await countRows("approvals", demo.workspaceId)).toBe(0);
   });
+  it("an expired demo's account session gets 401, and a live session works", async () => {
+    const demo = await createDemo(server.url);
+    const account = await upsertAccount(`did:privy:demo-${run}-${demo.workspaceId}`);
+    await query(`INSERT INTO workspace_memberships (account_id, workspace_id, role) VALUES ($1, $2, 'owner');`, [account.id, demo.workspaceId]);
+    const session = await createSession(account.id, demo.workspaceId, 60);
+    expect(session).not.toBeNull();
+    const live = await call(server.url, "GET", `/api/workspaces/${demo.workspaceId}`, { token: session!.token });
+    expect(live.status, live.text).toBe(200);
+
+    await query(`UPDATE workspaces SET demo_expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1;`, [demo.workspaceId]);
+    const expired = await call(server.url, "GET", `/api/workspaces/${demo.workspaceId}`, { token: session!.token });
+    expect(expired.status).toBe(401);
+  });
+
+  it("an open event stream of an expired demo ends, and its token is refused afterwards", async () => {
+    const fast = createApp({
+      rateLimits: { enabled: false },
+      metrics: { token: null },
+      demo: { enabled: true, maxActive: 10_000 },
+      events: { pollIntervalMs: 100, heartbeatMs: 60_000 },
+    });
+    const srv = await listen(fast);
+    const controller = new AbortController();
+    try {
+      const demo = await createDemo(srv.url);
+      const stream = await fetch(`${srv.url}/api/workspaces/${demo.workspaceId}/events`, {
+        headers: { Authorization: `Bearer ${demo.token}` },
+        signal: controller.signal,
+      });
+      expect(stream.status).toBe(200);
+      const reader = stream.body!.getReader();
+      await query(`UPDATE workspaces SET demo_expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1;`, [demo.workspaceId]);
+      // The server ends the stream on its next loop, so the body finishes without any further write.
+      const ended = await Promise.race([
+        (async () => {
+          for (;;) {
+            const chunk = await reader.read();
+            if (chunk.done) return true;
+          }
+        })(),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
+      ]);
+      expect(ended, "the stream of an expired demo must end").toBe(true);
+      const refused = await call(srv.url, "GET", `/api/workspaces/${demo.workspaceId}/events/poll`, { token: demo.token });
+      expect(refused.status).toBe(401);
+    } finally {
+      controller.abort();
+      await srv.close();
+    }
+  }, 30_000);
+
+  it("a signed surface event for an expired demo is refused with 401, as for an unknown workspace", async () => {
+    const demo = await createDemo(server.url);
+    const version = Number((await query(`SELECT webhook_secret_version FROM workspaces WHERE id = $1;`, [demo.workspaceId])).rows[0].webhook_secret_version);
+    const secret = workspaceWebhookSecret(config.BIND_MASTER_SECRET ?? "", demo.workspaceId, version);
+    const send = async (eventId: string) => {
+      const raw = JSON.stringify({
+        eventType: "SURFACE_STOCK_OBSERVED",
+        eventId,
+        workspaceId: demo.workspaceId,
+        surface: "whatsapp",
+        actorId: "demo-phone",
+        actorRole: "owner",
+        sku: BUTTER_SKU,
+        observedQuantity: 1,
+      });
+      const timestamp = Math.floor(Date.now() / 1000);
+      const res = await fetch(`${server.url}/api/webhooks/incoming`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-bind-timestamp": String(timestamp), "x-bind-signature": signPayload(secret, timestamp, raw) },
+        body: raw,
+      });
+      const text = await res.text();
+      return { status: res.status, body: JSON.parse(text) as any };
+    };
+    // The same signed event is not refused for the workspace reason while the demo is live (it fails later, on the binding).
+    const live = await send(`demo-live-${run}-${demo.workspaceId}`);
+    expect(live.status).not.toBe(401);
+
+    await query(`UPDATE workspaces SET demo_expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1;`, [demo.workspaceId]);
+    const expired = await send(`demo-expired-${run}-${demo.workspaceId}`);
+    expect(expired.status).toBe(401);
+    expect(expired.body.error).toBe("Invalid signature or expired timestamp");
+  });
+
+  it("a create removes at most ten expired demos, so expired rows do not pile up where no worker runs", async () => {
+    const expiredCount = async () =>
+      Number((await query(`SELECT COUNT(*)::int AS n FROM workspaces WHERE is_demo AND demo_expires_at <= NOW();`)).rows[0].n);
+    const made: string[] = [];
+    for (let i = 0; i < 11; i += 1) {
+      const demo = await createDemo(server.url);
+      made.push(demo.workspaceId);
+    }
+    await query(`UPDATE workspaces SET demo_expires_at = NOW() - INTERVAL '1 minute' WHERE id = ANY($1::text[]);`, [made]);
+    const before = await expiredCount();
+    expect(before).toBeGreaterThanOrEqual(11);
+    const created = await call(server.url, "POST", "/api/demo");
+    expect(created.status).toBe(201);
+    createdDemoIds.add(created.body.workspaceId);
+    // The purge takes the oldest expired demos, at most ten of them, before the new one is provisioned.
+    expect(await expiredCount()).toBe(before - 10);
+  }, 60_000);
+
+  it("while another create holds the lock, a create answers 503 DEMO_BUSY with Retry-After, and succeeds after release", async () => {
+    const held = await acquireAdvisoryLock("demo:create", 0);
+    expect(held).not.toBeNull();
+    try {
+      const busy = await call(server.url, "POST", "/api/demo");
+      expect(busy.status).toBe(503);
+      expect(busy.body.code).toBe("DEMO_BUSY");
+      expect(busy.body.category).toBe("unavailable");
+      expect(busy.headers.get("retry-after")).toBe("3");
+    } finally {
+      await held!.release();
+    }
+    const after = await createDemo(server.url);
+    expect(after.reply.status).toBe(201);
+  }, 30_000);
+
+  it("a demo whose row claims arc-testnet settles on the local adapter while the environment asks for Arc", async () => {
+    config.SETTLEMENT_MODE = "arc-testnet";
+    const demo = await createDemo(server.url);
+    await query(`UPDATE workspaces SET settlement_mode = 'arc-testnet' WHERE id = $1;`, [demo.workspaceId]);
+    const approvals = await call(server.url, "GET", `/api/workspaces/${demo.workspaceId}/approvals`, { token: demo.token });
+    const pending = approvals.body.find((a: any) => a.status === "pending");
+    expect(pending).toBeDefined();
+    const approve = await call(server.url, "POST", `/api/approvals/${pending.id}/approve`, { token: demo.token, body: {} });
+    expect(approve.status, approve.text).toBe(200);
+
+    const orders = await call(server.url, "GET", `/api/workspaces/${demo.workspaceId}/orders`, { token: demo.token });
+    const order = orders.body.find((o: any) => o.item_sku === BUTTER_SKU);
+    expect(order, JSON.stringify(orders.body).slice(0, 300)).toBeDefined();
+    // Settlement reads the local adapter. The Arc adapter has no RPC here, so this only succeeds on the local path.
+    const reconcile = await call(server.url, "POST", `/api/orders/${order.id}/reconcile`, { token: demo.token, body: {} });
+    expect(reconcile.status, reconcile.text).toBe(200);
+    expect(reconcile.body.reconciled).toBe(true);
+  }, 60_000);
+
+  it("the per-address limit keys on the socket address: X-Forwarded-For is ignored without a trusted proxy and honoured with one", async () => {
+    const direct = createApp({
+      rateLimits: { enabled: true, demoCreate: { windowMs: RESET_WINDOW_MS, max: 1 } },
+      metrics: { token: null },
+      trustProxy: 0,
+      demo: { enabled: true, maxActive: 10_000 },
+    });
+    const srvDirect = await listen(direct);
+    try {
+      const first = await call(srvDirect.url, "POST", "/api/demo", { headers: { "x-forwarded-for": "203.0.113.10" } });
+      expect(first.status).toBe(201);
+      createdDemoIds.add(first.body.workspaceId);
+      // A different forwarded address is the same socket: the second create is refused.
+      const second = await call(srvDirect.url, "POST", "/api/demo", { headers: { "x-forwarded-for": "203.0.113.11" } });
+      expect(second.status).toBe(429);
+    } finally {
+      await srvDirect.close();
+    }
+
+    const proxied = createApp({
+      rateLimits: { enabled: true, demoCreate: { windowMs: RESET_WINDOW_MS, max: 1 } },
+      metrics: { token: null },
+      trustProxy: 1,
+      demo: { enabled: true, maxActive: 10_000 },
+    });
+    const srvProxied = await listen(proxied);
+    try {
+      const a = await call(srvProxied.url, "POST", "/api/demo", { headers: { "x-forwarded-for": "203.0.113.20" } });
+      const b = await call(srvProxied.url, "POST", "/api/demo", { headers: { "x-forwarded-for": "203.0.113.21" } });
+      expect(a.status).toBe(201);
+      expect(b.status).toBe(201);
+      createdDemoIds.add(a.body.workspaceId);
+      createdDemoIds.add(b.body.workspaceId);
+      const again = await call(srvProxied.url, "POST", "/api/demo", { headers: { "x-forwarded-for": "203.0.113.20" } });
+      expect(again.status).toBe(429);
+    } finally {
+      await srvProxied.close();
+    }
+  }, 60_000);
+
+  it("the expiry sweep leaves a real workspace with a demo-shaped id and a live demo untouched; artifact removal refuses non-demos", async () => {
+    await provisionWorkspace(LOOKALIKE, "Lookalike real workspace", "kitchen-v1");
+    await query(`UPDATE workspaces SET demo_expires_at = NOW() - INTERVAL '1 hour' WHERE id = $1;`, [LOOKALIKE]);
+    const live = await createDemo(server.url);
+    await purgeExpiredDemos(50);
+    const lookalike = await query(`SELECT is_demo FROM workspaces WHERE id = $1;`, [LOOKALIKE]);
+    expect(lookalike.rows.length).toBe(1);
+    expect(lookalike.rows[0].is_demo).toBe(false);
+    const liveRow = await query(`SELECT id FROM workspaces WHERE id = $1;`, [live.workspaceId]);
+    expect(liveRow.rows.length).toBe(1);
+
+    await expect(removeDemoArtifacts(LOOKALIKE)).rejects.toThrow(/not a demo/);
+    await expect(removeDemoArtifacts(WS_REAL)).rejects.toThrow(/not a demo/);
+    await expect(removeDemoArtifacts("ws-kitchen-main")).rejects.toThrow(/not a demo/);
+  }, 30_000);
+
+  it("the HybridMarketBenchmarkAdapter makes no outside call for a demo (allowExternal false), even with search keys set", async () => {
+    const saved = { PARALLEL: process.env.PARALLEL_API_KEY, TAVILY: process.env.TAVILY_API_KEY };
+    process.env.PARALLEL_API_KEY = "test-parallel-key";
+    process.env.TAVILY_API_KEY = "test-tavily-key";
+    const realFetch = globalThis.fetch;
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation((input: any, init?: any) => {
+      if (String(input).startsWith("http://127.0.0.1")) return realFetch(input, init);
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    try {
+      const adapter = new HybridMarketBenchmarkAdapter();
+      const local = await adapter.fetchBenchmark(BUTTER_SKU, "kitchen", { allowExternal: false });
+      expect(local.integrationMode).toBe("OFFLINE_DETERMINISTIC_FALLBACK");
+      const outside = spy.mock.calls.filter((c) => !String(c[0]).startsWith("http://127.0.0.1"));
+      expect(outside).toEqual([]);
+      // The control: with the default, the keyed providers are called.
+      await adapter.fetchBenchmark(BUTTER_SKU, "kitchen");
+      const called = spy.mock.calls.map((c) => String(c[0]));
+      expect(called.some((url) => url.includes("parallel.ai"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+      process.env.PARALLEL_API_KEY = saved.PARALLEL;
+      process.env.TAVILY_API_KEY = saved.TAVILY;
+      if (saved.PARALLEL === undefined) delete process.env.PARALLEL_API_KEY;
+      if (saved.TAVILY === undefined) delete process.env.TAVILY_API_KEY;
+    }
+  });
+
+  it("a demo makes no call outside this server, even with TypeSafe, Parallel and Tavily keys set; a real workspace reaches TypeSafe", async () => {
+    const keys = { TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY, PARALLEL_API_KEY: process.env.PARALLEL_API_KEY, TAVILY_API_KEY: process.env.TAVILY_API_KEY };
+    process.env.TYPESAFE_API_KEY = "test-typesafe-key";
+    process.env.PARALLEL_API_KEY = "test-parallel-key";
+    process.env.TAVILY_API_KEY = "test-tavily-key";
+    const realFetch = globalThis.fetch;
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation((input: any, init?: any) => {
+      if (String(input).startsWith("http://127.0.0.1")) return realFetch(input, init);
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
+    const outsideCalls = () => spy.mock.calls.map((c) => String(c[0])).filter((url) => !url.startsWith("http://127.0.0.1"));
+    try {
+      // A demo: the seed replenishment runs the policy evaluation and the decision record. Neither may leave the server.
+      await createDemo(server.url);
+      expect(outsideCalls()).toEqual([]);
+      // A real workspace with the same keys does reach an outside provider, so the spy is effective and the demo rule is the reason.
+      await query(`UPDATE inventory_items SET current_quantity = 1 WHERE workspace_id = $1 AND sku = $2;`, [WS_REAL, BUTTER_SKU]);
+      await call(server.url, "POST", `/api/workspaces/${WS_REAL}/replenish`, { token: realOwner.token, body: { sku: BUTTER_SKU } });
+      expect(outsideCalls().some((url) => url.includes("typesafe"))).toBe(true);
+      expect(outsideCalls().some((url) => url.includes("parallel.ai") || url.includes("tavily.com"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+      for (const [name, value] of Object.entries(keys)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  }, 60_000);
+
+  it("a reset is judged on the net count: allowed at the cap, and refused without losing the demo when it would exceed the cap", async () => {
+    const demo = await createDemo(server.url);
+    const active = await activeDemoCount();
+    let current = { workspaceId: demo.workspaceId, token: demo.token };
+    const atCap = createApp({ rateLimits: { enabled: false }, metrics: { token: null }, demo: { enabled: true, maxActive: active } });
+    const srvAtCap = await listen(atCap);
+    try {
+      // The old demo is replaced by a new one, so the active count does not grow. At the cap that is allowed.
+      const reset = await call(srvAtCap.url, "POST", `/api/workspaces/${demo.workspaceId}/demo/reset`, { token: demo.token });
+      expect(reset.status, reset.text).toBe(201);
+      createdDemoIds.add(reset.body.workspaceId);
+      current = { workspaceId: reset.body.workspaceId, token: reset.body.token };
+      expect(await activeDemoCount()).toBe(active);
+    } finally {
+      await srvAtCap.close();
+    }
+
+    const under = createApp({ rateLimits: { enabled: false }, metrics: { token: null }, demo: { enabled: true, maxActive: active - 1 } });
+    const srvUnder = await listen(under);
+    try {
+      const refused = await call(srvUnder.url, "POST", `/api/workspaces/${current.workspaceId}/demo/reset`, { token: current.token });
+      expect(refused.status).toBe(503);
+      expect(refused.body.code).toBe("DEMO_CAPACITY_REACHED");
+      // Nothing was deleted: the demo still works with its token.
+      const still = await call(srvUnder.url, "GET", `/api/workspaces/${current.workspaceId}`, { token: current.token });
+      expect(still.status).toBe(200);
+    } finally {
+      await srvUnder.close();
+    }
+  }, 60_000);
 });

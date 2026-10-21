@@ -2460,7 +2460,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or demo creation is busy. Retry later. */
+            /** @description The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or another create holds the lock (code DEMO_BUSY, Retry-After: 3). */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -5908,7 +5908,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or the reset is busy. Retry later. */
+            /** @description The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or another create holds the lock (code DEMO_BUSY, Retry-After: 3). */
             503: {
                 headers: {
                     [name: string]: unknown;

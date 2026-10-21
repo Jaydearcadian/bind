@@ -22,6 +22,8 @@ export interface JevEvaluationInput {
   approvalThresholdCents: number;
   remainingDailyBudgetCents: number;
   candidates: JevQuoteCandidate[];
+  /** False keeps the call local: no external scorer is contacted (demo workspaces, docs/decisions/0057). Default true. */
+  allowExternal?: boolean;
 }
 
 export interface JevDecisionScoreResult {
@@ -126,8 +128,9 @@ export async function evaluateWithJevSystemOne(
       ? 0.94
       : 0.15;
 
-  // 2. If TYPESAFE_API_KEY is present, query TypeSafe's Jev ("System One") API
-  if (process.env.TYPESAFE_API_KEY && validCandidates.length > 0) {
+  // 2. If TYPESAFE_API_KEY is present, query TypeSafe's Jev ("System One") API. A demo workspace never does
+  // (allowExternal false, docs/decisions/0057): it keeps the deterministic scores above.
+  if (input.allowExternal !== false && process.env.TYPESAFE_API_KEY && validCandidates.length > 0) {
     const apiUrl =
       process.env.TYPESAFE_API_URL ?? "https://api.typesafe.ai/v1/evaluate";
     const response = await fetch(apiUrl, {

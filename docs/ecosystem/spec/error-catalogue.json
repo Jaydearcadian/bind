@@ -67,6 +67,14 @@
       "note": "A reset was asked for a workspace that is not a demo. Nothing is changed. docs/decisions/0057."
     },
     {
+      "code": "DEMO_BUSY",
+      "httpStatus": 503,
+      "category": "unavailable",
+      "retryable": true,
+      "existing": true,
+      "note": "Another demo create or reset holds the lock. Answered with Retry-After. docs/decisions/0057."
+    },
+    {
       "code": "DEMO_CAPACITY_REACHED",
       "httpStatus": 503,
       "category": "unavailable",
