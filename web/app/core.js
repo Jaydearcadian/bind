@@ -149,7 +149,12 @@ export function shell({ me, onSignOut }) {
     ticking = true;
     requestAnimationFrame(() => {
       ticking = false;
-      header?.classList.toggle("is-compact", window.scrollY > 12);
+      // Hysteresis wider than the height the header loses: on a page barely taller than the window, one threshold would
+      // shrink the header, pull the scroll back under it, grow it again, and loop.
+      if (header) {
+        if (window.scrollY > 40) header.classList.add("is-compact");
+        else if (window.scrollY < 8) header.classList.remove("is-compact");
+      }
       if (!reduce.matches) {
         const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
         const angle = (Math.min(1, window.scrollY / max) * 360).toFixed(1);

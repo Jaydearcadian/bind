@@ -56,9 +56,12 @@ test("an owner makes an invite link shown once, sees it waiting, and cancels it;
   await page.getByLabel("Who is it for?").fill("Priya, mornings");
   await page.getByLabel("The link works for").selectOption("24");
   await page.getByRole("button", { name: "Make invite link" }).click();
-  const link = page.getByLabel("Invite link");
+  const link = page.getByLabel("Invite link", { exact: true });
   await expect(link).toHaveValue(/\/app\/join#bni_[A-Za-z0-9_-]{43}$/);
   await expect(page.locator("#invite-for")).toHaveText("Priya, mornings");
+  // The QR code encodes the same link (drawn by web/app/qr.js, decoded in tests/unit/web-qr.test.ts).
+  await expect(page.getByRole("img", { name: "QR code for the invite link" })).toBeVisible();
+  expect(await page.locator("#invite-qr path").getAttribute("d")).toMatch(/^M\d+ \d+h1v1h-1z/);
   await expect(page.locator("#invites")).toContainText("Priya, mornings");
   await expect(page.locator("#invites")).toContainText(/link works in (23|24) h/);
 
@@ -176,4 +179,28 @@ test("on a phone, More opens People from any page", async ({ page, request }) =>
   await expect(page.getByRole("heading", { level: 1, name: "People and access" })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test("on a page barely taller than the window, the header settles instead of flickering between sizes", async ({ page, request }) => {
+  const ws = await makeWorkspace(request);
+  await open(page, ws.staff);
+  // Make the page 18px taller than the window: past the old 12px threshold, but less than that plus the 10px the header loses.
+  await page.evaluate(() => {
+    const spacer = document.createElement("div");
+    spacer.style.height = "2000px";
+    document.body.append(spacer);
+    spacer.style.height = `${2000 - (document.documentElement.scrollHeight - window.innerHeight - 18)}px`;
+  });
+  const flips = await page.evaluate(async () => {
+    const header = document.querySelector(".site-header")!;
+    let n = 0;
+    new MutationObserver(() => n++).observe(header, { attributes: true, attributeFilter: ["class"] });
+    for (let y = 0; y <= 60; y += 3) {
+      window.scrollTo({ top: y, behavior: "instant" as ScrollBehavior });
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+    await new Promise((r) => setTimeout(r, 800));
+    return n;
+  });
+  expect(flips).toBeLessThanOrEqual(1);
 });

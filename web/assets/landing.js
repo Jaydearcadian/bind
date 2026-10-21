@@ -47,7 +47,11 @@
     requestAnimationFrame(function () {
       ticking = false;
       var y = window.scrollY;
-      if (header) header.classList.toggle("is-compact", y > 24);
+      // Hysteresis wider than the height the header loses, so a short page can't loop between the two sizes.
+      if (header) {
+        if (y > 40) header.classList.add("is-compact");
+        else if (y < 8) header.classList.remove("is-compact");
+      }
       if (!reduceMotion.matches && orbit.length) {
         var max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
         var angle = Math.min(1, y / max) * 360;
