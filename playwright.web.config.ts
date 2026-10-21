@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
+import { PRIVY_TEST_APP_ID, PRIVY_TEST_PUBLIC_KEY } from "./tests/web/support/privy-test-key.js";
 
 /**
  * The website's browser suite (ADR 0054): `npm run test:e2e`. It starts the real server on its own port against the local
@@ -34,6 +35,10 @@ export default defineConfig({
     timeout: 60000,
     // The credential key and master secret are the same test-only values vitest.config.ts uses, so Connections can store keys
     // and Settings can show the signing secret in tests.
-    env: { PORT: String(PORT), BIND_WORKER_ENABLED: "false", BIND_RATE_LIMITS: "off", LOG_LEVEL: "warn", BIND_CREDENTIAL_KEY: "yv+iVFPKAg5AWuP0Hik+sGLxJ8aEqSMH7JRHkQWWEHs=", BIND_MASTER_SECRET: "test-only-master-secret-0123456789abcdef0123456789" },
+    env: { PORT: String(PORT), BIND_WORKER_ENABLED: "false", BIND_RATE_LIMITS: "off", LOG_LEVEL: "warn", BIND_CREDENTIAL_KEY: "yv+iVFPKAg5AWuP0Hik+sGLxJ8aEqSMH7JRHkQWWEHs=", BIND_MASTER_SECRET: "test-only-master-secret-0123456789abcdef0123456789",
+      // Account sign-in is switched on with a throwaway Privy key (tests/web/support/privy-test-key.ts), so the sign-in tests can sign tokens.
+      PRIVY_APP_ID: PRIVY_TEST_APP_ID,
+      PRIVY_VERIFICATION_KEY: PRIVY_TEST_PUBLIC_KEY.replace(/\n/g, "\\n"),
+    },
   },
 });

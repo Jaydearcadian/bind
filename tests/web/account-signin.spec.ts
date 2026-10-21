@@ -1,5 +1,6 @@
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
 import { createPrivateKey, sign } from "node:crypto";
+import { PRIVY_TEST_APP_ID, PRIVY_TEST_PRIVATE_KEY } from "./support/privy-test-key.js";
 
 /*
  * Signing in with an account (ADR 0072) in a real browser against the real server. The Privy SDK needs the live Privy
@@ -9,8 +10,8 @@ import { createPrivateKey, sign } from "node:crypto";
  * Privy itself is NOT_RUN here: a person completes it on the deployed site.
  */
 
-const APP_ID = process.env.PRIVY_TEST_APP_ID ?? "";
-const PRIVATE_PEM = (process.env.PRIVY_TEST_PRIVATE_KEY ?? "").replace(/\\n/g, "\n");
+const APP_ID = PRIVY_TEST_APP_ID;
+const PRIVATE_PEM = PRIVY_TEST_PRIVATE_KEY;
 const run = Date.now();
 let seq = 0;
 
@@ -21,6 +22,13 @@ function privyToken(userId: string, overrides: Record<string, unknown> = {}, key
   const sig = sign("sha256", Buffer.from(`${head}.${body}`), { key: createPrivateKey(key), dsaEncoding: "ieee-p1363" });
   return `${head}.${body}.${sig.toString("base64url")}`;
 }
+/** Flips a real bit of the signature (the last base64 character holds unused bits, so editing it can change nothing). */
+function tamper(token: string) {
+  const [h, b, sig] = token.split(".");
+  const bytes = Buffer.from(sig, "base64url");
+  bytes[10] ^= 0xff;
+  return `${h}.${b}.${bytes.toString("base64url")}`;
+}
 const newUser = () => `did:privy:acct-${run}-${++seq}`;
 const auth = (t: string) => ({ headers: { Authorization: `Bearer ${t}` } });
 
@@ -29,7 +37,11 @@ async function installAdapter(page: Page, token: string | null, walletToken?: st
   await page.addInitScript(
     ({ t, w }) => {
       const KEY = "stub-privy-token";
-      if (t && !sessionStorage.getItem(KEY)) sessionStorage.setItem(KEY, t);
+      // Seed once per tab: the init script runs on every page load, and a later sign-out must stay signed out.
+      if (t && !sessionStorage.getItem("stub-privy-seeded")) {
+        sessionStorage.setItem("stub-privy-seeded", "1");
+        sessionStorage.setItem(KEY, t);
+      }
       const w2 = window as unknown as Record<string, unknown>;
       w2.__calls = [];
       (w2.ethereum as unknown) = w ? {} : undefined;
@@ -69,8 +81,6 @@ async function makeOwnerWorkspace(request: APIRequestContext) {
 
 const sessionKey = (page: Page) => page.evaluate(() => sessionStorage.getItem("bind-access-key"));
 
-test.skip(!APP_ID || !PRIVATE_PEM, "needs the test Privy key from playwright.web.config.ts");
-
 test("a first sign-in with a wallet starts a workspace, signs in as its owner with a real session, and keeps no key but the session", async ({ page, request }) => {
   const problems: string[] = [];
   page.on("console", (m) => m.type() === "error" && problems.push(m.text()));
@@ -84,7 +94,7 @@ test("a first sign-in with a wallet starts a workspace, signs in as its owner wi
 
   await page.getByRole("button", { name: "Start my workspace" }).click();
   await expect(page.locator("#start-error")).toContainText("Give your workspace a name");
-  await page.getByLabel("Your name").fill("Priya Raman");
+  await page.locator("#start-person").fill("Priya Raman");
   await page.getByLabel("Name your workspace").fill("Harbor Kitchen");
   await page.getByRole("button", { name: "Start my workspace" }).click();
   await expect(page).toHaveURL(/\/app\/$/);
@@ -136,7 +146,7 @@ test("an invite link carries through sign-in: the person joins as staff, the inv
   await expect(page).toHaveURL(/\/app\/sign-in$/);
   await page.getByRole("button", { name: "Continue with a wallet" }).click();
   await expect(page.getByText("You opened an invite link")).toBeVisible();
-  await page.getByLabel("Your name").fill("Lee Okafor");
+  await page.locator("#invite-name").fill("Lee Okafor");
   await page.getByRole("button", { name: "Join the workspace" }).click();
   await expect(page).toHaveURL(/\/app\/$/);
 
@@ -206,7 +216,7 @@ test("a forged, expired or other-app Privy token is refused in plain words and n
   const cases: Array<[string, string]> = [
     ["expired", privyToken(newUser(), { exp: Math.floor(Date.now() / 1000) - 3600 })],
     ["another app", privyToken(newUser(), { aud: "some-other-app" })],
-    ["tampered", privyToken(newUser()).replace(/.$/, (c) => (c === "A" ? "B" : "A"))],
+    ["tampered", tamper(privyToken(newUser()))],
   ];
   for (const [, token] of cases) {
     const ctxPage = await (await page.context().browser()!.newContext()).newPage();
