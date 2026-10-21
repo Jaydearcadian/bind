@@ -69,7 +69,7 @@ async function poll() {
       return;
     }
     state.fails += 1;
-    if (state.fails >= 2) {
+    if (state.fails >= 1) {
       $("stale-banner").hidden = false;
       $("stale-text").textContent = "Can't reach Bind. Showing what we had. Retrying.";
     }
@@ -98,8 +98,7 @@ function render() {
         h(
           "span",
           { class: "feed-text" },
-          sentence(e, state.roles),
-          e.correlationId ? h("span", { class: "fine ref" }, ` · request ${e.correlationId.slice(0, 8)}`) : null
+          sentence(e, state.roles)
         ),
         h(
           "span",
@@ -135,7 +134,7 @@ async function follow(thread, origin) {
       "ol",
       { class: "feed thread" },
       related.map((e) =>
-        h("li", { class: "feed-item" }, mark(tone(e)), h("span", { class: "feed-text" }, sentence(e, state.roles)), h("time", { class: "feed-time", datetime: e.at, title: new Date(e.at).toLocaleString() }, new Date(e.at).toLocaleString()))
+        h("li", { class: "feed-item" }, mark(tone(e)), h("span", { class: "feed-text" }, sentence(e, state.roles), e.correlationId ? h("span", { class: "fine ref" }, ` · request ${e.correlationId.slice(0, 8)}`) : null), h("time", { class: "feed-time", datetime: e.at, title: new Date(e.at).toLocaleString() }, new Date(e.at).toLocaleString()))
       )
     )
   );

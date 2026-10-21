@@ -6,7 +6,8 @@ import { BindApiError, ago, clearKey, client, h, mark, money, newKey, pauseContr
 import { sentence as say, tone } from "/app/words.js";
 
 const POLL_MS = 15000;
-const STALE_AFTER_FAILS = 2;
+// The SDK already retries reads with backoff, so one failed refresh means Bind really is out of reach.
+const STALE_AFTER_FAILS = 1;
 const TERMINAL = new Set(["reconciled", "failed", "cancelled", "confirmed"]);
 
 const key = storedKey();

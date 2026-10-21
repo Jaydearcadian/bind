@@ -162,9 +162,7 @@ test.describe("Today", () => {
     await expect(page.locator(".need")).toHaveCount(1);
     await page.route("**/api/**", (r) => r.abort());
     await page.evaluate(() => window.dispatchEvent(new Event("online")));
-    await page.waitForTimeout(300);
-    await page.evaluate(() => window.dispatchEvent(new Event("online")));
-    await expect(page.locator("#stale-banner")).toBeVisible();
+    await expect(page.locator("#stale-banner")).toBeVisible({ timeout: 15000 });
     await expect(page.locator(".need")).toHaveCount(1);
     await page.unroute("**/api/**");
     await page.getByRole("button", { name: "Refresh now" }).click();
