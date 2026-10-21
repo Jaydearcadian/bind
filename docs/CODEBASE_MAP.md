@@ -807,9 +807,9 @@ flowchart LR
 | `listAvailableTemplates` | src/agents/bindTemplateAgent.ts:26-44 | function | 0 | yes | 0 / 1 | 0 |
 | `resolveTemplateDir` | src/agents/bindTemplateAgent.ts:49-60 | function | 1 | yes | 2 / 1 | 0 |
 | `whitelistLabel` | src/agents/bindTemplateAgent.ts:106-110 | function | 1 | no | 1 / 0 | 0 |
-| `generateVerifiableDecisionRecord` | src/agents/bindTemplateAgent.ts:114-273 | function | 1 | yes | 1 / 2 | 5 |
+| `generateVerifiableDecisionRecord` | src/agents/bindTemplateAgent.ts:114-274 | function | 1 | yes | 1 / 2 | 5 |
 | `classifyRequestEvidence` | src/agents/evidence-classification.ts:12-23 | function | 1 | yes | 1 / 1 | 0 |
-| `createReplenishmentTools` | src/agents/replenishmentTools.ts:28-691 | function | 1 | yes | 1 / 8 | 18 |
+| `createReplenishmentTools` | src/agents/replenishmentTools.ts:28-694 | function | 1 | yes | 1 / 8 | 18 |
 | `eventNameOf` | src/api/event-catalogue.ts:72-74 | function | 1 | yes | 1 / 0 | 0 |
 | `positiveInteger` | src/api/event-routes.ts:69-73 | function | 3 | no | 1 / 0 | 0 |
 | `resolveEventsOptions` | src/api/event-routes.ts:76-87 | function | 1 | yes | 1 / 0 | 1 |
