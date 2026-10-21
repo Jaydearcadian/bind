@@ -77,3 +77,4 @@ a live system: `docs/RELEASE_EVIDENCE.md` is the place for that.
 | [0060](0060-arc-as-the-payment-rail.md) | Arc is the payment rail, with fiat on and off ramps | Accepted (direction) | Payments go fiat to USDC on Arc to fiat; owners see their own currency. Provider, custody, KYC and legal questions open. Not built. |
 | [0061](0061-decisions-anchored-on-arc.md) | Decisions are anchored on Arc | Accepted (direction) | Decision hashes, batched and salted, anchored on Arc; content never on chain; "Recorded on Arc" only after confirmation. Not built. |
 | [0062](0062-team-and-limits.md) | Team and limits | Accepted | Limits as sentences with sliders and presets, saved as the server stores them; agent cards with renaming, tool switches and on/off; staff read-only. |
+| [0063](0063-demo-ui.md) | The demo workspace in the website and app | Accepted | "Start the demo" on /demo; a banner on every app page with time left, Reset and Make this yours; plain errors. |
