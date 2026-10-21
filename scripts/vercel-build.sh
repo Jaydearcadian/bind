@@ -4,6 +4,7 @@
 set -euo pipefail
 npm run build:vercel
 npm run sdk:build
+npm run web:bundle
 rm -rf public
 mkdir -p public/brand
 cp -r web/. public/
