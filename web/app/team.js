@@ -3,7 +3,7 @@
  * with sliders and presets, and a card per agent: what it can do, its tools as switches, on or off, and a name the owner can
  * change. Staff see everything read-only. Every change is a server call; the page shows what the server stored.
  */
-import { BindApiError, clearKey, client, h, money, newKey, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast } from "/app/core.js";
+import { BindApiError, clearKey, client, h, money, newKey, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast, signOutNow } from "/app/core.js";
 
 const key = storedKey();
 if (!key) toSignIn();
@@ -318,11 +318,7 @@ async function main() {
   }
   shell({
     me: state.me,
-    onSignOut: async () => {
-      if (state.me.credential === "account_session") await bind.call("signOut", {}).catch(() => undefined);
-      clearKey();
-      window.location.replace("/app/sign-in");
-    },
+    onSignOut: () => signOutNow(bind, state.me),
   });
   showPaused(state.me.agentsPaused, state.me.role);
   pauseControl({ bind, me: state.me, isPaused: () => state.me.agentsPaused, onChange: (p) => { state.me.agentsPaused = p; showPaused(p, state.me.role); } });

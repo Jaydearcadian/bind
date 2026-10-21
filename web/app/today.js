@@ -3,7 +3,7 @@
  * ("open, read, confirm"). Every item comes from the API. Nothing is shown as done before the server says so.
  */
 import { showStarter } from "/app/starter.js";
-import { BindApiError, ago, clearKey, client, h, mark, money, newKey, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast, until } from "/app/core.js";
+import { BindApiError, ago, clearKey, client, h, mark, money, newKey, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast, until, signOutNow } from "/app/core.js";
 import { sentence as say, tone } from "/app/words.js";
 
 const POLL_MS = 15000;
@@ -375,11 +375,7 @@ async function main() {
   }
   shell({
     me: state.me,
-    onSignOut: async () => {
-      if (state.me.credential === "account_session") await bind.call("signOut", {}).catch(() => undefined);
-      clearKey();
-      window.location.replace("/app/sign-in");
-    },
+    onSignOut: () => signOutNow(bind, state.me),
   });
   pauseControl({ bind, me: state.me, isPaused: () => !!state.ws?.agents_paused, onChange: (p) => { state.ws.agents_paused = p; renderPause(); } });
   $("refresh-now").addEventListener("click", () => refresh(true));

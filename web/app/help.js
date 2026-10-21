@@ -3,7 +3,7 @@
  * Each answer says only what Bind does today; where something is coming it says so. Deliberately no "Ask Bind": a confident
  * wrong answer about limits or spending would do harm. A link like /app/help#pause opens that answer.
  */
-import { BindApiError, clearKey, client, h, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn } from "/app/core.js";
+import { BindApiError, clearKey, client, h, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, signOutNow } from "/app/core.js";
 
 const key = storedKey();
 if (!key) toSignIn();
@@ -58,7 +58,7 @@ const TOPICS = [
   {
     id: "invite",
     q: "How do I add someone to my team?",
-    a: "In People, make an invite link and send it to them. They join as staff and you can make them an owner afterwards. Joining needs Google or wallet sign-in, which opens with the next release.",
+    a: "In People, make an invite link and send it to them. They join as staff and you can make them an owner afterwards. They open the link, sign in with Google or a wallet, and join.",
     more: ["/app/people", "Open People"],
   },
   {
@@ -128,11 +128,7 @@ async function main() {
     const me = await bind.me();
     shell({
       me,
-      onSignOut: async () => {
-        if (me.credential === "account_session") await bind.call("signOut", {}).catch(() => undefined);
-        clearKey();
-        window.location.replace("/app/sign-in");
-      },
+      onSignOut: () => signOutNow(bind, me),
     });
     showPaused(me.agentsPaused, me.role);
     pauseControl({ bind, me, isPaused: () => me.agentsPaused, onChange: (p) => { me.agentsPaused = p; showPaused(p, me.role); } });

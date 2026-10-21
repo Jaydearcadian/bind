@@ -25,8 +25,11 @@
     <div id="join-ok" hidden>
       <h1 class="signin-title">You're invited</h1>
       <p class="join-text">Someone added you to their Bind workspace as staff. You'll be able to see what the agents are doing and propose work. Owners approve spending.</p>
-      <div class="signin-soon"><p><b>Joining needs Google or wallet sign-in,</b> which opens with the next release. Keep this link: it works once, until it expires.</p></div>
-      <button class="btn btn-primary" type="button" disabled>Sign in to join</button>
+      <a class="btn btn-primary" id="join-signin" href="/app/sign-in" hidden>Sign in to join</a>
+      <div id="join-soon" hidden>
+        <div class="signin-soon"><p><b>Joining needs Google or wallet sign-in,</b> which isn't switched on for this server yet. Keep this link: it works once, until it expires.</p></div>
+        <button class="btn btn-primary" type="button" disabled>Sign in to join</button>
+      </div>
     </div>
     <div id="join-bad" hidden>
       <h1 class="signin-title">This invite link doesn't look right</h1>

@@ -3,7 +3,7 @@
  * table design (a stacked card per row on phones), and a search across every tab. Read-only: agents and workflows change this
  * data, and the page shows what the server holds. Status words keep "sent" apart from "confirmed" and "paid".
  */
-import { BindApiError, ago, clearKey, client, h, money, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn } from "/app/core.js";
+import { BindApiError, ago, clearKey, client, h, money, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, signOutNow } from "/app/core.js";
 
 const key = storedKey();
 if (!key) toSignIn();
@@ -227,11 +227,7 @@ async function main() {
   }
   shell({
     me: state.me,
-    onSignOut: async () => {
-      if (state.me.credential === "account_session") await bind.call("signOut", {}).catch(() => undefined);
-      clearKey();
-      window.location.replace("/app/sign-in");
-    },
+    onSignOut: () => signOutNow(bind, state.me),
   });
   showPaused(state.me.agentsPaused, state.me.role);
   pauseControl({ bind, me: state.me, isPaused: () => state.me.agentsPaused, onChange: (p) => { state.me.agentsPaused = p; showPaused(p, state.me.role); } });

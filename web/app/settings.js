@@ -4,7 +4,8 @@
  * (shown once, revoked behind a confirm, the last owner key protected by the server) and the messaging signing secret.
  * Things that don't exist yet say "Coming" instead of offering a switch that does nothing.
  */
-import { BindApiError, ago, clearKey, client, h, newKey, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast } from "/app/core.js";
+import { loadPublicConfig } from "/app/account.js";
+import { BindApiError, ago, clearKey, client, h, newKey, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast, signOutNow } from "/app/core.js";
 
 const key = storedKey();
 if (!key) toSignIn();
@@ -61,6 +62,13 @@ function renderWorkspace(ws) {
   );
   const session = state.me.credential === "account_session";
   $("signin-now").textContent = session ? "Signed in with your account" : "Signed in with an access key";
+  loadPublicConfig().then((appId) => {
+    if (!appId) return;
+    $("signin-methods-sub").textContent = "Sign in with either one. Linking both to a single account comes later.";
+    const st = $("signin-methods-status");
+    st.textContent = "On";
+    st.className = "status status-ok";
+  });
   $("signin-sub").textContent = session ? `As ${state.me.label}.` : `The key named "${state.me.label}". Signing out of this browser doesn't turn the key off; an owner can remove it below.`;
 }
 
@@ -280,11 +288,7 @@ async function main() {
   }
   shell({
     me: state.me,
-    onSignOut: async () => {
-      if (state.me.credential === "account_session") await bind.call("signOut", {}).catch(() => undefined);
-      clearKey();
-      window.location.replace("/app/sign-in");
-    },
+    onSignOut: () => signOutNow(bind, state.me),
   });
   showPaused(state.me.agentsPaused, state.me.role);
   pauseControl({ bind, me: state.me, isPaused: () => state.me.agentsPaused, onChange: (p) => { state.me.agentsPaused = p; showPaused(p, state.me.role); } });

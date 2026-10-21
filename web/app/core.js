@@ -41,6 +41,18 @@ export function client(key) {
 }
 export { BindApiError };
 
+/**
+ * Signs out on purpose: ends an account session on the server, forgets the key, and asks the sign-in page to end the Privy
+ * session in this tab too (it holds the bundled SDK). Expiry uses clearKey() alone so the next page can sign back in quietly.
+ */
+export async function signOutNow(bind, me) {
+  if (me && me.credential === "account_session") await bind.call("signOut", {}).catch(() => undefined);
+  clearKey();
+  safe(() => window.sessionStorage.setItem("bind-privy-logout", "1"));
+  safe(() => window.sessionStorage.removeItem("bind-resumed-at"));
+  window.location.replace("/app/sign-in");
+}
+
 /** Goes to sign-in, coming back here afterwards. */
 export function toSignIn() {
   window.location.replace("/app/sign-in");

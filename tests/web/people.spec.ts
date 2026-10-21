@@ -152,7 +152,8 @@ test("the invite link page takes the code out of the address bar and says what j
   await page.goto(`/app/join#${code}`);
   await expect(page.getByRole("heading", { name: "You're invited" })).toBeVisible();
   expect(page.url()).not.toContain(code);
-  await expect(page.getByRole("button", { name: "Sign in to join" })).toBeDisabled();
+  // The test server has account sign-in switched on, so the invite leads into sign-in; (without it the page says so, see account-signin.spec.ts).
+  await expect(page.getByRole("link", { name: "Sign in to join" })).toHaveAttribute("href", "/app/sign-in");
   await page.reload();
   await expect(page.getByRole("heading", { name: "You're invited" })).toBeVisible();
 

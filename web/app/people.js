@@ -3,7 +3,8 @@
  * see who is still to join, and change or remove the people who belong. Staff see a short note instead. Every change is a server
  * call and the lists show what the server returned. An invite code is shown once and never kept by the page.
  */
-import { BindApiError, ago, clearKey, client, h, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast, until } from "/app/core.js";
+import { loadPublicConfig } from "/app/account.js";
+import { BindApiError, ago, clearKey, client, h, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast, until, signOutNow } from "/app/core.js";
 
 const key = storedKey();
 if (!key) toSignIn();
@@ -261,11 +262,7 @@ async function main() {
   }
   shell({
     me: state.me,
-    onSignOut: async () => {
-      if (state.me.credential === "account_session") await bind.call("signOut", {}).catch(() => undefined);
-      clearKey();
-      window.location.replace("/app/sign-in");
-    },
+    onSignOut: () => signOutNow(bind, state.me),
   });
   showPaused(state.me.agentsPaused, state.me.role);
   pauseControl({ bind, me: state.me, isPaused: () => state.me.agentsPaused, onChange: (p) => { state.me.agentsPaused = p; showPaused(p, state.me.role); } });
@@ -279,6 +276,10 @@ async function main() {
   $("owner-area").hidden = false;
   wireInviteForm();
   wireRemove();
+  // With account sign-in switched on, an invite link works end to end; say so instead of "coming".
+  loadPublicConfig().then((appId) => {
+    if (appId) $("join-note").textContent = "They open the link, sign in with Google or a wallet, and join as staff.";
+  });
   try {
     await Promise.all([loadInvites(), loadMembers()]);
   } catch {

@@ -3,7 +3,7 @@
  * words are honest: "Verified live" only after a verifier passed; a supplier you vouch for is "Approved by you", which is not a
  * live check; a simulated one says so. Keys go to the server once and never come back. Staff see suppliers and messaging apps.
  */
-import { BindApiError, ago, clearKey, client, h, newKey, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast } from "/app/core.js";
+import { BindApiError, ago, clearKey, client, h, newKey, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast, signOutNow } from "/app/core.js";
 
 const key = storedKey();
 if (!key) toSignIn();
@@ -374,11 +374,7 @@ async function main() {
   }
   shell({
     me: state.me,
-    onSignOut: async () => {
-      if (state.me.credential === "account_session") await bind.call("signOut", {}).catch(() => undefined);
-      clearKey();
-      window.location.replace("/app/sign-in");
-    },
+    onSignOut: () => signOutNow(bind, state.me),
   });
   showPaused(state.me.agentsPaused, state.me.role);
   pauseControl({ bind, me: state.me, isPaused: () => state.me.agentsPaused, onChange: (p) => { state.me.agentsPaused = p; showPaused(p, state.me.role); } });

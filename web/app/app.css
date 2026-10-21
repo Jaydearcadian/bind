@@ -385,3 +385,17 @@ a.nav-item:hover { color: var(--text); background: color-mix(in srgb, var(--bord
 .starter-step.is-done .starter-check { background: var(--status-approved); border-color: var(--status-approved); }
 .starter-step.is-done .starter-check::after { content: ""; position: absolute; left: 6px; top: 2px; width: 6px; height: 11px; border: solid var(--bg); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .starter-step.is-done .line-title { color: var(--text-muted); }
+
+/* Sign-in with an account */
+.provider { width: 100%; }
+.view { display: grid; gap: 12px; }
+.view[hidden] { display: none; }
+.view-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.signin-or { display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: 0.9rem; margin: 6px 0 -4px; }
+.signin-or::before, .signin-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.signin-card .error { color: var(--status-refused-text); background: var(--status-refused-tint); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 0.92rem; }
+.signin-card .help { color: var(--text-muted); font-size: 0.88rem; }
+.signin-card label { font-weight: 500; }
+.signin-card .text-input { width: 100%; }
+.choice.is-disabled { opacity: 0.6; cursor: not-allowed; }
+#view-start .btn { justify-self: start; }

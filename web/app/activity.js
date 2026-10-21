@@ -2,7 +2,7 @@
  * Activity (ADR 0059; UX brief: "a timeline by day with filters, and Follow this on any item opening its full history").
  * Built from the workspace event stream's poll route. Staff do not receive owner-only events; the server enforces that.
  */
-import { BindApiError, ago, clearKey, client, h, mark, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn } from "/app/core.js";
+import { BindApiError, ago, clearKey, client, h, mark, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, signOutNow } from "/app/core.js";
 import { sentence, tone } from "/app/words.js";
 
 const PAGE = 200;
@@ -189,11 +189,7 @@ async function main() {
   }
   shell({
     me: state.me,
-    onSignOut: async () => {
-      if (state.me.credential === "account_session") await bind.call("signOut", {}).catch(() => undefined);
-      clearKey();
-      window.location.replace("/app/sign-in");
-    },
+    onSignOut: () => signOutNow(bind, state.me),
   });
   showPaused(state.me.agentsPaused, state.me.role);
   pauseControl({ bind, me: state.me, isPaused: () => state.me.agentsPaused, onChange: (p) => { state.me.agentsPaused = p; showPaused(p, state.me.role); } });

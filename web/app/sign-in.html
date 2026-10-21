@@ -22,14 +22,61 @@
 <main id="main" class="signin-main">
   <div class="signin-card">
     <svg class="bind-mark signin-mark" data-state="idle" viewBox="0 0 64 64" aria-hidden="true"><path class="ring" d="M32 12A20 20 0 1 1 32 52A20 20 0 1 1 32 12"/><circle class="clasp" cx="42" cy="14.68" r="6.4"/></svg>
-    <h1 class="signin-title">Sign in to Bind</h1>
-    <div class="signin-soon">
-      <p><b>Google and wallet sign-in</b> open with the next release.</p>
+    <h1 class="signin-title" id="signin-title">Sign in to Bind</h1>
+
+    <section id="view-providers" class="view" hidden>
+      <p class="join-text">Use the account you already have. Bind never sees a password.</p>
+      <button class="btn btn-primary provider" type="button" id="google-btn">Continue with Google</button>
+      <button class="btn btn-quiet provider" type="button" id="wallet-btn">Continue with a wallet</button>
+      <p class="help">A wallet only proves who you are. It never lets anyone spend on your behalf.</p>
+      <p class="error" id="provider-error" role="alert" hidden></p>
+    </section>
+
+    <div class="signin-soon" id="soon" hidden>
+      <p><b>Google and wallet sign-in aren't switched on for this server yet.</b> Use an access key below.</p>
     </div>
+
+    <section id="view-busy" class="view" hidden aria-live="polite">
+      <p class="join-text" id="busy-text">Signing you in…</p>
+    </section>
+
+    <section id="view-invite" class="view" hidden>
+      <p class="join-text">You opened an invite link. You'll join as <b>staff</b>: you can see the work and propose changes, and owners approve spending.</p>
+      <label for="invite-name">Your name <span class="optional">so your team knows who you are</span></label>
+      <input id="invite-name" class="text-input" maxlength="80" autocomplete="name">
+      <p class="error" id="invite-error" role="alert" hidden></p>
+      <div class="view-actions">
+        <button class="btn btn-primary" type="button" id="invite-join">Join the workspace</button>
+        <button class="btn btn-quiet" type="button" id="invite-skip">Not now</button>
+      </div>
+    </section>
+
+    <section id="view-start" class="view" hidden>
+      <p class="join-text">You're signed in, and you're not in a workspace yet. Start one of your own, or open an invite link someone sent you; it brings you back here.</p>
+      <label for="start-person">Your name <span class="optional">so your team knows who you are</span></label>
+      <input id="start-person" class="text-input" maxlength="80" autocomplete="name">
+      <label for="start-name">Name your workspace</label>
+      <input id="start-name" class="text-input" maxlength="80" autocomplete="organization" placeholder="Harbor Kitchen">
+      <fieldset class="choices">
+        <legend class="visually-hidden">Team</legend>
+        <label class="choice"><input type="radio" name="team" value="kitchen-v1" checked> <span><b>Kitchen team</b><small>Stock, suppliers, orders and the menu. Ready now.</small></span></label>
+        <label class="choice is-disabled"><input type="radio" name="team" value="" disabled> <span><b>Shop, studio or something else</b><small>Coming. Start with the kitchen team to see how it works.</small></span></label>
+      </fieldset>
+      <p class="error" id="start-error" role="alert" hidden></p>
+      <button class="btn btn-primary" type="button" id="start-go">Start my workspace</button>
+    </section>
+
+    <section id="view-choose" class="view" hidden>
+      <p class="join-text">Which workspace do you want to open?</p>
+      <ul class="lines" id="choose-list"></ul>
+      <p class="error" id="choose-error" role="alert" hidden></p>
+    </section>
+
+    <p class="signin-or" id="key-or">Or use an access key</p>
     <form id="key-form" class="key-form" novalidate>
       <label for="key">Access key</label>
       <input id="key" name="key" type="password" autocomplete="off" spellcheck="false" inputmode="text" placeholder="bnd_…" aria-describedby="key-help key-error" required>
-      <p class="help" id="key-help">An owner or staff key from your workspace. Keys are for builders and early testers; most people will sign in with Google.</p>
+      <p class="help" id="key-help">An owner or staff key from your workspace. Keys are for builders and early testers; most people will sign in with Google or a wallet.</p>
       <p class="error" id="key-error" role="alert" hidden></p>
       <label class="check"><input id="remember" type="checkbox"> Remember this device</label>
       <p class="help">Off: you are signed out when this tab closes. On: the key is kept in this browser until you sign out.</p>
