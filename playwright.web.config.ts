@@ -32,7 +32,8 @@ export default defineConfig({
     url: `http://127.0.0.1:${PORT}/health`,
     reuseExistingServer: false,
     timeout: 60000,
-    // The credential key is the same local-only test key vitest.config.ts uses, so Connections can store keys in tests.
-    env: { PORT: String(PORT), BIND_WORKER_ENABLED: "false", BIND_RATE_LIMITS: "off", LOG_LEVEL: "warn", BIND_CREDENTIAL_KEY: "yv+iVFPKAg5AWuP0Hik+sGLxJ8aEqSMH7JRHkQWWEHs=" },
+    // The credential key and master secret are the same test-only values vitest.config.ts uses, so Connections can store keys
+    // and Settings can show the signing secret in tests.
+    env: { PORT: String(PORT), BIND_WORKER_ENABLED: "false", BIND_RATE_LIMITS: "off", LOG_LEVEL: "warn", BIND_CREDENTIAL_KEY: "yv+iVFPKAg5AWuP0Hik+sGLxJ8aEqSMH7JRHkQWWEHs=", BIND_MASTER_SECRET: "test-only-master-secret-0123456789abcdef0123456789" },
   },
 });

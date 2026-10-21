@@ -10,4 +10,9 @@
     seen = true; // No storage: skip the intro rather than replay it on every page.
   }
   if (!reduce && !seen) root.classList.add("is-intro");
+  // The appearance chosen in the app's Settings on this device (ADR 0067); otherwise follow the device.
+  try {
+    var theme = window.localStorage.getItem("bind-theme");
+    if (theme === "light" || theme === "dark") root.setAttribute("data-theme", theme);
+  } catch (e) {}
 })();
