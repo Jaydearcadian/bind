@@ -108,6 +108,15 @@ async function freshDeployment(): Promise<Ctx> {
   return { rpc, deployed, adapter: adapterFor(rpc, deployed.address) };
 }
 
+/**
+ * Waits until the node has mined the transaction and returns its receipt. The adapter's transferUSDC returns as soon as the
+ * transaction is submitted, so any test that reads chain state about that transaction must wait here first. Bounded, so a
+ * transaction that never mines fails the test instead of hanging it.
+ */
+async function mined(ctx: Ctx, hash: Hex): Promise<TransactionReceipt> {
+  return ctx.deployed.publicClient.waitForTransactionReceipt({ hash, timeout: 15_000 });
+}
+
 async function ownerWrite(ctx: Ctx, functionName: string, args: readonly unknown[]): Promise<TransactionReceipt> {
   const hash = await ctx.deployed.walletClient.writeContract({
     address: ctx.deployed.address,
@@ -275,7 +284,7 @@ describe.skipIf(!ANVIL_RPC_URL)("[anvil] BindSettlement and the Arc adapter on a
     expect(sent.txHash).toMatch(/^0x[0-9a-f]{64}$/);
     expect(sent.explorerUrl).toBeUndefined(); // explorer links are for Arc Testnet (5042002) only
 
-    const receipt = await ctx.deployed.publicClient.getTransactionReceipt({ hash: sent.txHash as Hex });
+    const receipt = await mined(ctx, sent.txHash as Hex);
     expect(receipt.status).toBe("success");
     expect(receipt.to?.toLowerCase()).toBe(ctx.deployed.address.toLowerCase());
     expect((await supplierBalance(ctx)) - before).toBe(SETTLED_WEI);
@@ -289,6 +298,8 @@ describe.skipIf(!ANVIL_RPC_URL)("[anvil] BindSettlement and the Arc adapter on a
 
   it("[anvil] findTransfer returns the confirmed settlement for an order id and null for an order that was never paid", async () => {
     const sent = await ctx.adapter.transferUSDC(settleRequest());
+    // findTransfer reads mined logs only, so the settlement must be mined before it is looked up.
+    await mined(ctx, sent.txHash as Hex);
 
     const found = await ctx.adapter.findTransfer({ orderId: ORDER_ID });
     expect(found?.status).toBe("confirmed");
@@ -305,6 +316,8 @@ describe.skipIf(!ANVIL_RPC_URL)("[anvil] BindSettlement and the Arc adapter on a
 
     expect(second.txHash).toBe(first.txHash);
     expect(second.status).toBe("submitted");
+    // Balance and logs are read only once the single settlement is mined.
+    await mined(ctx, first.txHash as Hex);
     expect((await supplierBalance(ctx)) - before).toBe(SETTLED_WEI);
     expect(await settlementLogs(ctx)).toHaveLength(1);
   }, TEST_TIMEOUT);
