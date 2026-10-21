@@ -6,18 +6,19 @@ that this task did not reproduce are kept, labelled, in the appendix at the end,
 **Commit the gates ran on:** `407533ac09f7121806836e25db4834be5c91c412` (HEAD of `claude/capabilities-overview-c6elxr` before the
 commit that adds this document; the working tree was clean at that commit).
 
-## 0. Demo workspaces (ADR 0057): gate run on the merge commit
+## 0. Demo workspaces (ADR 0057): gate run after the review fixes
 
-**Commit the gates ran on:** `00032408f3129ce8eb1eeba93b572e28b8b00553` (the merge of `claude/capabilities-overview-c6elxr` at
-`4f189b6` into the demo workspace branch, which carries the demo feature in `61e2b11` and `ec0b2f5`). The worktree was clean at that commit.
+**Code commit:** `043b361b0648754fd8323736ac1e85286639f3c2` (review fixes). **Commit the gates ran on:** `b143a5f60f9da3419e34bba9bc07046138230489`,
+which is `043b361` plus one regenerated file, `docs/CODEBASE_MAP.md` (line ranges of two functions moved; the map drift gate failed on
+the first run and passed on this one). The worktree was clean at that commit.
 
 | Gate | Class | Result |
 | --- | --- | --- |
-| lint | LOCAL_PASS | `npm run lint`, no warnings |
+| lint | LOCAL_PASS | `npm run lint`, no problems |
 | typecheck | LOCAL_PASS | the app, the SDK and the MCP server |
-| unit | LOCAL_PASS | 54 files, 425 tests |
-| integration | LOCAL_PASS | 68 files passed and 1 skipped; 609 tests passed and 10 skipped |
-| contract in-process suite | LOCAL_PASS | 4 files, 32 tests |
+| unit | LOCAL_PASS | 55 files, 432 tests passed |
+| integration | LOCAL_PASS | 68 files passed and 1 skipped; 620 tests passed and 10 skipped |
+| contract in-process suite | LOCAL_PASS | 4 files, 32 tests passed |
 | build, sdk:build, mcp:build | LOCAL_PASS | |
 | audit | LOCAL_PASS | `npm audit --audit-level=high` |
 | spec, SDK and map drift | LOCAL_PASS | regenerated files equal the committed ones |
@@ -28,20 +29,23 @@ commit that adds this document; the working tree was clean at that commit).
 | live Arc, live suppliers, live connectors | NOT_RUN | no credentials or endpoints were used; the demo never reaches them by design |
 
 Summary line from the run: `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`. The database was private to this worktree
-(`bind_wt_a1f6` on the local server), because other worktrees' suites share that server.
+(`bind_wt_a1f6` on the local server), because other worktrees' suites share that server. The first run on `043b361` had 18 passes and
+the map drift failure described above; no test or gate was changed for it.
 
-What the run covers for the demo: real PostgreSQL and real HTTP in `tests/integration/demo.test.ts` (creation with an owner token and
-a four-hour expiry, a seed from a real replenishment, simulated-only settlement and suppliers under a live-asking environment, expiry
-with the worker deleting rows and files, reset and its refusal, the per-address limit and `Retry-After`, the global cap including three
-concurrent creates, the disabled switch, cross-tenant refusals, and a failed seed that is logged and leaves no record).
+Command: `DATABASE_URL=<private database> BIND_WEB_TEST_PORT=3311 bash scripts/verify-local.sh`.
+
+What the run covers for the demo: real PostgreSQL and real HTTP in `tests/integration/demo.test.ts` (22 tests: creation with an owner
+token and a four-hour expiry, a seed from a real replenishment, simulated-only settlement and suppliers under a live-asking environment,
+no outside call from a demo even with the TypeSafe, Parallel and Tavily keys set, expiry of token, account session, event stream and
+surface webhook, a bounded purge on create, reset and its refusal, the per-address limit and `Retry-After` with and without a trusted
+proxy, the global cap including three concurrent creates, `DEMO_BUSY` after the 3-second lock wait, the disabled switch, cross-tenant
+refusals, and a failed seed that is logged and leaves no record).
 
 **Known risks, for this run:**
 
 - One worker test, "a tick is bounded by batch size", found 10 expired approvals where 3 were expected, in one full integration run
-  on this database. The next full run and the run on the merge commit passed. No cause was found in the test code. It is a pre-existing
-  test and it is recorded here rather than hidden.
-- Earlier on this branch: the unit gate failed once because the ADR index row was added during a run, and the browser gate could not
-  start because another worktree's server held its port. Both were fixed (the row, and a separate port); neither is in the final run.
+  on an earlier commit of this database. The later full runs passed. No cause was found in the test code. It is a pre-existing test and
+  it is recorded here rather than hidden.
 - The demo has not been exercised in a browser; the demo banner, the Reset button and the entry page are not built.
 - A demo never reaches a live supplier or a live settlement by code, but no live system was ever tested against this path.
 

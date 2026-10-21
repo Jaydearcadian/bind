@@ -105,7 +105,14 @@ irreversible, with the reason in the catalogue note.
 
 ## Evidence
 
-_To be filled from the gate run on the commit that carries this text._
+Gate run on `b143a5f60f9da3419e34bba9bc07046138230489` (the review-fix code commit `043b361b0648754fd8323736ac1e85286639f3c2`, plus
+the regenerated `docs/CODEBASE_MAP.md`). Command: `bash scripts/verify-local.sh` with `DATABASE_URL` pointing at a private database and
+`BIND_WEB_TEST_PORT=3311`. Result: `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`. Per gate: lint, typecheck, unit (55 files, 432 tests),
+integration (68 files passed and 1 skipped; 620 tests passed and 10 skipped), contract in-process suite (4 files, 32 tests), build,
+sdk:build, mcp:build, audit, spec, SDK and map drift, forge fmt, build, test and coverage, anvil integration (10 tests), slither
+`--fail-medium`, and the browser suite (52 passed, 4 skipped by design). The demo file `tests/integration/demo.test.ts` has 22 tests.
+The first run on `043b361` failed only the map drift check, because two line ranges in the map had moved; the map was regenerated and
+the run repeated.
 
 ## Not verified
 
