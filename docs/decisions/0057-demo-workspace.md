@@ -20,7 +20,8 @@ migrates demo data. This record covers the backend. The demo banner, the Reset b
     (`writeWorkflowAntiDriftFiles`). Nothing else.
   - `SUPPLIER_ADAPTER_MODE` is declared in `src/config/env.ts` and read nowhere. Every supplier adapter in the code is a simulated
     class. The demo rule therefore checks the adapter itself (`isSimulated`), not the environment variable.
-  - The ADR number 0057 was given by the task. The repository has no 0056 record; it was not invented.
+  - The ADR number 0057 was given by the task. At the time of the first commit the repository had no 0056 record. The upstream
+    branch later added 0056 (the SDK in the browser), and the merge keeps both.
 
 ## Decision
 
@@ -84,7 +85,35 @@ irreversible, with the reason in the catalogue note.
 
 ## Evidence
 
-_To be filled in from the gate run._
+Gate run on merge commit `00032408f3129ce8eb1eeba93b572e28b8b00553`, which contains this feature plus
+`claude/capabilities-overview-c6elxr` (`4f189b6`). Database: `bind_wt_a1f6`, a private database on the local PostgreSQL 16 server.
+Browser suite port: `BIND_WEB_TEST_PORT=3311`. Command: `DATABASE_URL=postgres://bind_local:bind_local_only@127.0.0.1:5432/bind_wt_a1f6 BIND_WEB_TEST_PORT=3311 bash scripts/verify-local.sh`.
+
+| Gate | Result |
+| --- | --- |
+| lint (`npm run lint`) | PASS, no warnings |
+| typecheck (`tsc` for the app, SDK and MCP) | PASS |
+| unit (`vitest run tests/unit`) | 54 files, 425 tests passed |
+| integration (`vitest run tests/integration`) | 68 files passed and 1 skipped; 609 tests passed and 10 skipped |
+| in-process contract suite | 4 files, 32 tests passed |
+| build, sdk:build, mcp:build | PASS |
+| audit (`npm audit --audit-level=high`) | PASS |
+| spec, SDK and map drift | PASS (each regenerated file equals the committed one) |
+| forge fmt, build, test, coverage | PASS |
+| anvil integration | PASS (10 tests) |
+| slither `--fail-medium` | PASS |
+| test:e2e (`playwright -c playwright.web.config.ts`) | PASS: 52 passed, 4 skipped by design (ADR 0055) |
+
+Summary line: `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`.
+
+Demo tests in that run: `tests/integration/demo.test.ts` (11) and `tests/unit/demo-policy.test.ts` (7). Mutation checks,
+run before the commit: removing the demo settlement override, the token expiry check, the simulated-supplier check, the cap, or the
+template-folder removal each made the matching demo test fail. The source was restored afterwards.
+
+Earlier runs on this branch, reported for completeness: on `61e2b11` the run failed the unit gate (the ADR index row was added
+after the unit step had read the index) and the integration gate (one batch-size worker test, see Known risks), and the browser
+gate could not start because port 3210 was held by another worktree's server. On `ec0b2f5` all 19 gates passed. On the merge commit
+all 19 passed.
 
 ## Not verified
 

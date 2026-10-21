@@ -6,6 +6,46 @@ that this task did not reproduce are kept, labelled, in the appendix at the end,
 **Commit the gates ran on:** `407533ac09f7121806836e25db4834be5c91c412` (HEAD of `claude/capabilities-overview-c6elxr` before the
 commit that adds this document; the working tree was clean at that commit).
 
+## 0. Demo workspaces (ADR 0057): gate run on the merge commit
+
+**Commit the gates ran on:** `00032408f3129ce8eb1eeba93b572e28b8b00553` (the merge of `claude/capabilities-overview-c6elxr` at
+`4f189b6` into the demo workspace branch, which carries the demo feature in `61e2b11` and `ec0b2f5`). The worktree was clean at that commit.
+
+| Gate | Class | Result |
+| --- | --- | --- |
+| lint | LOCAL_PASS | `npm run lint`, no warnings |
+| typecheck | LOCAL_PASS | the app, the SDK and the MCP server |
+| unit | LOCAL_PASS | 54 files, 425 tests |
+| integration | LOCAL_PASS | 68 files passed and 1 skipped; 609 tests passed and 10 skipped |
+| contract in-process suite | LOCAL_PASS | 4 files, 32 tests |
+| build, sdk:build, mcp:build | LOCAL_PASS | |
+| audit | LOCAL_PASS | `npm audit --audit-level=high` |
+| spec, SDK and map drift | LOCAL_PASS | regenerated files equal the committed ones |
+| forge fmt, build, test, coverage | LOCAL_PASS | |
+| anvil integration | LOCAL_PASS | 10 tests, against a local Anvil on chain 31337 |
+| slither `--fail-medium` | LOCAL_PASS | |
+| test:e2e (browser suite) | LOCAL_PASS | 52 passed, 4 skipped by design; port set with `BIND_WEB_TEST_PORT=3311` |
+| live Arc, live suppliers, live connectors | NOT_RUN | no credentials or endpoints were used; the demo never reaches them by design |
+
+Summary line from the run: `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`. The database was private to this worktree
+(`bind_wt_a1f6` on the local server), because other worktrees' suites share that server.
+
+What the run covers for the demo: real PostgreSQL and real HTTP in `tests/integration/demo.test.ts` (creation with an owner token and
+a four-hour expiry, a seed from a real replenishment, simulated-only settlement and suppliers under a live-asking environment, expiry
+with the worker deleting rows and files, reset and its refusal, the per-address limit and `Retry-After`, the global cap including three
+concurrent creates, the disabled switch, cross-tenant refusals, and a failed seed that is logged and leaves no record).
+
+**Known risks, for this run:**
+
+- One worker test, "a tick is bounded by batch size", found 10 expired approvals where 3 were expected, in one full integration run
+  on this database. The next full run and the run on the merge commit passed. No cause was found in the test code. It is a pre-existing
+  test and it is recorded here rather than hidden.
+- Earlier on this branch: the unit gate failed once because the ADR index row was added during a run, and the browser gate could not
+  start because another worktree's server held its port. Both were fixed (the row, and a separate port); neither is in the final run.
+- The demo has not been exercised in a browser; the demo banner, the Reset button and the entry page are not built.
+- A demo never reaches a live supplier or a live settlement by code, but no live system was ever tested against this path.
+
+
 ## Header
 
 | Item | Value |
