@@ -16,6 +16,8 @@ import {
   loadPublicConfig,
   mayResume,
   noteResume,
+  noteWalletFailed,
+  clearWalletFailed,
   openWorkspace,
   pendingInvite,
   takeSignedOutMark,
@@ -154,6 +156,22 @@ function showChoose(list) {
   show("choose");
 }
 
+/**
+ * A first Google sign-in gets a Privy embedded wallet, one per person (ADR 0073). It is held by Privy, moves no money, and
+ * is never used by Bind to sign or send anything. If it can't be set up, sign-in carries on and Settings offers to retry.
+ */
+async function setupWallet() {
+  if (typeof adapter.ensureWallet !== "function") return;
+  show("busy", "Setting up your wallet…");
+  try {
+    const wallet = await adapter.ensureWallet();
+    if (wallet) clearWalletFailed();
+    else noteWalletFailed();
+  } catch {
+    noteWalletFailed();
+  }
+}
+
 /** Decides where an identified account goes next. */
 async function afterIdentity() {
   show("busy", "Checking your workspaces…");
@@ -288,8 +306,10 @@ async function main() {
     const search = window.location.search;
     window.history.replaceState(null, "", window.location.pathname);
     try {
-      if (await adapter.finishOAuth(search)) await afterIdentity();
-      else show("providers");
+      if (await adapter.finishOAuth(search)) {
+        await setupWallet();
+        await afterIdentity();
+      } else show("providers");
     } catch (err) {
       show("providers");
       say("provider-error", accountError(err, "Google sign-in didn't finish. Try again."));

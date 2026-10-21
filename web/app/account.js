@@ -10,6 +10,7 @@ const INVITE_KEY = "bind-invite";
 const LAST_WS_KEY = "bind-last-workspace";
 const RESUMED_AT_KEY = "bind-resumed-at";
 const LOGOUT_KEY = "bind-privy-logout";
+const WALLET_FAILED_KEY = "bind-wallet-failed";
 
 function safe(fn) {
   try {
@@ -53,6 +54,11 @@ export const pendingInvite = () => safe(() => window.sessionStorage.getItem(INVI
 export const clearPendingInvite = () => safe(() => window.sessionStorage.removeItem(INVITE_KEY));
 export const lastWorkspace = () => safe(() => window.localStorage.getItem(LAST_WS_KEY)) || "";
 export const rememberWorkspace = (id) => safe(() => window.localStorage.setItem(LAST_WS_KEY, id));
+
+/** Setting up the wallet failed at sign-in: sign-in carries on, and Settings offers to try again. */
+export const noteWalletFailed = () => safe(() => window.sessionStorage.setItem(WALLET_FAILED_KEY, "1"));
+export const walletFailed = () => safe(() => window.sessionStorage.getItem(WALLET_FAILED_KEY)) === "1";
+export const clearWalletFailed = () => safe(() => window.sessionStorage.removeItem(WALLET_FAILED_KEY));
 
 /** Sign-out asks the sign-in page to end the Privy session in this tab too (it holds the bundled SDK). */
 export function markSignedOut() {

@@ -4,7 +4,7 @@
  * (shown once, revoked behind a confirm, the last owner key protected by the server) and the messaging signing secret.
  * Things that don't exist yet say "Coming" instead of offering a switch that does nothing.
  */
-import { loadPublicConfig } from "/app/account.js";
+import { clearWalletFailed, getAdapter, loadPublicConfig, walletFailed } from "/app/account.js";
 import { BindApiError, ago, clearKey, client, h, newKey, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast, signOutNow } from "/app/core.js";
 
 const key = storedKey();
@@ -70,6 +70,76 @@ function renderWorkspace(ws) {
     st.className = "status status-ok";
   });
   $("signin-sub").textContent = session ? `As ${state.me.label}.` : `The key named "${state.me.label}". Signing out of this browser doesn't turn the key off; an owner can remove it below.`;
+}
+
+// ---- Your wallet ------------------------------------------------------------------------------------------------------
+
+function walletRow(text) {
+  $("wallet-body").replaceChildren(h("p", { class: "line-empty" }, text));
+}
+
+function showAddress(address) {
+  const input = h("input", { id: "wallet-address", class: "text-input mono", readonly: true, "aria-label": "Your wallet address", value: address });
+  $("wallet-body").replaceChildren(
+    h("div", { class: "link-row" }, input, h("button", { class: "btn-small", type: "button", onclick: () => copy(input, "Address copied.") }, "Copy")),
+    h("p", { class: "help" }, "This is a public address: anyone can send to it. Funds sent here are yours alone; Bind can't move them.")
+  );
+}
+
+async function renderWallet() {
+  if (state.me.credential !== "account_session") {
+    walletRow("You're signed in with an access key, so there's no wallet here. Wallets belong to people who sign in with Google.");
+    return;
+  }
+  const appId = await loadPublicConfig();
+  let adapter = null;
+  try {
+    adapter = appId ? await getAdapter(appId) : null;
+  } catch {
+    adapter = null;
+  }
+  if (!adapter || typeof adapter.getWalletAddress !== "function") {
+    walletRow("Wallets aren't available on this server right now.");
+    return;
+  }
+  const token = await adapter.getAccessToken().catch(() => null);
+  if (!token) {
+    walletRow("Your wallet shows here while you're signed in with Google in this tab. Sign out and back in to see it.");
+    return;
+  }
+  let address = null;
+  try {
+    address = await adapter.getWalletAddress();
+  } catch {
+    walletRow("Couldn't load your wallet right now. Try again in a moment.");
+    return;
+  }
+  if (address) {
+    clearWalletFailed();
+    showAddress(address);
+    return;
+  }
+  const make = h("button", { class: "btn btn-primary", type: "button", id: "wallet-make" }, "Set up my wallet");
+  make.addEventListener("click", async () => {
+    make.disabled = true;
+    make.textContent = "Setting up…";
+    try {
+      const wallet = await adapter.ensureWallet();
+      if (!wallet) throw new Error("none");
+      clearWalletFailed();
+      showAddress(wallet.address);
+      toast("Your wallet is ready.");
+    } catch {
+      make.disabled = false;
+      make.textContent = "Set up my wallet";
+      walletRow("Couldn't set up your wallet. Try again in a moment.");
+      $("wallet-body").append(make);
+    }
+  });
+  $("wallet-body").replaceChildren(
+    h("p", { class: "line-empty" }, walletFailed() ? "Setting up your wallet didn't finish when you signed in." : "You don't have a wallet yet."),
+    make
+  );
 }
 
 // ---- For builders: keys -----------------------------------------------------------------------------------------------
@@ -300,6 +370,7 @@ async function main() {
   } catch {
     $("stale-banner").hidden = false;
   }
+  renderWallet().catch(() => walletRow("Couldn't load your wallet right now. Try again in a moment."));
   if (state.me.role !== "owner") {
     $("builders-staff").hidden = false;
     return;
