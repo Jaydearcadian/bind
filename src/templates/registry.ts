@@ -32,6 +32,11 @@ export interface ProvisionOptions {
    * inventory re-seeding. Used for the demo workspace on every boot, so an owner's policy survives a restart.
    */
   ifAbsent?: boolean;
+  /**
+   * Makes the workspace a demo that expires at this time (docs/decisions/0057). Written in the same insert as the workspace row.
+   * Only a new row gets it: a conflicting id is updated without the demo fields, so a real workspace never becomes a demo.
+   */
+  demoExpiresAt?: Date;
 }
 
 /**
@@ -55,6 +60,8 @@ export async function provisionWorkspace(
   // No shared default payer wallet. A local workspace gets its own simulated address. An
   // arc-testnet workspace without an address stores NULL, and its payments are held until one is set.
   const explicitSettlementAddress = options?.settlementAddress || null;
+  const isDemo = options?.demoExpiresAt !== undefined;
+  const demoExpiresAt = options?.demoExpiresAt ?? null;
   const settlementAddress =
     explicitSettlementAddress ??
     (settlementMode === "local" ? simulatedPaymentAddress(`workspace:${workspaceId}`) : null);
@@ -63,11 +70,11 @@ export async function provisionWorkspace(
     // 1. Insert Workspace
     if (options?.ifAbsent) {
       const created = await client.query(
-        `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents, is_demo, demo_expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (id) DO NOTHING
          RETURNING id;`,
-        [workspaceId, name, templateId, settlementAddress, settlementMode, dailyLimit, approvalThreshold]
+        [workspaceId, name, templateId, settlementAddress, settlementMode, dailyLimit, approvalThreshold, isDemo, demoExpiresAt]
       );
       if ((created.rowCount ?? 0) === 0) {
         // Already provisioned: the owner's configuration is not touched, and nothing else is seeded.
@@ -75,8 +82,8 @@ export async function provisionWorkspace(
       }
     } else {
       await client.query(
-        `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents, is_demo, demo_expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $9, $10)
          ON CONFLICT (id) DO UPDATE SET
            name = EXCLUDED.name,
            template_id = EXCLUDED.template_id,
@@ -94,6 +101,8 @@ export async function provisionWorkspace(
           dailyLimit,
           approvalThreshold,
           explicitSettlementAddress,
+          isDemo,
+          demoExpiresAt,
         ]
       );
     }

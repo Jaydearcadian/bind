@@ -17,6 +17,8 @@ import { evaluateWithJevSystemOne } from "../domain/jevScorer.js";
 import { spendStatusesSql } from "../orders/statuses.js";
 import { classifyRequestEvidence } from "./evidence-classification.js";
 import { currentRequestId } from "../observability/request-context.js";
+import { effectiveSettlementMode } from "../demo/policy.js";
+import { isDemoWorkspace } from "../demo/status.js";
 
 export interface ReplenishmentToolsContext {
   workspaceId: string;
@@ -61,7 +63,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         workspaceId: ws.id,
         name: ws.name,
         templateId: ws.template_id,
-        settlementMode: ws.settlement_mode,
+        settlementMode: effectiveSettlementMode(ws),
         settlementAddress: ws.settlement_address,
         budgetDailyLimitCents: ws.budget_daily_limit_cents.toString(),
         approvalThresholdCents: ws.approval_threshold_cents.toString(),
@@ -308,8 +310,11 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         historicalMatchRate: 1.0,
       }));
 
+      // A demo workspace never contacts the external scorer, whatever keys are set (docs/decisions/0057).
+      const demo = await isDemoWorkspace(workspaceId);
       const jevEvaluation = await evaluateWithJevSystemOne({
         workspaceId,
+        allowExternal: !demo,
         templateId: ws?.template_id || "kitchen-ops",
         sku: quote.item_sku,
         currentQuantity: Number(inv?.current_quantity || 0),
@@ -537,8 +542,11 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         nextState = WorkflowState.AUTHORIZED;
       }
 
-      // Generate verifiable decision record and anti-drift lock files
+      // Generate verifiable decision record and anti-drift lock files. A demo workspace keeps the market benchmark local
+      // (docs/decisions/0057): no keyed search provider is contacted.
+      const demoWorkspace = await isDemoWorkspace(workspaceId);
       const decisionRecord = await generateVerifiableDecisionRecord({
+        allowExternal: !demoWorkspace,
         workflowId: targetWorkflowId,
         templateId: ws.template_id || "kitchen-ops",
         skuName: proposal.itemName || proposal.sku,
@@ -628,7 +636,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
       }
       const wf = wfRes.rows[0];
       const wsRes = await query(
-        `SELECT settlement_mode FROM workspaces WHERE id = $1;`,
+        `SELECT settlement_mode, is_demo FROM workspaces WHERE id = $1;`,
         [wf.workspace_id]
       );
       const orderId = wf.context_data?.orderId;
@@ -641,7 +649,7 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         orderStatus = orderRes.rows[0]?.status ?? null;
       }
       const evidenceClassification = classifyRequestEvidence({
-        settlementMode: wsRes.rows[0]?.settlement_mode ?? "",
+        settlementMode: effectiveSettlementMode(wsRes.rows[0] ?? {}),
         orderStatus,
       });
 

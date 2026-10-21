@@ -53,8 +53,10 @@ export async function resolveSession(raw: string): Promise<Actor | null> {
     `SELECT s.id, s.workspace_id, m.role, COALESCE(a.display_name, 'member-' || right(a.id, 6)) AS label
        FROM account_sessions s
        JOIN accounts a ON a.id = s.account_id
+       JOIN workspaces w ON w.id = s.workspace_id
        JOIN workspace_memberships m ON m.account_id = s.account_id AND m.workspace_id = s.workspace_id AND m.removed_at IS NULL
-      WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > NOW();`,
+      WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > NOW()
+        AND (NOT w.is_demo OR w.demo_expires_at > NOW());`,
     [hash(raw)]
   );
   const row = res.rows[0];

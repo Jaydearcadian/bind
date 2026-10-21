@@ -43,6 +43,8 @@ const PUBLIC_ROUTES: Array<[string, string]> = [
   ["GET", "/api/openapi.json"],
   ["POST", "/api/workspaces/onboard"],
   ["POST", "/api/workspaces"],
+  // Creates a throwaway demo workspace and returns its owner token once (docs/decisions/0057). Its own tests are in demo.test.ts.
+  ["POST", "/api/demo"],
   ["POST", "/api/webhooks/incoming"],
   ["GET", "*"],
 ];
@@ -108,6 +110,8 @@ const OWNER_ROUTES: Array<[string, string]> = [
   ["POST", "/api/workspaces/:id/surfaces"],
   ["POST", "/api/workspaces/:id/documents/:docId/confirm"],
   ["POST", "/api/workspaces/:id/recover"],
+  // Deletes a demo workspace and returns a fresh one. A workspace that is not a demo is refused (docs/decisions/0057).
+  ["POST", "/api/workspaces/:id/demo/reset"],
   ["POST", "/api/workspaces/:id/tokens"],
   ["GET", "/api/workspaces/:id/tokens"],
   // People (ADR 0051): invitations and members are owner routes.

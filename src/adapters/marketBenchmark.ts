@@ -17,14 +17,20 @@ export interface MarketBenchmarkAdapter {
 }
 
 export class HybridMarketBenchmarkAdapter implements MarketBenchmarkAdapter {
+  /**
+   * `allowExternal: false` skips both keyed search providers and returns the deterministic reference (docs/decisions/0057:
+   * a demo workspace never calls an outside service). Default true.
+   */
   async fetchBenchmark(
     skuName: string,
-    businessCategory: string
+    businessCategory: string,
+    options: { allowExternal?: boolean } = {}
   ): Promise<MarketBenchmarkResult> {
     const query = `current wholesale bulk price ${skuName} for ${businessCategory}`;
+    const external = options.allowExternal !== false;
 
     // 1. Prefer Parallel Search API if PARALLEL_API_KEY is configured
-    if (process.env.PARALLEL_API_KEY) {
+    if (external && process.env.PARALLEL_API_KEY) {
       try {
         const response = await fetch("https://api.parallel.ai/v1beta/search", {
           method: "POST",
@@ -61,7 +67,7 @@ export class HybridMarketBenchmarkAdapter implements MarketBenchmarkAdapter {
     }
 
     // 2. Fallback to Tavily Search API if TAVILY_API_KEY is configured
-    if (process.env.TAVILY_API_KEY) {
+    if (external && process.env.TAVILY_API_KEY) {
       try {
         const response = await fetch("https://api.tavily.com/search", {
           method: "POST",

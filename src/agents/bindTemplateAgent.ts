@@ -118,6 +118,8 @@ export async function generateVerifiableDecisionRecord(params: {
   quantityRequested: number;
   candidateQuotes: SimulatedVendorQuote[];
   dailyLimitUsdc?: string;
+  /** False keeps the market benchmark local (demo workspaces, docs/decisions/0057). Default true. */
+  allowExternal?: boolean;
 }): Promise<VerifiableDecisionRecord> {
   const dailyLimitUsdc = params.dailyLimitUsdc ?? "1.0";
   const templateDir = resolveTemplateDir(params.templateId);
@@ -133,10 +135,9 @@ export async function generateVerifiableDecisionRecord(params: {
       : params.templateId.includes("kitchen") || params.templateId.includes("restaurant")
       ? "commercial restaurant kitchen"
       : `${params.templateId} operations`;
-  const marketBenchmark = await benchmarkAdapter.fetchBenchmark(
-    params.skuName,
-    contextDomain
-  );
+  const marketBenchmark = await benchmarkAdapter.fetchBenchmark(params.skuName, contextDomain, {
+    allowExternal: params.allowExternal,
+  });
 
   // Deterministic vendor selection baseline (whitelisted + lowest total cost)
   const whitelistedQuotes = params.candidateQuotes.filter((q) => q.isWhitelistedOnChain === true);

@@ -32,6 +32,7 @@ import {
   CustomerOrderSchema,
   DocumentConfirmSchema,
   DocumentDraftSchema,
+  DemoCreatedSchema,
   AccountWorkspaceCreatedSchema,
   AccountWorkspaceSchema,
   ErrorBody,
@@ -319,6 +320,40 @@ export const ROUTES: RouteSpec[] = [
     },
     contractTested: true,
   }),
+  // -------------------------------------------------------------------------------------------------------------------
+  // Demo workspaces (docs/decisions/0057)
+  // -------------------------------------------------------------------------------------------------------------------
+  withGenericErrors({
+    operationId: "createDemo",
+    method: "post",
+    path: "/api/demo",
+    access: "public",
+    tags: ["Demo"],
+    summary:
+      "Create a throwaway demo workspace: four hours, simulated only, with one real pending approval. Returns its owner token once.",
+    responses: {
+      201: ok("Created. The owner token is in the body and is shown only here. Never cached.", DemoCreatedSchema),
+      404: err("Demo workspaces are off on this server (code DEMO_DISABLED). They are off in production unless BIND_DEMO_ENABLED=true."),
+      503: err("The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or another create holds the lock (code DEMO_BUSY, Retry-After: 3)."),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "resetDemo",
+    method: "post",
+    path: "/api/workspaces/:id/demo/reset",
+    access: "owner",
+    tags: ["Demo"],
+    summary: "Reset a demo: delete it and its data, and return a fresh demo with new credentials. The old token stops working.",
+    responses: {
+      201: ok("Created. The new owner token is in the body and is shown only here. Never cached.", DemoCreatedSchema),
+      404: err("Demo workspaces are off on this server (code DEMO_DISABLED)."),
+      409: err("This workspace is not a demo (code NOT_A_DEMO). Nothing is changed."),
+      503: err("The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or another create holds the lock (code DEMO_BUSY, Retry-After: 3)."),
+    },
+    contractTested: true,
+  }),
+
   withGenericErrors({
     operationId: "getWorkspace",
     method: "get",

@@ -11,11 +11,13 @@ import { log } from "../observability/logger.js";
 import { recordWorkerTick } from "../observability/metrics.js";
 import { RETENTION_HOURS } from "../server/idempotency.js";
 import { currentRequestId } from "../observability/request-context.js";
+import { purgeExpiredDemos } from "../demo/purge.js";
 
 /**
  * The background worker (ADR 0029, ADR 0030). One tick runs five steps in order, each bounded by a batch size:
  *   1. approval expiry, 2. interrupted-workflow recovery, 3. settlement confirmation polling,
- *   4. recovery of orders left in `settling`, 5. the restock sweep (off unless enabled).
+ *   4. recovery of orders left in `settling`, 5. the restock sweep (off unless enabled), then the idempotency sweep and
+ *   the demo expiry sweep (docs/decisions/0057), which deletes expired demo workspaces whatever the demo flag says.
  * Every step first takes a non-blocking session lock named `worker:<step>`. A step whose lock is busy is skipped
  * and reported as skipped. The operations are idempotent regardless, so the locks only avoid duplicate work.
  *
@@ -25,7 +27,14 @@ import { currentRequestId } from "../observability/request-context.js";
  * approvals like a manual one.
  */
 
-export type WorkerStep = "expiry" | "recovery" | "settlement_poll" | "stuck_settling" | "restock_sweep" | "idempotency_sweep";
+export type WorkerStep =
+  | "expiry"
+  | "recovery"
+  | "settlement_poll"
+  | "stuck_settling"
+  | "restock_sweep"
+  | "idempotency_sweep"
+  | "demo_expiry";
 
 export interface TickError {
   step: WorkerStep;
@@ -41,6 +50,8 @@ export interface TickReport {
   restockSweep: { skipped: boolean; started: number; failed: number };
   /** Removes stored API idempotency outcomes older than their retention (ADR 0049). */
   idempotencySweep: { skipped: boolean; removed: number };
+  /** Deletes expired demo workspaces and their generated files (docs/decisions/0057). `failed` demos are retried next tick. */
+  demoExpiry: { skipped: boolean; removed: number; failed: number };
   errors: TickError[];
 }
 
@@ -95,6 +106,7 @@ const STEP_KEY: Record<WorkerStep, keyof Omit<TickReport, "errors">> = {
   stuck_settling: "stuckSettling",
   restock_sweep: "restockSweep",
   idempotency_sweep: "idempotencySweep",
+  demo_expiry: "demoExpiry",
 };
 
 function emptyReport(): TickReport {
@@ -105,6 +117,7 @@ function emptyReport(): TickReport {
     stuckSettling: { skipped: false, toSubmitted: 0, toHold: 0, failed: 0 },
     restockSweep: { skipped: false, started: 0, failed: 0 },
     idempotencySweep: { skipped: false, removed: 0 },
+    demoExpiry: { skipped: false, removed: 0, failed: 0 },
     errors: [],
   };
 }
@@ -354,7 +367,20 @@ async function restockSweepStep(cfg: Resolved, report: TickReport): Promise<void
 }
 
 /**
- * Runs one tick: the steps in order (the idempotency sweep last). Never throws. The restock sweep runs only when it is enabled. The tick's duration,
+ * Deletes expired demo workspaces (docs/decisions/0057), at most batchSize per tick. Each one's files and rows go together
+ * (src/demo/purge.ts). A demo that cannot be removed is reported as a step error and tried again on the next tick.
+ */
+async function demoExpiryStep(cfg: Resolved, report: TickReport): Promise<void> {
+  const result = await purgeExpiredDemos(cfg.batchSize);
+  report.demoExpiry.removed = result.removed;
+  report.demoExpiry.failed = result.failures.length;
+  for (const failure of result.failures) {
+    report.errors.push({ step: "demo_expiry", error: boundedMessage(failure) });
+  }
+}
+
+/**
+ * Runs one tick: the steps in order (the demo expiry sweep last). Never throws. The restock sweep runs only when it is enabled. The tick's duration,
  * its finish time and its step errors are recorded in the metrics registry (docs/decisions/0032).
  */
 export async function runTick(opts: TickOptions = {}): Promise<TickReport> {
@@ -371,6 +397,7 @@ export async function runTick(opts: TickOptions = {}): Promise<TickReport> {
     report.restockSweep.skipped = true;
   }
   await runStep("idempotency_sweep", report, () => idempotencySweepStep(cfg, report));
+  await runStep("demo_expiry", report, () => demoExpiryStep(cfg, report));
   recordWorkerTick(
     Number(process.hrtime.bigint() - startedAt) / 1e9,
     report.errors.map((entry) => entry.step)

@@ -90,10 +90,18 @@ async function send(
   return { status: res.status, text, body: parsed, contentType: res.headers.get("content-type") ?? "" };
 }
 
+/**
+ * An owner token is the answer of a few routes by design (POST /api/demo, ADR 0057). It is random, so a token can contain text
+ * the leak pattern matches by chance (for example "pg_"). Token-shaped values are masked before the pattern runs; the rest of
+ * the body is checked as before.
+ */
+const ISSUED_TOKEN = /bnd_[A-Za-z0-9_-]{43}/g;
+
 /** Every non-public response: a JSON body, no internals, and no client-visible database text. */
 function expectSafe(r: Sent, label: string) {
   expect(r.status, `${label} status`).toBeLessThan(500);
-  expect(LEAK.test(r.text), `${label} leaks internals: ${r.text.slice(0, 300)}`).toBe(false);
+  const visible = r.text.replace(ISSUED_TOKEN, "<issued-token>");
+  expect(LEAK.test(visible), `${label} leaks internals: ${visible.slice(0, 300)}`).toBe(false);
   expect(r.contentType, `${label} content-type`).toMatch(/json/);
   expect(r.body, `${label} body is JSON`).not.toBeUndefined();
 }
@@ -214,7 +222,13 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
       ];
       // Routes that ignore their body and succeed with one. Recovery is an owner action with no inputs, and the rotate
       // route is owner-only and changes the secret of wsA only (no other test signs for wsA).
-      const bodyIgnored = new Set(["POST /api/workspaces/:id/recover", "POST /api/workspaces/:id/webhook-secret/rotate", "POST /api/auth/sign-out"]);
+      // POST /api/demo creates a demo whatever its body says (docs/decisions/0057). Each demo it creates is recorded for cleanup.
+      const bodyIgnored = new Set([
+        "POST /api/workspaces/:id/recover",
+        "POST /api/workspaces/:id/webhook-secret/rotate",
+        "POST /api/auth/sign-out",
+        "POST /api/demo",
+      ]);
       const pathHostile = ["%00", "a".repeat(5000), "%27%20OR%201%3D1%20--", '%22quoted%22'];
 
       // A long-lived route (its registry 200 is text/event-stream, ADR 0035) gets no query variants here: a valid request
@@ -237,6 +251,7 @@ describe("Untrusted input: hostile requests, responses and arguments (Task 11)",
               contentType: variant.contentType,
             });
             expectSafe(r, `${label} [${variant.name}]`);
+            if (route.path === "/api/demo" && r.status === 201) created.push(r.body.workspaceId);
             if (!bodyIgnored.has(label) && variant.name !== "text-plain") {
               expect(r.status, `${label} [${variant.name}] must be refused`).toBeGreaterThanOrEqual(400);
               expect(r.status, `${label} [${variant.name}] must be refused`).toBeLessThan(500);

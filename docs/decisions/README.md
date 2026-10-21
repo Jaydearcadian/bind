@@ -14,6 +14,7 @@ a live system: `docs/RELEASE_EVIDENCE.md` is the place for that.
 
 | ADR | Title | Status | One line |
 | --- | --- | --- | --- |
+
 | [0001](0001-build-boundaries.md) | System boundaries, architecture stack, and settlement model | Accepted | TypeScript on Node. What Bind owns and what it integrates. Settlement is local by default; Arc testnet is opt-in. |
 | [0002](0002-template-driven-architecture.md) | Template-driven business agent engine | Accepted | A domain-agnostic engine with business templates. The kitchen comes first. |
 | [0003](0003-onchain-policy-enforcement.md) | On-chain policy enforcement on Arc L1 | Accepted (corrected 2026-10-20) | A daily limit and vendor allowlist in `BindSettlement.sol`. The limit is a fixed window, not rolling. |
@@ -69,9 +70,10 @@ a live system: `docs/RELEASE_EVIDENCE.md` is the place for that.
 | [0053](0053-event-envelope-v1.md) | Event envelope v1 | Accepted | Events gain name, schemaVersion, workspaceId, object and correlationId; audit rows record the request id. Additive. |
 | [0054](0054-website.md) | The website, served by the API server | Accepted | Landing page in `web/`, brand from `docs/brand`, strict CSP, the orphaned UI no longer served, browser E2E is a real gate again. App screens not built. |
 | [0055](0055-website-motion-and-finish.md) | Website motion, the glass header, the intro and a glossy finish | Accepted | A glass pill header that tightens on scroll with the bead orbiting the ring, a once-per-session intro, scroll reveals, rounded glossy surfaces. Faint by design; off with reduced motion. |
-| [0060](0060-arc-as-the-payment-rail.md) | Arc is the payment rail, with fiat on and off ramps | Accepted (direction) | Payments go fiat to USDC on Arc to fiat; owners see their own currency. Provider, custody, KYC and legal questions open. Not built. |
-| [0061](0061-decisions-anchored-on-arc.md) | Decisions are anchored on Arc | Accepted (direction) | Decision hashes, batched and salted, anchored on Arc; content never on chain; "Recorded on Arc" only after confirmation. Not built. |
 | [0056](0056-sdk-in-the-browser.md) | The SDK in the browser, served at /sdk/ | Accepted | `sdk/dist` is served at `/sdk/` (compiled `.js` only) under the strict policy, built by `npm run build`, copied to `public/sdk` on Vercel. Only Chromium checked; Vercel not deployed. |
+| [0057](0057-demo-workspace.md) | Demo workspaces: a throwaway, simulated sandbox per visitor | Accepted | `POST /api/demo` makes a four-hour kitchen with a real pending approval and an owner token shown once; simulated only in code; expiry in the worker; reset; per-address and global limits. |
 | [0058](0058-who-am-i.md) | Who am I: `GET /api/me` | Accepted | The caller's workspace, role, label, credential kind and pause switch, from the bearer token. Six fields, no secrets, read-only, no-store. Built on the stack at `409c2bb`. |
 | [0059](0059-app-shell-today-activity.md) | The app shell, sign-in with an access key, Today and Activity | Accepted | First app screens on the SDK and /api/me: Needs you, live feed, open-read-confirm approvals with tiered confirm, pause, offline, Activity with Follow this. Other areas "Soon". |
+| [0060](0060-arc-as-the-payment-rail.md) | Arc is the payment rail, with fiat on and off ramps | Accepted (direction) | Payments go fiat to USDC on Arc to fiat; owners see their own currency. Provider, custody, KYC and legal questions open. Not built. |
+| [0061](0061-decisions-anchored-on-arc.md) | Decisions are anchored on Arc | Accepted (direction) | Decision hashes, batched and salted, anchored on Arc; content never on chain; "Recorded on Arc" only after confirmation. Not built. |
 | [0062](0062-team-and-limits.md) | Team and limits | Accepted | Limits as sentences with sliders and presets, saved as the server stores them; agent cards with renaming, tool switches and on/off; staff read-only. |

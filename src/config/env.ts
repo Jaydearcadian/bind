@@ -91,6 +91,13 @@ const envSchema = z.object({
       z.string().regex(/^\d+$/, "BIND_TRUST_PROXY must be a non-negative integer (the number of proxy hops)").optional()
     )
     .transform((v) => (v === undefined ? 0 : Number(v))),
+  // Demo workspaces (docs/decisions/0057). Unset: on outside production and off in production. "true" or "false" decides.
+  BIND_DEMO_ENABLED: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["true", "false"]).optional()),
+  // The most demo workspaces that may be active at once (not expired). Over it, creating a demo answers 503.
+  BIND_DEMO_MAX_ACTIVE: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.coerce.number().int().min(1).max(100000).optional()
+  ),
   // Rate limits (docs/decisions/0033). The only accepted value is "off", which turns the default off. It is for local
   // development only. Unset: the default (on, except in tests).
   BIND_RATE_LIMITS: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["off"]).optional()),

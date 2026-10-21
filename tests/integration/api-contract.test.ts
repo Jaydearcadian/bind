@@ -404,6 +404,12 @@ describe("API contract: one registry, checked against the running server (ADR 00
     await seedWrite("POST", "/api/orders/:id/reconcile", owner, undefined, 200, { id: replenish.orderId });
     await seedWrite("POST", "/api/orders/:id/confirm-settlement", owner, undefined, 200, { id: replenish.orderId });
 
+    // A demo (docs/decisions/0057): created, then reset. Both demos are removed in afterAll.
+    const demo = await seedWrite("POST", "/api/demo", undefined, undefined, 201);
+    createdWorkspaceIds.push(demo.workspaceId);
+    const reset = await seedWrite("POST", "/api/workspaces/:id/demo/reset", demo.token, undefined, 201, { id: demo.workspaceId });
+    createdWorkspaceIds.push(reset.workspaceId);
+
     // Last: the signing secret moves to version 2. Later signed calls read the current version.
     await seedWrite("POST", "/api/workspaces/:id/webhook-secret/rotate", owner, undefined, 200);
   }
@@ -460,6 +466,8 @@ describe("API contract: one registry, checked against the running server (ADR 00
 
       if (spec.access === "public") {
         const res = await send(baseUrl, spec.method, url, { body: bodyless ? undefined : {} });
+        // A demo this sweep creates is recorded so afterAll deletes it with its files (docs/decisions/0057).
+        if (spec.operationId === "createDemo" && res.status === 201) createdWorkspaceIds.push(res.body.workspaceId);
         expect([401, 403], where).not.toContain(res.status);
         continue;
       }
@@ -702,6 +710,14 @@ describe("API contract: one registry, checked against the running server (ADR 00
     const notFound = await invoke(specFor("GET", "/api/workspaces/:id/inventory"), "error", { token: ownerB.token, values: { id: WS_A } });
     expect(notFound.status).toBe(404);
     assertDocumented(specFor("GET", "/api/workspaces/:id/inventory"), notFound, "404");
+
+    // 409 on a reset of a workspace that is not a demo (docs/decisions/0057). The owner's workspace is untouched.
+    const notDemo = await invoke(specFor("POST", "/api/workspaces/:id/demo/reset"), "error", {
+      token: ownerA.token,
+      values: { id: WS_A },
+    });
+    expect(notDemo.status).toBe(409);
+    assertDocumented(specFor("POST", "/api/workspaces/:id/demo/reset"), notDemo, "409");
 
     // 409: creating a workspace with an id that exists.
     const conflict = await invoke(specFor("POST", "/api/workspaces"), "error", {

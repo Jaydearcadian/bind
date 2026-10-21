@@ -144,6 +144,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a throwaway demo workspace: four hours, simulated only, with one real pending approval. Returns its owner token once.
+         * @description Access: public. No token is needed.
+         */
+        post: operations["createDemo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me": {
         parameters: {
             query?: never;
@@ -634,6 +654,26 @@ export interface paths {
          * @description Access: a workspace token of the owner or a staff member of the workspace in the path.
          */
         post: operations["fulfilCustomerOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{id}/demo/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset a demo: delete it and its data, and return a fresh demo with new credentials. The old token stops working.
+         * @description Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.
+         */
+        post: operations["resetDemo"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2361,6 +2401,76 @@ export interface operations {
             };
         };
     };
+    createDemo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Created. The owner token is in the body and is shown only here. Never cached. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        expiresAt: string;
+                        token: string;
+                        workspaceId: string;
+                    };
+                };
+            };
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Demo workspaces are off on this server (code DEMO_DISABLED). They are off in production unless BIND_DEMO_ENABLED=true. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or another create holds the lock (code DEMO_BUSY, Retry-After: 3). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     getMe: {
         parameters: {
             query?: never;
@@ -3145,7 +3255,10 @@ export interface operations {
                         budget_daily_limit_cents: string | number;
                         /** Format: date-time */
                         created_at: string;
+                        /** Format: date-time */
+                        demo_expires_at?: string | null;
                         id: string;
+                        is_demo?: boolean;
                         name: string;
                         settlement_address: string | null;
                         settlement_mode: string;
@@ -3488,7 +3601,10 @@ export interface operations {
                             budget_daily_limit_cents: string | number;
                             /** Format: date-time */
                             created_at: string;
+                            /** Format: date-time */
+                            demo_expires_at?: string | null;
                             id: string;
+                            is_demo?: boolean;
                             name: string;
                             settlement_address: string | null;
                             settlement_mode: string;
@@ -5696,6 +5812,105 @@ export interface operations {
                 };
             };
             /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    resetDemo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Created. The new owner token is in the body and is shown only here. Never cached. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        expiresAt: string;
+                        token: string;
+                        workspaceId: string;
+                    };
+                };
+            };
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Owner role required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Demo workspaces are off on this server (code DEMO_DISABLED). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description This workspace is not a demo (code NOT_A_DEMO). Nothing is changed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The limit on active demos is reached (code DEMO_CAPACITY_REACHED), or another create holds the lock (code DEMO_BUSY, Retry-After: 3). */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -8938,7 +9153,10 @@ export interface operations {
                             budget_daily_limit_cents: string | number;
                             /** Format: date-time */
                             created_at: string;
+                            /** Format: date-time */
+                            demo_expires_at?: string | null;
                             id: string;
+                            is_demo?: boolean;
                             name: string;
                             settlement_address: string | null;
                             settlement_mode: string;

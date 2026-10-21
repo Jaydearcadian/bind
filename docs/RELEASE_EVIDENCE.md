@@ -6,6 +6,50 @@ that this task did not reproduce are kept, labelled, in the appendix at the end,
 **Commit the gates ran on:** `407533ac09f7121806836e25db4834be5c91c412` (HEAD of `claude/capabilities-overview-c6elxr` before the
 commit that adds this document; the working tree was clean at that commit).
 
+## 0. Demo workspaces (ADR 0057): gate run after the review fixes
+
+**Code commit:** `043b361b0648754fd8323736ac1e85286639f3c2` (review fixes). **Commit the gates ran on:** `b143a5f60f9da3419e34bba9bc07046138230489`,
+which is `043b361` plus one regenerated file, `docs/CODEBASE_MAP.md` (line ranges of two functions moved; the map drift gate failed on
+the first run and passed on this one). The worktree was clean at that commit.
+
+| Gate | Class | Result |
+| --- | --- | --- |
+| lint | LOCAL_PASS | `npm run lint`, no problems |
+| typecheck | LOCAL_PASS | the app, the SDK and the MCP server |
+| unit | LOCAL_PASS | 55 files, 432 tests passed |
+| integration | LOCAL_PASS | 68 files passed and 1 skipped; 620 tests passed and 10 skipped |
+| contract in-process suite | LOCAL_PASS | 4 files, 32 tests passed |
+| build, sdk:build, mcp:build | LOCAL_PASS | |
+| audit | LOCAL_PASS | `npm audit --audit-level=high` |
+| spec, SDK and map drift | LOCAL_PASS | regenerated files equal the committed ones |
+| forge fmt, build, test, coverage | LOCAL_PASS | |
+| anvil integration | LOCAL_PASS | 10 tests, against a local Anvil on chain 31337 |
+| slither `--fail-medium` | LOCAL_PASS | |
+| test:e2e (browser suite) | LOCAL_PASS | 52 passed, 4 skipped by design; port set with `BIND_WEB_TEST_PORT=3311` |
+| live Arc, live suppliers, live connectors | NOT_RUN | no credentials or endpoints were used; the demo never reaches them by design |
+
+Summary line from the run: `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`. The database was private to this worktree
+(`bind_wt_a1f6` on the local server), because other worktrees' suites share that server. The first run on `043b361` had 18 passes and
+the map drift failure described above; no test or gate was changed for it.
+
+Command: `DATABASE_URL=<private database> BIND_WEB_TEST_PORT=3311 bash scripts/verify-local.sh`.
+
+What the run covers for the demo: real PostgreSQL and real HTTP in `tests/integration/demo.test.ts` (22 tests: creation with an owner
+token and a four-hour expiry, a seed from a real replenishment, simulated-only settlement and suppliers under a live-asking environment,
+no outside call from a demo even with the TypeSafe, Parallel and Tavily keys set, expiry of token, account session, event stream and
+surface webhook, a bounded purge on create, reset and its refusal, the per-address limit and `Retry-After` with and without a trusted
+proxy, the global cap including three concurrent creates, `DEMO_BUSY` after the 3-second lock wait, the disabled switch, cross-tenant
+refusals, and a failed seed that is logged and leaves no record).
+
+**Known risks, for this run:**
+
+- One worker test, "a tick is bounded by batch size", found 10 expired approvals where 3 were expected, in one full integration run
+  on an earlier commit of this database. The later full runs passed. No cause was found in the test code. It is a pre-existing test and
+  it is recorded here rather than hidden.
+- The demo has not been exercised in a browser; the demo banner, the Reset button and the entry page are not built.
+- A demo never reaches a live supplier or a live settlement by code, but no live system was ever tested against this path.
+
+
 ## Header
 
 | Item | Value |

@@ -233,6 +233,11 @@ ALTER TABLE quotes
 
 -- Owner pause switch (ADR 0022). While TRUE the commitment gate denies every commitment and no replenishment starts.
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS agents_paused BOOLEAN NOT NULL DEFAULT FALSE;
+-- Demo workspaces (docs/decisions/0057): a throwaway sandbox that expires. Only a demo has an expiry; a real workspace keeps
+-- both columns at their defaults. Token resolution refuses an expired demo, and the worker deletes it (src/demo/purge.ts).
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS demo_expires_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_workspaces_demo_expiry ON workspaces (demo_expires_at) WHERE is_demo;
 -- Webhook signing secret version (ADR 0022). Rotation increments it; the secret is derived from the master secret.
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS webhook_secret_version INT NOT NULL DEFAULT 1;
 

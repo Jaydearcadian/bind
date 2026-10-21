@@ -106,10 +106,22 @@ function sendInvalidCursor(res: Response): void {
   res.status(400).json({ error: "Invalid cursor", code: "INVALID_CURSOR" });
 }
 
-/** True while the token is not revoked. Checked on every loop, so a revoked token ends its stream. */
+/**
+ * True while the credential still works: a workspace token not revoked, or an account session not revoked and not expired, and in
+ * either case its workspace is not an expired demo (docs/decisions/0057). Checked on every loop, so a revoked token, an expired
+ * session or an expired demo ends its stream. The actor's tokenId is the token row id, or the session row id for a session.
+ */
 async function tokenStillActive(tokenId: string): Promise<boolean> {
-  const res = await query(`SELECT 1 FROM workspace_tokens WHERE id = $1 AND revoked_at IS NULL;`, [tokenId]);
-  return res.rows.length === 1;
+  const res = await query(
+    `SELECT 1 FROM workspace_tokens t JOIN workspaces w ON w.id = t.workspace_id
+      WHERE t.id = $1 AND t.revoked_at IS NULL AND (NOT w.is_demo OR w.demo_expires_at > NOW())
+     UNION ALL
+     SELECT 1 FROM account_sessions s JOIN workspaces w ON w.id = s.workspace_id
+       JOIN workspace_memberships m ON m.account_id = s.account_id AND m.workspace_id = s.workspace_id AND m.removed_at IS NULL
+      WHERE s.id = $1 AND s.revoked_at IS NULL AND s.expires_at > NOW() AND (NOT w.is_demo OR w.demo_expires_at > NOW());`,
+    [tokenId]
+  );
+  return res.rows.length >= 1;
 }
 
 /** GET /api/workspaces/:id/events (text/event-stream). Mounted after the member middleware. */
