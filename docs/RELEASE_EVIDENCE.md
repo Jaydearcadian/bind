@@ -6,6 +6,26 @@ that this task did not reproduce are kept, labelled, in the appendix at the end,
 **Commit the gates ran on:** `407533ac09f7121806836e25db4834be5c91c412` (HEAD of `claude/capabilities-overview-c6elxr` before the
 commit that adds this document; the working tree was clean at that commit).
 
+## 0a. App screens (ADR 0064 to 0069) and demo follow-ups: gate run
+
+**Commit the gates ran on:** `b74db744875fc2c7067535e97075384b694dc48e` (People and access, Connections, Business data, Settings, Help, Getting started, the QR encoder, and
+the merged demo follow-ups). Command: `bash scripts/verify-local.sh`. Result: `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0`.
+
+| Gate | Outcome | Class |
+| --- | --- | --- |
+| Unit (`npm run test:unit`) | 56 files, 508 passed | `LOCAL_PASS` |
+| Integration | 69 files passed, 1 skipped; 627 passed, 10 skipped (the skips recorded in ADR 0057) | `LOCAL_PASS` |
+| Contract | 4 files, 32 passed | `LOCAL_PASS` |
+| Browser E2E (`npm run test:e2e`, desktop and phone) | 106 passed, 4 skipped (desktop- or phone-only tests) | `LOCAL_PASS` |
+| Privy sign-in, invite acceptance in the browser, workspace switcher | needs the owner's Privy credentials | `NOT_RUN` |
+| QR scan with a phone camera | decoded with jsQR only | `NOT_RUN` |
+| Vercel deployment of the website | not deployed | `NOT_RUN` |
+
+**Known flake (not changed):** the existing SSE test "reconnecting with the last event id ..." in `tests/integration/events.test.ts`
+can read a setup event first; it failed once in 20 runs on a private database. Fixing it means changing the test's setup or the
+stream's start point, so it is recorded here rather than altered. The integration suites share one local database with any other
+running server; a purge deadlock under that sharing caused two failures in 20 runs, none on a private database.
+
 ## 0. Demo workspaces (ADR 0057): gate run after the review fixes
 
 **Code commit:** `043b361b0648754fd8323736ac1e85286639f3c2` (review fixes). **Commit the gates ran on:** `b143a5f60f9da3419e34bba9bc07046138230489`,
