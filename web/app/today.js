@@ -2,6 +2,7 @@
  * Today (ADR 0059; docs/ux/UX_BRIEF.md, "Today and approvals"). What needs you, what is happening, and the approval panel
  * ("open, read, confirm"). Every item comes from the API. Nothing is shown as done before the server says so.
  */
+import { showStarter } from "/app/starter.js";
 import { BindApiError, ago, clearKey, client, h, mark, money, newKey, pauseControl, shell, showDemo, showPaused, storedKey, toSignIn, toast, until } from "/app/core.js";
 import { sentence as say, tone } from "/app/words.js";
 
@@ -390,6 +391,7 @@ async function main() {
   }
   if (state.ws) {
     showDemo({ bind, me: state.me, ws: state.ws });
+    showStarter({ bind, me: state.me, ws: state.ws });
     renderAll();
   }
   else renderStale();

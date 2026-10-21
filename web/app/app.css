@@ -373,3 +373,15 @@ a.nav-item:hover { color: var(--text); background: color-mix(in srgb, var(--bord
 .help-item summary:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; border-radius: var(--radius); }
 .help-answer { padding: 0 20px 18px; display: grid; gap: 10px; color: var(--text-muted); max-width: 70ch; }
 .help-answer .text-link { justify-self: start; }
+
+/* Getting started */
+.starter-steps { list-style: none; margin: 0; padding: 0; display: grid; }
+.starter-step { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.starter-step:first-child { border-top: 0; }
+.starter-step .line-main { flex: 1; }
+.starter-step a.line-title { color: var(--text); text-decoration: none; }
+.starter-step a.line-title:hover { text-decoration: underline; text-underline-offset: 3px; }
+.starter-check { width: 22px; height: 22px; flex: none; border-radius: 999px; border: 1.8px solid var(--border); position: relative; }
+.starter-step.is-done .starter-check { background: var(--status-approved); border-color: var(--status-approved); }
+.starter-step.is-done .starter-check::after { content: ""; position: absolute; left: 6px; top: 2px; width: 6px; height: 11px; border: solid var(--bg); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.starter-step.is-done .line-title { color: var(--text-muted); }
