@@ -11,12 +11,46 @@ The browser UI (`src/ui`, plain JavaScript) and the Solidity contract are not in
 
 ```mermaid
 flowchart LR
-  L0["mcp<br/>32 fns"]
-  L1["scripts<br/>40 fns"]
-  L2["sdk<br/>108 fns"]
-  L3["src<br/>695 fns"]
-  L0 -->|1| L2
-  L1 -->|5| L3
+  L0["External Service Adapters<br/>24 fns"]
+  L1["Persistence (PostgreSQL)<br/>6 fns"]
+  L2["Policy, Authority & Deterministic Rules<br/>6 fns"]
+  L3["Server, API & Entry Points<br/>115 fns"]
+  L4["Settlement & Contracts<br/>65 fns"]
+  L5["Templates & Studio<br/>23 fns"]
+  L6["Workflow Orchestration & Agents<br/>48 fns"]
+  L7["mcp<br/>32 fns"]
+  L8["scripts<br/>18 fns"]
+  L9["sdk<br/>108 fns"]
+  L10["src<br/>430 fns"]
+  L0 -->|4| L1
+  L0 -->|7| L10
+  L1 -->|1| L10
+  L3 -->|5| L0
+  L3 -->|20| L1
+  L3 -->|3| L4
+  L3 -->|11| L5
+  L3 -->|14| L6
+  L3 -->|91| L10
+  L4 -->|16| L10
+  L5 -->|10| L1
+  L5 -->|1| L4
+  L5 -->|12| L10
+  L6 -->|8| L0
+  L6 -->|22| L1
+  L6 -->|1| L2
+  L6 -->|4| L4
+  L6 -->|1| L5
+  L6 -->|44| L10
+  L7 -->|1| L9
+  L8 -->|3| L1
+  L8 -->|1| L5
+  L10 -->|1| L0
+  L10 -->|103| L1
+  L10 -->|8| L2
+  L10 -->|1| L3
+  L10 -->|4| L4
+  L10 -->|5| L5
+  L10 -->|29| L6
 ```
 
 ## HTTP surface: route to what it calls
@@ -107,6 +141,682 @@ flowchart LR
 | `POST /api/workspaces/:id/connectors/:connectorId/verify` | 1605 | `verifyCredential`, `credentialActorOf`, `sendCredentialError` |
 | `POST /api/webhooks/incoming` | 1616 | `handleSurfaceEvent`, `handleStandardWebhook` |
 | `GET *` | 1821 | SQL or inline logic only |
+
+## External Service Adapters
+
+| Function | File:lines | Kind | Params | Exported | Called by (prod / tests) | Calls |
+| --- | --- | --- | --- | --- | --- | --- |
+| `HybridMarketBenchmarkAdapter` | src/adapters/marketBenchmark.ts:19-119 | class | 0 | yes | 2 / 2 | 0 |
+| `HybridMarketBenchmarkAdapter.fetchBenchmark` | src/adapters/marketBenchmark.ts:24-118 | method | 3 | yes | 2 / 2 | 0 |
+| `SurfaceAuthorizationError.constructor` | src/adapters/socialSurface.ts:75-78 | constructor | 1 | yes | 2 / 0 | 0 |
+| `assertSurfaceRoleAuthorized` | src/adapters/socialSurface.ts:84-107 | function | 2 | yes | 1 / 1 | 1 |
+| `verifyAndAuthorizeSurfaceEvent` | src/adapters/socialSurface.ts:114-136 | function | 1 | yes | 1 / 0 | 3 |
+| `upsertSurfaceBinding` | src/adapters/socialSurface.ts:144-192 | function | 3 | yes | 1 / 4 | 3 |
+| `listSurfaceBindings` | src/adapters/socialSurface.ts:194-200 | function | 1 | yes | 1 / 0 | 1 |
+| `getSupplierAdapter` | src/adapters/suppliers/index.ts:24-34 | function | 1 | yes | 0 / 2 | 1 |
+| `SimulatedSupplierAdapter.constructor` | src/adapters/suppliers/simulated.ts:20-25 | constructor | 4 | yes | 2 / 7 | 0 |
+| `SimulatedSupplierAdapter.acceptedKey` | src/adapters/suppliers/simulated.ts:27-29 | method | 2 | yes | 2 / 0 | 0 |
+| `SimulatedSupplierAdapter.requestQuote` | src/adapters/suppliers/simulated.ts:31-62 | method | 1 | yes | 1 / 5 | 0 |
+| `SimulatedSupplierAdapter.submitOrder` | src/adapters/suppliers/simulated.ts:65-80 | method | 1 | yes | 1 / 6 | 1 |
+| `SimulatedSupplierAdapter.lookupOrder` | src/adapters/suppliers/simulated.ts:83-87 | method | 1 | yes | 0 / 3 | 1 |
+| `SimulatedSupplierAdapter.generateDeliveryReceipt` | src/adapters/suppliers/simulated.ts:89-99 | method | 3 | yes | 1 / 5 | 0 |
+| `SimulatedSupplierAdapter.generateBill` | src/adapters/suppliers/simulated.ts:101-114 | method | 5 | yes | 1 / 6 | 0 |
+| `NotificationEmitter` | src/adapters/web2/notifications.ts:4-32 | class | 0 | yes | 1 / 0 | 0 |
+| `NotificationEmitter.send` | src/adapters/web2/notifications.ts:7-20 | method | 1 | yes | 1 / 0 | 1 |
+| `NotificationEmitter.getSentNotifications` | src/adapters/web2/notifications.ts:22-27 | method | 1 | yes | 0 / 2 | 0 |
+| `NotificationEmitter.clear` | src/adapters/web2/notifications.ts:29-31 | method | 0 | yes | 0 / 4 | 0 |
+| `WebhookReceiver.constructor` | src/adapters/web2/webhook-receiver.ts:27-29 | constructor | 1 | yes | 2 / 0 | 0 |
+| `WebhookReceiver.secret` | src/adapters/web2/webhook-receiver.ts:31-35 | method | 0 | yes | 2 / 0 | 1 |
+| `WebhookReceiver.computeSignature` | src/adapters/web2/webhook-receiver.ts:38-40 | method | 2 | yes | 0 / 1 | 2 |
+| `WebhookReceiver.verifySignature` | src/adapters/web2/webhook-receiver.ts:43-50 | method | 3 | yes | 0 / 1 | 2 |
+| `WebhookReceiver.processEvent` | src/adapters/web2/webhook-receiver.ts:56-77 | method | 1 | yes | 1 / 1 | 2 |
+
+```mermaid
+flowchart LR
+  subgraph F0["src/adapters/marketBenchmark.ts"]
+    n223["HybridMarketBenchmarkAdapter"]
+    n224["HybridMarketBenchmarkAdapter.fetchBenchmark"]
+  end
+  subgraph F1["src/adapters/socialSurface.ts"]
+    n261["SurfaceAuthorizationError.constructor"]
+    n262["assertSurfaceRoleAuthorized"]
+    n263["verifyAndAuthorizeSurfaceEvent"]
+    n264["upsertSurfaceBinding"]
+    n265["listSurfaceBindings"]
+  end
+  subgraph F2["src/adapters/suppliers/index.ts"]
+    n266["getSupplierAdapter"]
+  end
+  subgraph F3["src/adapters/suppliers/simulated.ts"]
+    n270["SimulatedSupplierAdapter.constructor"]
+    n271["SimulatedSupplierAdapter.acceptedKey"]
+    n272["SimulatedSupplierAdapter.requestQuote"]
+    n273["SimulatedSupplierAdapter.submitOrder"]
+    n274["SimulatedSupplierAdapter.lookupOrder"]
+    n275["SimulatedSupplierAdapter.generateDeliveryReceipt"]
+    n276["SimulatedSupplierAdapter.generateBill"]
+  end
+  subgraph F4["src/adapters/web2/notifications.ts"]
+    n282["NotificationEmitter"]
+    n283["NotificationEmitter.send"]
+    n284["NotificationEmitter.getSentNotifications"]
+    n285["NotificationEmitter.clear"]
+  end
+  subgraph F5["src/adapters/web2/webhook-receiver.ts"]
+    n286["WebhookReceiver.constructor"]
+    n287["WebhookReceiver.secret"]
+    n288["WebhookReceiver.computeSignature"]
+    n289["WebhookReceiver.verifySignature"]
+    n290["WebhookReceiver.processEvent"]
+  end
+  n262 --> n261
+  n263 --> n261
+  n263 --> n262
+  n266 --> n270
+  n273 --> n271
+  n274 --> n271
+  n288 --> n287
+  n289 --> n287
+```
+
+## Persistence (PostgreSQL)
+
+| Function | File:lines | Kind | Params | Exported | Called by (prod / tests) | Calls |
+| --- | --- | --- | --- | --- | --- | --- |
+| `query` | src/db/client.ts:13-18 | function | 2 | yes | 128 / 199 | 0 |
+| `getClient` | src/db/client.ts:20-22 | function | 0 | yes | 0 / 1 | 0 |
+| `withTransaction` | src/db/client.ts:24-39 | function | 1 | yes | 33 / 0 | 0 |
+| `closePool` | src/db/client.ts:41-43 | function | 0 | yes | 2 / 62 | 0 |
+| `runMigrations` | src/db/migrate.ts:24-49 | function | 1 | yes | 2 / 61 | 1 |
+| `isDirectRun` | src/db/migrate.ts:55-57 | function | 2 | yes | 1 / 1 | 0 |
+
+## Policy, Authority & Deterministic Rules
+
+| Function | File:lines | Kind | Params | Exported | Called by (prod / tests) | Calls |
+| --- | --- | --- | --- | --- | --- | --- |
+| `evaluateThreeWayMatch` | src/accounting/three-way-match.ts:19-100 | function | 3 | yes | 1 / 1 | 0 |
+| `evaluateWithJevSystemOne` | src/domain/jevScorer.ts:52-244 | function | 1 | yes | 1 / 1 | 0 |
+| `classifyOperation` | src/policy/effect-classifier.ts:45-54 | function | 1 | yes | 2 / 2 | 0 |
+| `isEffectPermitted` | src/policy/effect-classifier.ts:59-64 | function | 2 | yes | 1 / 0 | 0 |
+| `PolicyEngine` | src/policy/engine.ts:14-60 | class | 0 | yes | 3 / 1 | 0 |
+| `PolicyEngine.evaluate` | src/policy/engine.ts:15-59 | method | 1 | yes | 3 / 1 | 2 |
+
+```mermaid
+flowchart LR
+  subgraph F0["src/accounting/three-way-match.ts"]
+    n182["evaluateThreeWayMatch"]
+  end
+  subgraph F1["src/domain/jevScorer.ts"]
+    n425["evaluateWithJevSystemOne"]
+  end
+  subgraph F2["src/policy/effect-classifier.ts"]
+    n517["classifyOperation"]
+    n518["isEffectPermitted"]
+  end
+  subgraph F3["src/policy/engine.ts"]
+    n519["PolicyEngine"]
+    n520["PolicyEngine.evaluate"]
+  end
+  n520 --> n517
+  n520 --> n518
+```
+
+## Server, API & Entry Points
+
+| Function | File:lines | Kind | Params | Exported | Called by (prod / tests) | Calls |
+| --- | --- | --- | --- | --- | --- | --- |
+| `optionalSecret` | src/config/env.ts:9-14 | function | 1 | no | 1 / 0 | 0 |
+| `credentialKeyBytes` | src/config/env.ts:20-24 | function | 1 | yes | 2 / 0 | 0 |
+| `optionalCredentialKey` | src/config/env.ts:27-35 | function | 1 | no | 1 / 0 | 1 |
+| `databaseUrlRule` | src/config/env.ts:116-120 | function | 1 | yes | 1 / 1 | 0 |
+| `stopAndExit` | src/index.ts:20-31 | function | 2 | no | 1 / 0 | 0 |
+| `main` | src/index.ts:33-86 | function | 0 | no | 1 / 0 | 6 |
+| `stop` | src/index.ts:66-66 | arrow | 0 | no | 0 / 0 | 0 |
+| `beforeClose` | src/index.ts:71-73 | arrow | 0 | no | 0 / 0 | 1 |
+| `parseDecisionBody` | src/server/app.ts:151-158 | function | 2 | no | 2 / 0 | 0 |
+| `sendApprovalError` | src/server/app.ts:161-171 | function | 2 | no | 4 / 0 | 1 |
+| `sendCancelError` | src/server/app.ts:174-185 | function | 2 | no | 1 / 0 | 0 |
+| `sendFulfilmentError` | src/server/app.ts:188-197 | function | 2 | no | 8 / 0 | 0 |
+| `sendMenuError` | src/server/app.ts:203-219 | function | 2 | no | 10 / 0 | 0 |
+| `parseCorsOrigins` | src/server/app.ts:224-229 | function | 1 | yes | 1 / 0 | 0 |
+| `jsonSafe` | src/server/app.ts:235-237 | function | 1 | no | 6 / 0 | 0 |
+| `decidedByOf` | src/server/app.ts:240-242 | function | 1 | no | 8 / 0 | 0 |
+| `sendAccountError` | src/server/app.ts:245-256 | function | 2 | no | 5 / 0 | 0 |
+| `sendTokenError` | src/server/app.ts:258-264 | function | 2 | no | 3 / 0 | 0 |
+| `credentialActorOf` | src/server/app.ts:267-269 | function | 1 | no | 3 / 0 | 0 |
+| `sendCredentialError` | src/server/app.ts:272-283 | function | 2 | no | 4 / 0 | 1 |
+| `createWithOwnerToken` | src/server/app.ts:295-315 | function | 2 | no | 2 / 0 | 3 |
+| `demoBody` | src/server/app.ts:358-360 | function | 1 | no | 2 / 0 | 0 |
+| `sendDemoDisabled` | src/server/app.ts:362-364 | function | 1 | no | 2 / 0 | 0 |
+| `sendDemoError` | src/server/app.ts:367-374 | function | 2 | no | 2 / 0 | 0 |
+| `requestSignatureValid` | src/server/app.ts:386-394 | function | 2 | no | 2 / 0 | 1 |
+| `createApp` | src/server/app.ts:396-1830 | function | 1 | yes | 1 / 38 | 14 |
+| `verify` | src/server/app.ts:473-475 | arrow | 3 | no | 0 / 0 | 0 |
+| `setHeaders` | src/server/app.ts:490-490 | arrow | 1 | no | 0 / 0 | 0 |
+| `setHeaders` | src/server/app.ts:507-507 | arrow | 1 | no | 0 / 0 | 0 |
+| `setHeaders` | src/server/app.ts:517-519 | arrow | 2 | no | 0 / 0 | 0 |
+| `handleSurfaceEvent` | src/server/app.ts:1630-1783 | function | 3 | no | 1 / 0 | 12 |
+| `handleStandardWebhook` | src/server/app.ts:1785-1812 | function | 2 | no | 1 / 0 | 3 |
+| `isText` | src/server/app.ts:1797-1798 | arrow | 1 | no | 1 / 0 | 0 |
+
+```mermaid
+flowchart LR
+  subgraph F0["src/config/env.ts"]
+    n368["optionalSecret"]
+    n369["credentialKeyBytes"]
+    n370["optionalCredentialKey"]
+    n371["databaseUrlRule"]
+  end
+  subgraph F1["src/index.ts"]
+    n449["stopAndExit"]
+    n450["main"]
+    n451["stop"]
+    n452["beforeClose"]
+  end
+  subgraph F2["src/server/app.ts"]
+    n533["parseDecisionBody"]
+    n534["sendApprovalError"]
+    n535["sendCancelError"]
+    n536["sendFulfilmentError"]
+    n537["sendMenuError"]
+    n538["parseCorsOrigins"]
+    n539["jsonSafe"]
+    n540["decidedByOf"]
+    n541["sendAccountError"]
+    n542["sendTokenError"]
+    n543["credentialActorOf"]
+    n544["sendCredentialError"]
+    n545["createWithOwnerToken"]
+    n546["demoBody"]
+    n547["sendDemoDisabled"]
+    n548["sendDemoError"]
+    n549["requestSignatureValid"]
+    n550["createApp"]
+    n551["verify"]
+    n552["setHeaders"]
+    n553["setHeaders"]
+    n554["setHeaders"]
+    n636["handleSurfaceEvent"]
+    n637["handleStandardWebhook"]
+    n638["isText"]
+  end
+  n370 --> n369
+  n450 --> n550
+  n450 --> n449
+  n550 --> n538
+  n636 --> n549
+  n636 --> n534
+  n637 --> n549
+  n637 --> n638
+```
+
+## Settlement & Contracts
+
+| Function | File:lines | Kind | Params | Exported | Called by (prod / tests) | Calls |
+| --- | --- | --- | --- | --- | --- | --- |
+| `RpcTransportError.constructor` | scripts/verify-live-arc.ts:82-88 | constructor | 2 | yes | 2 / 1 | 0 |
+| `secretsOf` | scripts/verify-live-arc.ts:115-127 | function | 1 | yes | 2 / 0 | 0 |
+| `scrubber` | scripts/verify-live-arc.ts:130-133 | function | 1 | yes | 1 / 0 | 2 |
+| `revertSelectorOf` | scripts/verify-live-arc.ts:139-144 | function | 1 | yes | 1 / 1 | 0 |
+| `firstLine` | scripts/verify-live-arc.ts:146-148 | function | 1 | no | 2 / 0 | 0 |
+| `isHex` | scripts/verify-live-arc.ts:150-152 | function | 1 | no | 1 / 0 | 0 |
+| `gate` | scripts/verify-live-arc.ts:154-156 | function | 3 | no | 5 / 0 | 0 |
+| `rpcBlocked` | scripts/verify-live-arc.ts:167-180 | function | 2 | no | 1 / 0 | 1 |
+| `castReadOutcome` | scripts/verify-live-arc.ts:183-200 | function | 3 | no | 1 / 0 | 2 |
+| `castRevertGate` | scripts/verify-live-arc.ts:206-227 | function | 5 | no | 1 / 0 | 3 |
+| `runLiveArcVerification` | scripts/verify-live-arc.ts:230-265 | function | 1 | yes | 1 / 1 | 3 |
+| `evaluateGates` | scripts/verify-live-arc.ts:267-368 | function | 1 | no | 1 / 0 | 7 |
+| `rpc` | scripts/verify-live-arc.ts:269-279 | arrow | 2 | no | 1 / 0 | 1 |
+| `cast` | scripts/verify-live-arc.ts:280-280 | arrow | 1 | no | 1 / 0 | 0 |
+| `execCast` | scripts/verify-live-arc.ts:371-398 | arrow | 1 | yes | 0 / 0 | 0 |
+| `fetchRpc` | scripts/verify-live-arc.ts:401-420 | arrow | 1 | yes | 0 / 0 | 1 |
+| `defaultMainDeps` | scripts/verify-live-arc.ts:429-442 | function | 0 | yes | 0 / 0 | 0 |
+| `now` | scripts/verify-live-arc.ts:434-434 | arrow | 0 | no | 0 / 0 | 0 |
+| `log` | scripts/verify-live-arc.ts:435-435 | arrow | 1 | no | 0 / 0 | 0 |
+| `writeNewFile` | scripts/verify-live-arc.ts:436-436 | arrow | 2 | no | 0 / 0 | 0 |
+| `fileExists` | scripts/verify-live-arc.ts:437-440 | arrow | 1 | no | 0 / 0 | 0 |
+| `main` | scripts/verify-live-arc.ts:448-480 | function | 2 | yes | 1 / 1 | 1 |
+| `defaultExec` | src/adapters/circleAgentStack.ts:70-73 | arrow | 3 | no | 0 / 0 | 0 |
+| `requiresOwnerApprovalGate` | src/adapters/circleAgentStack.ts:75-78 | function | 1 | yes | 0 / 1 | 0 |
+| `isFlagEnabled` | src/adapters/circleAgentStack.ts:83-86 | function | 1 | yes | 1 / 1 | 0 |
+| `redactUrls` | src/adapters/circleAgentStack.ts:88-90 | function | 1 | no | 2 / 0 | 0 |
+| `errorMessage` | src/adapters/circleAgentStack.ts:92-94 | function | 1 | no | 3 / 0 | 0 |
+| `textOf` | src/adapters/circleAgentStack.ts:96-100 | function | 1 | no | 1 / 0 | 0 |
+| `errorText` | src/adapters/circleAgentStack.ts:103-112 | function | 1 | no | 1 / 0 | 2 |
+| `wasKilledOrTimedOut` | src/adapters/circleAgentStack.ts:115-119 | function | 1 | no | 1 / 0 | 0 |
+| `classifyLiveFailure` | src/adapters/circleAgentStack.ts:121-124 | function | 1 | no | 1 / 0 | 2 |
+| `parseWhitelisted` | src/adapters/circleAgentStack.ts:126-134 | function | 1 | no | 1 / 0 | 0 |
+| `parseTxHash` | src/adapters/circleAgentStack.ts:137-146 | function | 1 | no | 1 / 0 | 0 |
+| `CircleAgentStackAdapter.constructor` | src/adapters/circleAgentStack.ts:153-157 | constructor | 2 | yes | 1 / 2 | 0 |
+| `CircleAgentStackAdapter.isLive` | src/adapters/circleAgentStack.ts:160-162 | method | 0 | yes | 2 / 0 | 1 |
+| `CircleAgentStackAdapter.queryVendorWhitelistStatus` | src/adapters/circleAgentStack.ts:167-209 | method | 1 | yes | 1 / 2 | 4 |
+| `CircleAgentStackAdapter.executeBindSettlement` | src/adapters/circleAgentStack.ts:215-276 | method | 1 | yes | 1 / 2 | 5 |
+| `revertDataOf` | src/adapters/settlement/arc-l1.ts:135-143 | function | 1 | no | 1 / 0 | 0 |
+| `decodeRevert` | src/adapters/settlement/arc-l1.ts:145-152 | function | 1 | no | 1 / 0 | 0 |
+| `deployBlockFromConfig` | src/adapters/settlement/arc-l1.ts:154-156 | function | 0 | no | 1 / 0 | 0 |
+| `ArcL1SettlementAdapter.constructor` | src/adapters/settlement/arc-l1.ts:180-196 | constructor | 1 | yes | 1 / 6 | 1 |
+| `ArcL1SettlementAdapter.getBalance` | src/adapters/settlement/arc-l1.ts:198-212 | method | 1 | yes | 1 / 2 | 0 |
+| `ArcL1SettlementAdapter.transferUSDC` | src/adapters/settlement/arc-l1.ts:218-258 | method | 1 | yes | 1 / 4 | 6 |
+| `ArcL1SettlementAdapter.confirm` | src/adapters/settlement/arc-l1.ts:265-288 | method | 1 | yes | 1 / 2 | 6 |
+| `ArcL1SettlementAdapter.findTransfer` | src/adapters/settlement/arc-l1.ts:299-307 | method | 1 | yes | 0 / 2 | 4 |
+| `ArcL1SettlementAdapter.depositEscrow` | src/adapters/settlement/arc-l1.ts:309-311 | method | 2 | yes | 0 / 2 | 1 |
+| `ArcL1SettlementAdapter.releaseEscrow` | src/adapters/settlement/arc-l1.ts:313-315 | method | 2 | yes | 0 / 2 | 1 |
+| `ArcL1SettlementAdapter.#result` | src/adapters/settlement/arc-l1.ts:317-328 | method | 3 | yes | 4 / 0 | 0 |
+| `ArcL1SettlementAdapter.#secrets` | src/adapters/settlement/arc-l1.ts:331-333 | method | 0 | yes | 4 / 0 | 0 |
+| `ArcL1SettlementAdapter.#classifyFailure` | src/adapters/settlement/arc-l1.ts:339-355 | method | 4 | yes | 1 / 0 | 7 |
+| `ArcL1SettlementAdapter.#contractAddress` | src/adapters/settlement/arc-l1.ts:357-363 | method | 0 | yes | 2 / 0 | 1 |
+| `ArcL1SettlementAdapter.#requireSettings` | src/adapters/settlement/arc-l1.ts:366-385 | method | 0 | yes | 1 / 0 | 1 |
+| `ArcL1SettlementAdapter.#assertChain` | src/adapters/settlement/arc-l1.ts:388-398 | method | 0 | yes | 1 / 0 | 3 |
+| `ArcL1SettlementAdapter.#settlementEvent` | src/adapters/settlement/arc-l1.ts:400-404 | method | 0 | yes | 1 / 0 | 0 |
+| `ArcL1SettlementAdapter.#findSettlement` | src/adapters/settlement/arc-l1.ts:410-428 | method | 2 | yes | 2 / 0 | 3 |
+| `ArcL1SettlementAdapter.#pollReceipt` | src/adapters/settlement/arc-l1.ts:430-443 | method | 1 | yes | 1 / 0 | 0 |
+| `getSettlementAdapter` | src/adapters/settlement/index.ts:14-27 | function | 1 | yes | 3 / 0 | 1 |
+| `LocalSettlementSimulator.constructor` | src/adapters/settlement/local-sim.ts:24-27 | constructor | 0 | yes | 1 / 1 | 0 |
+| `LocalSettlementSimulator.getBalance` | src/adapters/settlement/local-sim.ts:29-31 | method | 1 | yes | 3 / 1 | 0 |
+| `LocalSettlementSimulator.transferUSDC` | src/adapters/settlement/local-sim.ts:33-56 | method | 1 | yes | 1 / 1 | 2 |
+| `LocalSettlementSimulator.findTransfer` | src/adapters/settlement/local-sim.ts:59-61 | method | 1 | yes | 0 / 1 | 0 |
+| `LocalSettlementSimulator.confirm` | src/adapters/settlement/local-sim.ts:63-66 | method | 1 | yes | 1 / 1 | 1 |
+| `LocalSettlementSimulator.depositEscrow` | src/adapters/settlement/local-sim.ts:68-83 | method | 2 | yes | 0 / 0 | 2 |
+| `LocalSettlementSimulator.releaseEscrow` | src/adapters/settlement/local-sim.ts:85-100 | method | 2 | yes | 0 / 0 | 1 |
+| `LocalSettlementSimulator.submitted` | src/adapters/settlement/local-sim.ts:102-110 | method | 0 | yes | 3 / 0 | 0 |
+
+```mermaid
+flowchart LR
+  subgraph F0["scripts/verify-live-arc.ts"]
+    n50["RpcTransportError.constructor"]
+    n51["secretsOf"]
+    n52["scrubber"]
+    n53["revertSelectorOf"]
+    n54["firstLine"]
+    n55["isHex"]
+    n56["gate"]
+    n57["rpcBlocked"]
+    n58["castReadOutcome"]
+    n59["castRevertGate"]
+    n60["runLiveArcVerification"]
+    n61["evaluateGates"]
+    n62["rpc"]
+    n63["cast"]
+    n64["execCast"]
+    n65["fetchRpc"]
+    n66["defaultMainDeps"]
+    n67["now"]
+    n68["log"]
+    n69["writeNewFile"]
+    n70["fileExists"]
+    n71["main"]
+  end
+  subgraph F1["src/adapters/circleAgentStack.ts"]
+    n208["defaultExec"]
+    n209["requiresOwnerApprovalGate"]
+    n210["isFlagEnabled"]
+    n211["redactUrls"]
+    n212["errorMessage"]
+    n213["textOf"]
+    n214["errorText"]
+    n215["wasKilledOrTimedOut"]
+    n216["classifyLiveFailure"]
+    n217["parseWhitelisted"]
+    n218["parseTxHash"]
+    n219["CircleAgentStackAdapter.constructor"]
+    n220["CircleAgentStackAdapter.isLive"]
+    n221["CircleAgentStackAdapter.queryVendorWhitelistStatus"]
+    n222["CircleAgentStackAdapter.executeBindSettlement"]
+  end
+  subgraph F2["src/adapters/settlement/arc-l1.ts"]
+    n225["revertDataOf"]
+    n226["decodeRevert"]
+    n227["deployBlockFromConfig"]
+    n228["ArcL1SettlementAdapter.constructor"]
+    n229["ArcL1SettlementAdapter.getBalance"]
+    n230["ArcL1SettlementAdapter.transferUSDC"]
+    n231["ArcL1SettlementAdapter.confirm"]
+    n232["ArcL1SettlementAdapter.findTransfer"]
+    n233["ArcL1SettlementAdapter.depositEscrow"]
+    n234["ArcL1SettlementAdapter.releaseEscrow"]
+    n235["ArcL1SettlementAdapter.#result"]
+    n236["ArcL1SettlementAdapter.#secrets"]
+    n237["ArcL1SettlementAdapter.#classifyFailure"]
+    n238["ArcL1SettlementAdapter.#contractAddress"]
+    n239["ArcL1SettlementAdapter.#requireSettings"]
+    n240["ArcL1SettlementAdapter.#assertChain"]
+    n241["ArcL1SettlementAdapter.#settlementEvent"]
+    n242["ArcL1SettlementAdapter.#findSettlement"]
+    n243["ArcL1SettlementAdapter.#pollReceipt"]
+  end
+  subgraph F3["src/adapters/settlement/index.ts"]
+    n252["getSettlementAdapter"]
+  end
+  subgraph F4["src/adapters/settlement/local-sim.ts"]
+    n253["LocalSettlementSimulator.constructor"]
+    n254["LocalSettlementSimulator.getBalance"]
+    n255["LocalSettlementSimulator.transferUSDC"]
+    n256["LocalSettlementSimulator.findTransfer"]
+    n257["LocalSettlementSimulator.confirm"]
+    n258["LocalSettlementSimulator.depositEscrow"]
+    n259["LocalSettlementSimulator.releaseEscrow"]
+    n260["LocalSettlementSimulator.submitted"]
+  end
+  n52 --> n51
+  n57 --> n56
+  n58 --> n56
+  n58 --> n54
+  n59 --> n56
+  n59 --> n54
+  n59 --> n53
+  n60 --> n52
+  n60 --> n56
+  n60 --> n61
+  n61 --> n62
+  n61 --> n57
+  n61 --> n56
+  n61 --> n55
+  n61 --> n63
+  n61 --> n58
+  n61 --> n59
+  n62 --> n50
+  n65 --> n50
+  n71 --> n60
+  n214 --> n212
+  n214 --> n213
+  n216 --> n215
+  n216 --> n214
+  n220 --> n210
+  n221 --> n220
+  n221 --> n217
+  n221 --> n211
+  n221 --> n212
+  n222 --> n220
+  n222 --> n211
+  n222 --> n212
+  n222 --> n216
+  n222 --> n218
+  n228 --> n227
+  n230 --> n239
+  n230 --> n240
+  n230 --> n237
+  n230 --> n235
+  n231 --> n238
+  n231 --> n243
+  n231 --> n235
+  n231 --> n236
+  n232 --> n238
+  n232 --> n242
+  n232 --> n235
+  n237 --> n225
+  n237 --> n236
+  n237 --> n226
+  n237 --> n242
+  n237 --> n235
+  n240 --> n236
+  n242 --> n241
+  n242 --> n236
+  n252 --> n228
+  n255 --> n254
+  n255 --> n260
+  n258 --> n254
+  n258 --> n260
+  n259 --> n260
+```
+
+## Templates & Studio
+
+| Function | File:lines | Kind | Params | Exported | Called by (prod / tests) | Calls |
+| --- | --- | --- | --- | --- | --- | --- |
+| `parseDollarToCents` | src/studio/documentsAndAccounting.ts:34-41 | function | 1 | no | 1 / 0 | 1 |
+| `boundedCents` | src/studio/documentsAndAccounting.ts:44-46 | function | 1 | no | 2 / 0 | 0 |
+| `extractDocumentDraft` | src/studio/documentsAndAccounting.ts:52-232 | function | 3 | yes | 1 / 1 | 5 |
+| `confirmStagedDocument` | src/studio/documentsAndAccounting.ts:239-487 | function | 4 | yes | 1 / 2 | 4 |
+| `settlementFor` | src/studio/documentsAndAccounting.ts:432-432 | arrow | 1 | no | 0 / 0 | 1 |
+| `loadStoredEvidence` | src/studio/documentsAndAccounting.ts:436-460 | arrow | 1 | no | 0 / 0 | 1 |
+| `listStagedDocuments` | src/studio/documentsAndAccounting.ts:489-495 | function | 1 | yes | 1 / 0 | 1 |
+| `backfillReconciledJournalEntries` | src/studio/documentsAndAccounting.ts:517-563 | function | 2 | yes | 1 / 0 | 2 |
+| `getWorkspaceAccountingLedger` | src/studio/documentsAndAccounting.ts:566-572 | function | 1 | yes | 1 / 0 | 1 |
+| `formatLedgerAsCsv` | src/studio/documentsAndAccounting.ts:574-609 | function | 1 | yes | 1 / 0 | 0 |
+| `ForbiddenCapabilityError.constructor` | src/studio/onboarding.ts:32-35 | constructor | 1 | yes | 1 / 0 | 0 |
+| `assertSafeAgentTools` | src/studio/onboarding.ts:116-130 | function | 1 | yes | 1 / 0 | 1 |
+| `getTemplateBlueprint` | src/studio/onboarding.ts:135-175 | function | 1 | yes | 1 / 0 | 1 |
+| `onboardBlankWorkspace` | src/studio/onboarding.ts:181-328 | function | 2 | yes | 1 / 0 | 5 |
+| `upsertAgentRole` | src/studio/onboarding.ts:333-406 | function | 3 | yes | 1 / 0 | 5 |
+| `syncWorkspaceDerivedTemplateFiles` | src/studio/onboarding.ts:412-496 | function | 1 | yes | 3 / 0 | 2 |
+| `getTemplate` | src/templates/registry.ts:12-19 | function | 1 | yes | 2 / 1 | 1 |
+| `own` | src/templates/registry.ts:14-15 | arrow | 1 | no | 1 / 0 | 0 |
+| `listTemplates` | src/templates/registry.ts:21-23 | function | 0 | yes | 1 / 1 | 0 |
+| `provisionWorkspace` | src/templates/registry.ts:46-191 | function | 4 | yes | 4 / 52 | 3 |
+| `derivedArtifactsRoot` | src/utils/artifacts.ts:12-20 | function | 0 | yes | 2 / 0 | 0 |
+| `workflowsArtifactsDir` | src/utils/artifacts.ts:22-24 | function | 0 | yes | 2 / 0 | 1 |
+| `templatesArtifactsDir` | src/utils/artifacts.ts:26-28 | function | 0 | yes | 2 / 0 | 1 |
+
+```mermaid
+flowchart LR
+  subgraph F0["src/studio/documentsAndAccounting.ts"]
+    n675["parseDollarToCents"]
+    n676["boundedCents"]
+    n677["extractDocumentDraft"]
+    n678["confirmStagedDocument"]
+    n679["settlementFor"]
+    n680["loadStoredEvidence"]
+    n681["listStagedDocuments"]
+    n682["backfillReconciledJournalEntries"]
+    n683["getWorkspaceAccountingLedger"]
+    n684["formatLedgerAsCsv"]
+  end
+  subgraph F1["src/studio/onboarding.ts"]
+    n685["ForbiddenCapabilityError.constructor"]
+    n686["assertSafeAgentTools"]
+    n687["getTemplateBlueprint"]
+    n688["onboardBlankWorkspace"]
+    n689["upsertAgentRole"]
+    n690["syncWorkspaceDerivedTemplateFiles"]
+  end
+  subgraph F2["src/templates/registry.ts"]
+    n695["getTemplate"]
+    n696["own"]
+    n697["listTemplates"]
+    n698["provisionWorkspace"]
+  end
+  subgraph F3["src/utils/artifacts.ts"]
+    n699["derivedArtifactsRoot"]
+    n700["workflowsArtifactsDir"]
+    n701["templatesArtifactsDir"]
+  end
+  n675 --> n676
+  n677 --> n675
+  n677 --> n676
+  n686 --> n685
+  n687 --> n695
+  n688 --> n690
+  n689 --> n686
+  n689 --> n690
+  n690 --> n701
+  n695 --> n696
+  n698 --> n695
+  n700 --> n699
+  n701 --> n699
+```
+
+## Workflow Orchestration & Agents
+
+| Function | File:lines | Kind | Params | Exported | Called by (prod / tests) | Calls |
+| --- | --- | --- | --- | --- | --- | --- |
+| `InvariantDriftError.constructor` | src/agents/antiDriftWriter.ts:33-36 | constructor | 1 | yes | 1 / 0 | 0 |
+| `assertNoSpecDrift` | src/agents/antiDriftWriter.ts:42-78 | function | 1 | yes | 1 / 1 | 1 |
+| `writeWorkflowAntiDriftFiles` | src/agents/antiDriftWriter.ts:91-241 | function | 2 | yes | 2 / 1 | 2 |
+| `createBindCircleAgent` | src/agents/bindCircleDeepAgent.ts:15-108 | function | 1 | yes | 0 / 0 | 5 |
+| `listAvailableTemplates` | src/agents/bindTemplateAgent.ts:26-44 | function | 0 | yes | 0 / 1 | 0 |
+| `resolveTemplateDir` | src/agents/bindTemplateAgent.ts:49-60 | function | 1 | yes | 2 / 1 | 0 |
+| `whitelistLabel` | src/agents/bindTemplateAgent.ts:106-110 | function | 1 | no | 1 / 0 | 0 |
+| `generateVerifiableDecisionRecord` | src/agents/bindTemplateAgent.ts:114-274 | function | 1 | yes | 1 / 2 | 5 |
+| `createReplenishmentTools` | src/agents/replenishmentTools.ts:28-694 | function | 1 | yes | 1 / 8 | 18 |
+| `canonicalStringify` | src/utils/idempotency.ts:7-16 | function | 1 | yes | 2 / 0 | 0 |
+| `generateIdempotencyKey` | src/utils/idempotency.ts:21-32 | function | 3 | yes | 1 / 3 | 1 |
+| `safeJsonStringify` | src/workflows/engine.ts:10-14 | function | 1 | no | 4 / 0 | 0 |
+| `errorMessage` | src/workflows/engine.ts:22-22 | arrow | 0 | no | 0 / 0 | 0 |
+| `errorMessage` | src/workflows/engine.ts:25-25 | arrow | 1 | no | 0 / 0 | 0 |
+| `errorMessage` | src/workflows/engine.ts:29-29 | arrow | 1 | no | 0 / 0 | 0 |
+| `ApprovalDecisionError.constructor` | src/workflows/engine.ts:40-45 | constructor | 3 | yes | 3 / 0 | 0 |
+| `WorkflowEngine` | src/workflows/engine.ts:48-302 | class | 0 | yes | 7 / 16 | 0 |
+| `WorkflowEngine.mapRow` | src/workflows/engine.ts:49-62 | method | 1 | yes | 3 / 0 | 0 |
+| `WorkflowEngine.createWorkflow` | src/workflows/engine.ts:68-85 | method | 5 | yes | 1 / 18 | 3 |
+| `WorkflowEngine.getWorkflow` | src/workflows/engine.ts:90-96 | method | 1 | yes | 5 / 8 | 2 |
+| `WorkflowEngine.transition` | src/workflows/engine.ts:101-127 | method | 2 | yes | 8 / 13 | 4 |
+| `WorkflowEngine.recordAudit` | src/workflows/engine.ts:132-169 | method | 10 | yes | 15 / 1 | 5 |
+| `WorkflowEngine.createApproval` | src/workflows/engine.ts:174-191 | method | 8 | yes | 1 / 10 | 1 |
+| `WorkflowEngine.resolveApproval` | src/workflows/engine.ts:201-239 | method | 5 | yes | 2 / 1 | 3 |
+| `WorkflowEngine.expireApprovals` | src/workflows/engine.ts:249-278 | method | 1 | yes | 3 / 1 | 1 |
+| `WorkflowEngine.explainUnresolvedApproval` | src/workflows/engine.ts:284-301 | method | 1 | yes | 1 / 0 | 3 |
+| `AgentsPausedError.constructor` | src/workflows/procurement.ts:48-53 | constructor | 0 | yes | 1 / 0 | 0 |
+| `commitmentClaims` | src/workflows/procurement.ts:71-81 | function | 3 | no | 1 / 0 | 0 |
+| `ProcurementWorkflowRunner.constructor` | src/workflows/procurement.ts:91-96 | constructor | 1 | yes | 6 / 21 | 2 |
+| `ProcurementWorkflowRunner.startReplenishment` | src/workflows/procurement.ts:101-387 | method | 4 | yes | 5 / 20 | 14 |
+| `ProcurementWorkflowRunner.approveAndSubmit` | src/workflows/procurement.ts:392-467 | method | 3 | yes | 2 / 4 | 9 |
+| `ProcurementWorkflowRunner.expireApprovals` | src/workflows/procurement.ts:472-474 | method | 1 | yes | 2 / 0 | 1 |
+| `ProcurementWorkflowRunner.declineApproval` | src/workflows/procurement.ts:480-510 | method | 5 | yes | 4 / 1 | 5 |
+| `ProcurementWorkflowRunner.requestQuote` | src/workflows/procurement.ts:517-575 | method | 1 | yes | 1 / 1 | 7 |
+| `ProcurementWorkflowRunner.resumeOrderSubmission` | src/workflows/procurement.ts:585-775 | method | 1 | yes | 3 / 1 | 17 |
+| `externalRef` | src/workflows/procurement.ts:691-691 | arrow | 1 | no | 0 / 0 | 0 |
+| `ProcurementWorkflowRunner.loadOwnOrder` | src/workflows/procurement.ts:778-785 | method | 2 | yes | 1 / 0 | 1 |
+| `ProcurementWorkflowRunner.failReservation` | src/workflows/procurement.ts:788-813 | method | 3 | yes | 1 / 0 | 3 |
+| `ProcurementWorkflowRunner.fulfillAndReconcile` | src/workflows/procurement.ts:820-826 | method | 2 | yes | 1 / 10 | 3 |
+| `ProcurementWorkflowRunner.confirmSettlement` | src/workflows/procurement.ts:832-835 | method | 2 | yes | 2 / 2 | 2 |
+| `ProcurementWorkflowRunner.assertOrderInWorkspace` | src/workflows/procurement.ts:838-843 | method | 2 | yes | 2 / 0 | 2 |
+| `ProcurementWorkflowRunner.storedOrGeneratedEvidence` | src/workflows/procurement.ts:845-930 | method | 1 | yes | 1 / 0 | 5 |
+| `WorkflowCrashRecoveryRunner.constructor` | src/workflows/recovery.ts:34-36 | constructor | 1 | yes | 2 / 3 | 1 |
+| `WorkflowCrashRecoveryRunner.recoverInterruptedWorkflows` | src/workflows/recovery.ts:48-96 | method | 1 | yes | 2 / 3 | 5 |
+| `WorkflowCrashRecoveryRunner.touch` | src/workflows/recovery.ts:99-105 | method | 1 | yes | 1 / 0 | 1 |
+| `WorkflowCrashRecoveryRunner.recoverSubmitted` | src/workflows/recovery.ts:107-141 | method | 2 | yes | 1 / 0 | 3 |
+| `WorkflowCrashRecoveryRunner.recoverAuthorized` | src/workflows/recovery.ts:143-187 | method | 2 | yes | 1 / 0 | 6 |
+| `WorkflowCrashRecoveryRunner.resume` | src/workflows/recovery.ts:189-197 | method | 3 | yes | 2 / 0 | 1 |
+
+```mermaid
+flowchart LR
+  subgraph F0["src/agents/antiDriftWriter.ts"]
+    n291["InvariantDriftError.constructor"]
+    n292["assertNoSpecDrift"]
+    n293["writeWorkflowAntiDriftFiles"]
+  end
+  subgraph F1["src/agents/bindCircleDeepAgent.ts"]
+    n294["createBindCircleAgent"]
+  end
+  subgraph F2["src/agents/bindTemplateAgent.ts"]
+    n295["listAvailableTemplates"]
+    n296["resolveTemplateDir"]
+    n297["whitelistLabel"]
+    n298["generateVerifiableDecisionRecord"]
+  end
+  subgraph F3["src/agents/replenishmentTools.ts"]
+    n300["createReplenishmentTools"]
+  end
+  subgraph F4["src/utils/idempotency.ts"]
+    n702["canonicalStringify"]
+    n703["generateIdempotencyKey"]
+  end
+  subgraph F5["src/workflows/engine.ts"]
+    n738["safeJsonStringify"]
+    n739["errorMessage"]
+    n740["errorMessage"]
+    n741["errorMessage"]
+    n742["ApprovalDecisionError.constructor"]
+    n743["WorkflowEngine"]
+    n744["WorkflowEngine.mapRow"]
+    n745["WorkflowEngine.createWorkflow"]
+    n746["WorkflowEngine.getWorkflow"]
+    n747["WorkflowEngine.transition"]
+    n748["WorkflowEngine.recordAudit"]
+    n749["WorkflowEngine.createApproval"]
+    n750["WorkflowEngine.resolveApproval"]
+    n751["WorkflowEngine.expireApprovals"]
+    n752["WorkflowEngine.explainUnresolvedApproval"]
+  end
+  subgraph F6["src/workflows/procurement.ts"]
+    n835["AgentsPausedError.constructor"]
+    n836["commitmentClaims"]
+    n837["ProcurementWorkflowRunner.constructor"]
+    n838["ProcurementWorkflowRunner.startReplenishment"]
+    n839["ProcurementWorkflowRunner.approveAndSubmit"]
+    n840["ProcurementWorkflowRunner.expireApprovals"]
+    n841["ProcurementWorkflowRunner.declineApproval"]
+    n842["ProcurementWorkflowRunner.requestQuote"]
+    n843["ProcurementWorkflowRunner.resumeOrderSubmission"]
+    n844["externalRef"]
+    n845["ProcurementWorkflowRunner.loadOwnOrder"]
+    n846["ProcurementWorkflowRunner.failReservation"]
+    n847["ProcurementWorkflowRunner.fulfillAndReconcile"]
+    n848["ProcurementWorkflowRunner.confirmSettlement"]
+    n849["ProcurementWorkflowRunner.assertOrderInWorkspace"]
+    n850["ProcurementWorkflowRunner.storedOrGeneratedEvidence"]
+  end
+  subgraph F7["src/workflows/recovery.ts"]
+    n851["WorkflowCrashRecoveryRunner.constructor"]
+    n852["WorkflowCrashRecoveryRunner.recoverInterruptedWorkflows"]
+    n853["WorkflowCrashRecoveryRunner.touch"]
+    n854["WorkflowCrashRecoveryRunner.recoverSubmitted"]
+    n855["WorkflowCrashRecoveryRunner.recoverAuthorized"]
+    n856["WorkflowCrashRecoveryRunner.resume"]
+  end
+  n292 --> n291
+  n293 --> n292
+  n298 --> n296
+  n298 --> n297
+  n298 --> n293
+  n300 --> n743
+  n300 --> n748
+  n300 --> n749
+  n300 --> n298
+  n703 --> n702
+  n745 --> n738
+  n745 --> n744
+  n746 --> n744
+  n747 --> n738
+  n747 --> n746
+  n747 --> n744
+  n748 --> n738
+  n750 --> n738
+  n750 --> n752
+  n752 --> n742
+  n752 --> n751
+  n838 --> n835
+  n838 --> n703
+  n838 --> n745
+  n838 --> n748
+  n838 --> n747
+  n838 --> n842
+  n838 --> n300
+  n838 --> n296
+  n838 --> n746
+  n838 --> n843
+  n839 --> n742
+  n839 --> n746
+  n839 --> n750
+  n839 --> n748
+  n839 --> n843
+  n840 --> n751
+  n841 --> n742
+  n841 --> n750
+  n841 --> n748
+  n843 --> n746
+  n843 --> n747
+  n843 --> n845
+  n843 --> n836
+  n843 --> n846
+  n843 --> n748
+  n846 --> n747
+  n846 --> n748
+  n847 --> n849
+  n847 --> n850
+  n848 --> n849
+  n851 --> n837
+  n852 --> n854
+  n852 --> n855
+  n852 --> n747
+  n852 --> n853
+  n854 --> n747
+  n854 --> n856
+  n855 --> n747
+  n855 --> n748
+  n855 --> n856
+  n856 --> n843
+```
 
 ## mcp
 
@@ -237,28 +947,6 @@ flowchart LR
 | `generateSdkFiles` | scripts/generate-sdk.ts:73-83 | function | 1 | yes | 1 / 1 | 2 |
 | `writeSdkFiles` | scripts/generate-sdk.ts:86-91 | function | 2 | yes | 1 / 1 | 0 |
 | `main` | scripts/generate-sdk.ts:93-97 | function | 0 | no | 1 / 0 | 2 |
-| `RpcTransportError.constructor` | scripts/verify-live-arc.ts:82-88 | constructor | 2 | yes | 2 / 1 | 0 |
-| `secretsOf` | scripts/verify-live-arc.ts:115-127 | function | 1 | yes | 2 / 0 | 0 |
-| `scrubber` | scripts/verify-live-arc.ts:130-133 | function | 1 | yes | 1 / 0 | 2 |
-| `revertSelectorOf` | scripts/verify-live-arc.ts:139-144 | function | 1 | yes | 1 / 1 | 0 |
-| `firstLine` | scripts/verify-live-arc.ts:146-148 | function | 1 | no | 2 / 0 | 0 |
-| `isHex` | scripts/verify-live-arc.ts:150-152 | function | 1 | no | 1 / 0 | 0 |
-| `gate` | scripts/verify-live-arc.ts:154-156 | function | 3 | no | 5 / 0 | 0 |
-| `rpcBlocked` | scripts/verify-live-arc.ts:167-180 | function | 2 | no | 1 / 0 | 1 |
-| `castReadOutcome` | scripts/verify-live-arc.ts:183-200 | function | 3 | no | 1 / 0 | 2 |
-| `castRevertGate` | scripts/verify-live-arc.ts:206-227 | function | 5 | no | 1 / 0 | 3 |
-| `runLiveArcVerification` | scripts/verify-live-arc.ts:230-265 | function | 1 | yes | 1 / 1 | 3 |
-| `evaluateGates` | scripts/verify-live-arc.ts:267-368 | function | 1 | no | 1 / 0 | 7 |
-| `rpc` | scripts/verify-live-arc.ts:269-279 | arrow | 2 | no | 1 / 0 | 1 |
-| `cast` | scripts/verify-live-arc.ts:280-280 | arrow | 1 | no | 1 / 0 | 0 |
-| `execCast` | scripts/verify-live-arc.ts:371-398 | arrow | 1 | yes | 0 / 0 | 0 |
-| `fetchRpc` | scripts/verify-live-arc.ts:401-420 | arrow | 1 | yes | 0 / 0 | 1 |
-| `defaultMainDeps` | scripts/verify-live-arc.ts:429-442 | function | 0 | yes | 0 / 0 | 0 |
-| `now` | scripts/verify-live-arc.ts:434-434 | arrow | 0 | no | 0 / 0 | 0 |
-| `log` | scripts/verify-live-arc.ts:435-435 | arrow | 1 | no | 0 / 0 | 0 |
-| `writeNewFile` | scripts/verify-live-arc.ts:436-436 | arrow | 2 | no | 0 / 0 | 0 |
-| `fileExists` | scripts/verify-live-arc.ts:437-440 | arrow | 1 | no | 0 / 0 | 0 |
-| `main` | scripts/verify-live-arc.ts:448-480 | function | 2 | yes | 1 / 1 | 1 |
 
 ```mermaid
 flowchart LR
@@ -288,30 +976,6 @@ flowchart LR
     n48["writeSdkFiles"]
     n49["main"]
   end
-  subgraph F4["scripts/verify-live-arc.ts"]
-    n50["RpcTransportError.constructor"]
-    n51["secretsOf"]
-    n52["scrubber"]
-    n53["revertSelectorOf"]
-    n54["firstLine"]
-    n55["isHex"]
-    n56["gate"]
-    n57["rpcBlocked"]
-    n58["castReadOutcome"]
-    n59["castRevertGate"]
-    n60["runLiveArcVerification"]
-    n61["evaluateGates"]
-    n62["rpc"]
-    n63["cast"]
-    n64["execCast"]
-    n65["fetchRpc"]
-    n66["defaultMainDeps"]
-    n67["now"]
-    n68["log"]
-    n69["writeNewFile"]
-    n70["fileExists"]
-    n71["main"]
-  end
   n34 --> n32
   n35 --> n33
   n35 --> n34
@@ -326,26 +990,6 @@ flowchart LR
   n47 --> n46
   n49 --> n48
   n49 --> n47
-  n52 --> n51
-  n57 --> n56
-  n58 --> n56
-  n58 --> n54
-  n59 --> n56
-  n59 --> n54
-  n59 --> n53
-  n60 --> n52
-  n60 --> n56
-  n60 --> n61
-  n61 --> n62
-  n61 --> n57
-  n61 --> n56
-  n61 --> n55
-  n61 --> n63
-  n61 --> n58
-  n61 --> n59
-  n62 --> n50
-  n65 --> n50
-  n71 --> n60
 ```
 
 ## sdk
@@ -692,7 +1336,6 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- | --- |
 | `JournalConflictError.constructor` | src/accounting/journal.ts:8-11 | constructor | 1 | yes | 1 / 0 | 0 |
 | `recordIdempotentJournalEntry` | src/accounting/journal.ts:20-59 | function | 1 | yes | 2 / 1 | 2 |
-| `evaluateThreeWayMatch` | src/accounting/three-way-match.ts:19-100 | function | 3 | yes | 1 / 1 | 0 |
 | `b64urlToBuffer` | src/accounts/privy.ts:31-34 | function | 1 | no | 1 / 0 | 0 |
 | `parseJson` | src/accounts/privy.ts:36-43 | function | 1 | no | 1 / 0 | 0 |
 | `parseVerificationKeys` | src/accounts/privy.ts:52-73 | function | 1 | no | 1 / 0 | 0 |
@@ -718,42 +1361,6 @@ flowchart LR
 | `createSession` | src/accounts/sessions.ts:32-47 | function | 3 | yes | 1 / 2 | 3 |
 | `resolveSession` | src/accounts/sessions.ts:50-65 | function | 1 | yes | 1 / 0 | 3 |
 | `revokeSession` | src/accounts/sessions.ts:67-70 | function | 1 | yes | 1 / 1 | 1 |
-| `defaultExec` | src/adapters/circleAgentStack.ts:70-73 | arrow | 3 | no | 0 / 0 | 0 |
-| `requiresOwnerApprovalGate` | src/adapters/circleAgentStack.ts:75-78 | function | 1 | yes | 0 / 1 | 0 |
-| `isFlagEnabled` | src/adapters/circleAgentStack.ts:83-86 | function | 1 | yes | 1 / 1 | 0 |
-| `redactUrls` | src/adapters/circleAgentStack.ts:88-90 | function | 1 | no | 2 / 0 | 0 |
-| `errorMessage` | src/adapters/circleAgentStack.ts:92-94 | function | 1 | no | 3 / 0 | 0 |
-| `textOf` | src/adapters/circleAgentStack.ts:96-100 | function | 1 | no | 1 / 0 | 0 |
-| `errorText` | src/adapters/circleAgentStack.ts:103-112 | function | 1 | no | 1 / 0 | 2 |
-| `wasKilledOrTimedOut` | src/adapters/circleAgentStack.ts:115-119 | function | 1 | no | 1 / 0 | 0 |
-| `classifyLiveFailure` | src/adapters/circleAgentStack.ts:121-124 | function | 1 | no | 1 / 0 | 2 |
-| `parseWhitelisted` | src/adapters/circleAgentStack.ts:126-134 | function | 1 | no | 1 / 0 | 0 |
-| `parseTxHash` | src/adapters/circleAgentStack.ts:137-146 | function | 1 | no | 1 / 0 | 0 |
-| `CircleAgentStackAdapter.constructor` | src/adapters/circleAgentStack.ts:153-157 | constructor | 2 | yes | 1 / 2 | 0 |
-| `CircleAgentStackAdapter.isLive` | src/adapters/circleAgentStack.ts:160-162 | method | 0 | yes | 2 / 0 | 1 |
-| `CircleAgentStackAdapter.queryVendorWhitelistStatus` | src/adapters/circleAgentStack.ts:167-209 | method | 1 | yes | 1 / 2 | 4 |
-| `CircleAgentStackAdapter.executeBindSettlement` | src/adapters/circleAgentStack.ts:215-276 | method | 1 | yes | 1 / 2 | 5 |
-| `HybridMarketBenchmarkAdapter` | src/adapters/marketBenchmark.ts:19-119 | class | 0 | yes | 2 / 2 | 0 |
-| `HybridMarketBenchmarkAdapter.fetchBenchmark` | src/adapters/marketBenchmark.ts:24-118 | method | 3 | yes | 2 / 2 | 0 |
-| `revertDataOf` | src/adapters/settlement/arc-l1.ts:135-143 | function | 1 | no | 1 / 0 | 0 |
-| `decodeRevert` | src/adapters/settlement/arc-l1.ts:145-152 | function | 1 | no | 1 / 0 | 0 |
-| `deployBlockFromConfig` | src/adapters/settlement/arc-l1.ts:154-156 | function | 0 | no | 1 / 0 | 0 |
-| `ArcL1SettlementAdapter.constructor` | src/adapters/settlement/arc-l1.ts:180-196 | constructor | 1 | yes | 1 / 6 | 1 |
-| `ArcL1SettlementAdapter.getBalance` | src/adapters/settlement/arc-l1.ts:198-212 | method | 1 | yes | 1 / 2 | 0 |
-| `ArcL1SettlementAdapter.transferUSDC` | src/adapters/settlement/arc-l1.ts:218-258 | method | 1 | yes | 1 / 4 | 6 |
-| `ArcL1SettlementAdapter.confirm` | src/adapters/settlement/arc-l1.ts:265-288 | method | 1 | yes | 1 / 2 | 6 |
-| `ArcL1SettlementAdapter.findTransfer` | src/adapters/settlement/arc-l1.ts:299-307 | method | 1 | yes | 0 / 2 | 4 |
-| `ArcL1SettlementAdapter.depositEscrow` | src/adapters/settlement/arc-l1.ts:309-311 | method | 2 | yes | 0 / 2 | 1 |
-| `ArcL1SettlementAdapter.releaseEscrow` | src/adapters/settlement/arc-l1.ts:313-315 | method | 2 | yes | 0 / 2 | 1 |
-| `ArcL1SettlementAdapter.#result` | src/adapters/settlement/arc-l1.ts:317-328 | method | 3 | yes | 4 / 0 | 0 |
-| `ArcL1SettlementAdapter.#secrets` | src/adapters/settlement/arc-l1.ts:331-333 | method | 0 | yes | 4 / 0 | 0 |
-| `ArcL1SettlementAdapter.#classifyFailure` | src/adapters/settlement/arc-l1.ts:339-355 | method | 4 | yes | 1 / 0 | 7 |
-| `ArcL1SettlementAdapter.#contractAddress` | src/adapters/settlement/arc-l1.ts:357-363 | method | 0 | yes | 2 / 0 | 1 |
-| `ArcL1SettlementAdapter.#requireSettings` | src/adapters/settlement/arc-l1.ts:366-385 | method | 0 | yes | 1 / 0 | 1 |
-| `ArcL1SettlementAdapter.#assertChain` | src/adapters/settlement/arc-l1.ts:388-398 | method | 0 | yes | 1 / 0 | 3 |
-| `ArcL1SettlementAdapter.#settlementEvent` | src/adapters/settlement/arc-l1.ts:400-404 | method | 0 | yes | 1 / 0 | 0 |
-| `ArcL1SettlementAdapter.#findSettlement` | src/adapters/settlement/arc-l1.ts:410-428 | method | 2 | yes | 2 / 0 | 3 |
-| `ArcL1SettlementAdapter.#pollReceipt` | src/adapters/settlement/arc-l1.ts:430-443 | method | 1 | yes | 1 / 0 | 0 |
 | `SettlementNotConfiguredError.constructor` | src/adapters/settlement/errors.ts:12-16 | constructor | 1 | yes | 2 / 0 | 0 |
 | `SettlementChainMismatchError.constructor` | src/adapters/settlement/errors.ts:24-29 | constructor | 2 | yes | 1 / 0 | 0 |
 | `SettlementPayerMismatchError.constructor` | src/adapters/settlement/errors.ts:34-37 | constructor | 0 | yes | 1 / 0 | 0 |
@@ -762,55 +1369,15 @@ flowchart LR
 | `SettlementTransportError.constructor` | src/adapters/settlement/errors.ts:68-72 | constructor | 2 | yes | 2 / 1 | 0 |
 | `redactSecrets` | src/adapters/settlement/errors.ts:79-81 | function | 2 | yes | 1 / 1 | 2 |
 | `transportErrorFrom` | src/adapters/settlement/errors.ts:84-93 | function | 3 | yes | 4 / 0 | 2 |
-| `getSettlementAdapter` | src/adapters/settlement/index.ts:14-27 | function | 1 | yes | 3 / 0 | 1 |
-| `LocalSettlementSimulator.constructor` | src/adapters/settlement/local-sim.ts:24-27 | constructor | 0 | yes | 1 / 1 | 0 |
-| `LocalSettlementSimulator.getBalance` | src/adapters/settlement/local-sim.ts:29-31 | method | 1 | yes | 3 / 1 | 0 |
-| `LocalSettlementSimulator.transferUSDC` | src/adapters/settlement/local-sim.ts:33-56 | method | 1 | yes | 1 / 1 | 2 |
-| `LocalSettlementSimulator.findTransfer` | src/adapters/settlement/local-sim.ts:59-61 | method | 1 | yes | 0 / 1 | 0 |
-| `LocalSettlementSimulator.confirm` | src/adapters/settlement/local-sim.ts:63-66 | method | 1 | yes | 1 / 1 | 1 |
-| `LocalSettlementSimulator.depositEscrow` | src/adapters/settlement/local-sim.ts:68-83 | method | 2 | yes | 0 / 0 | 2 |
-| `LocalSettlementSimulator.releaseEscrow` | src/adapters/settlement/local-sim.ts:85-100 | method | 2 | yes | 0 / 0 | 1 |
-| `LocalSettlementSimulator.submitted` | src/adapters/settlement/local-sim.ts:102-110 | method | 0 | yes | 3 / 0 | 0 |
-| `SurfaceAuthorizationError.constructor` | src/adapters/socialSurface.ts:75-78 | constructor | 1 | yes | 2 / 0 | 0 |
-| `assertSurfaceRoleAuthorized` | src/adapters/socialSurface.ts:84-107 | function | 2 | yes | 1 / 1 | 1 |
-| `verifyAndAuthorizeSurfaceEvent` | src/adapters/socialSurface.ts:114-136 | function | 1 | yes | 1 / 0 | 3 |
-| `upsertSurfaceBinding` | src/adapters/socialSurface.ts:144-192 | function | 3 | yes | 1 / 4 | 3 |
-| `listSurfaceBindings` | src/adapters/socialSurface.ts:194-200 | function | 1 | yes | 1 / 0 | 1 |
-| `getSupplierAdapter` | src/adapters/suppliers/index.ts:24-34 | function | 1 | yes | 0 / 2 | 1 |
 | `md5Hex` | src/adapters/suppliers/payment-address.ts:4-6 | function | 1 | no | 1 / 0 | 0 |
 | `simulatedPaymentAddress` | src/adapters/suppliers/payment-address.ts:14-16 | function | 1 | yes | 4 / 3 | 1 |
 | `normalizePaymentAddress` | src/adapters/suppliers/payment-address.ts:22-26 | function | 1 | yes | 2 / 1 | 0 |
-| `SimulatedSupplierAdapter.constructor` | src/adapters/suppliers/simulated.ts:20-25 | constructor | 4 | yes | 2 / 7 | 0 |
-| `SimulatedSupplierAdapter.acceptedKey` | src/adapters/suppliers/simulated.ts:27-29 | method | 2 | yes | 2 / 0 | 0 |
-| `SimulatedSupplierAdapter.requestQuote` | src/adapters/suppliers/simulated.ts:31-62 | method | 1 | yes | 1 / 5 | 0 |
-| `SimulatedSupplierAdapter.submitOrder` | src/adapters/suppliers/simulated.ts:65-80 | method | 1 | yes | 1 / 6 | 1 |
-| `SimulatedSupplierAdapter.lookupOrder` | src/adapters/suppliers/simulated.ts:83-87 | method | 1 | yes | 0 / 3 | 1 |
-| `SimulatedSupplierAdapter.generateDeliveryReceipt` | src/adapters/suppliers/simulated.ts:89-99 | method | 3 | yes | 1 / 5 | 0 |
-| `SimulatedSupplierAdapter.generateBill` | src/adapters/suppliers/simulated.ts:101-114 | method | 5 | yes | 1 / 6 | 0 |
 | `SupplierResponseInvalidError.constructor` | src/adapters/suppliers/validate.ts:47-51 | constructor | 1 | yes | 2 / 1 | 0 |
 | `isBoundedAmount` | src/adapters/suppliers/validate.ts:54-56 | function | 1 | no | 1 / 0 | 0 |
 | `isValidDate` | src/adapters/suppliers/validate.ts:58-60 | function | 1 | no | 1 / 0 | 0 |
 | `validateQuoteResponse` | src/adapters/suppliers/validate.ts:67-105 | function | 3 | yes | 1 / 2 | 2 |
 | `validateOrderResponse` | src/adapters/suppliers/validate.ts:111-124 | function | 2 | yes | 1 / 1 | 0 |
-| `NotificationEmitter` | src/adapters/web2/notifications.ts:4-32 | class | 0 | yes | 1 / 0 | 0 |
-| `NotificationEmitter.send` | src/adapters/web2/notifications.ts:7-20 | method | 1 | yes | 1 / 0 | 1 |
-| `NotificationEmitter.getSentNotifications` | src/adapters/web2/notifications.ts:22-27 | method | 1 | yes | 0 / 2 | 0 |
-| `NotificationEmitter.clear` | src/adapters/web2/notifications.ts:29-31 | method | 0 | yes | 0 / 4 | 0 |
-| `WebhookReceiver.constructor` | src/adapters/web2/webhook-receiver.ts:27-29 | constructor | 1 | yes | 2 / 0 | 0 |
-| `WebhookReceiver.secret` | src/adapters/web2/webhook-receiver.ts:31-35 | method | 0 | yes | 2 / 0 | 1 |
-| `WebhookReceiver.computeSignature` | src/adapters/web2/webhook-receiver.ts:38-40 | method | 2 | yes | 0 / 1 | 2 |
-| `WebhookReceiver.verifySignature` | src/adapters/web2/webhook-receiver.ts:43-50 | method | 3 | yes | 0 / 1 | 2 |
-| `WebhookReceiver.processEvent` | src/adapters/web2/webhook-receiver.ts:56-77 | method | 1 | yes | 1 / 1 | 2 |
-| `InvariantDriftError.constructor` | src/agents/antiDriftWriter.ts:33-36 | constructor | 1 | yes | 1 / 0 | 0 |
-| `assertNoSpecDrift` | src/agents/antiDriftWriter.ts:42-78 | function | 1 | yes | 1 / 1 | 1 |
-| `writeWorkflowAntiDriftFiles` | src/agents/antiDriftWriter.ts:91-241 | function | 2 | yes | 2 / 1 | 2 |
-| `createBindCircleAgent` | src/agents/bindCircleDeepAgent.ts:15-108 | function | 1 | yes | 0 / 0 | 5 |
-| `listAvailableTemplates` | src/agents/bindTemplateAgent.ts:26-44 | function | 0 | yes | 0 / 1 | 0 |
-| `resolveTemplateDir` | src/agents/bindTemplateAgent.ts:49-60 | function | 1 | yes | 2 / 1 | 0 |
-| `whitelistLabel` | src/agents/bindTemplateAgent.ts:106-110 | function | 1 | no | 1 / 0 | 0 |
-| `generateVerifiableDecisionRecord` | src/agents/bindTemplateAgent.ts:114-274 | function | 1 | yes | 1 / 2 | 5 |
 | `classifyRequestEvidence` | src/agents/evidence-classification.ts:12-23 | function | 1 | yes | 1 / 1 | 0 |
-| `createReplenishmentTools` | src/agents/replenishmentTools.ts:28-694 | function | 1 | yes | 1 / 8 | 18 |
 | `eventNameOf` | src/api/event-catalogue.ts:72-74 | function | 1 | yes | 1 / 0 | 0 |
 | `positiveInteger` | src/api/event-routes.ts:69-73 | function | 3 | no | 1 / 0 | 0 |
 | `resolveEventsOptions` | src/api/event-routes.ts:76-87 | function | 1 | yes | 1 / 0 | 1 |
@@ -878,10 +1445,6 @@ flowchart LR
 | `revokeToken` | src/auth/tokens.ts:160-203 | function | 3 | yes | 1 / 3 | 3 |
 | `listTokens` | src/auth/tokens.ts:206-219 | function | 1 | yes | 1 / 0 | 1 |
 | `ensureSecretOwnerToken` | src/auth/tokens.ts:226-239 | function | 3 | yes | 1 / 0 | 6 |
-| `optionalSecret` | src/config/env.ts:9-14 | function | 1 | no | 1 / 0 | 0 |
-| `credentialKeyBytes` | src/config/env.ts:20-24 | function | 1 | yes | 2 / 0 | 0 |
-| `optionalCredentialKey` | src/config/env.ts:27-35 | function | 1 | no | 1 / 0 | 1 |
-| `databaseUrlRule` | src/config/env.ts:116-120 | function | 1 | yes | 1 / 1 | 0 |
 | `CredentialStoreDisabledError.constructor` | src/credentials/crypto.ts:16-19 | constructor | 0 | yes | 1 / 0 | 0 |
 | `CredentialDecryptError.constructor` | src/credentials/crypto.ts:24-27 | constructor | 1 | yes | 1 / 0 | 0 |
 | `keyIdOf` | src/credentials/crypto.ts:65-67 | function | 1 | yes | 1 / 0 | 0 |
@@ -910,12 +1473,6 @@ flowchart LR
 | `sleep` | src/db/advisory-lock.ts:21-21 | arrow | 1 | no | 1 / 0 | 0 |
 | `acquireAdvisoryLock` | src/db/advisory-lock.ts:24-52 | function | 2 | yes | 8 / 4 | 1 |
 | `release` | src/db/advisory-lock.ts:40-44 | arrow | 0 | no | 0 / 0 | 0 |
-| `query` | src/db/client.ts:13-18 | function | 2 | yes | 128 / 199 | 0 |
-| `getClient` | src/db/client.ts:20-22 | function | 0 | yes | 0 / 1 | 0 |
-| `withTransaction` | src/db/client.ts:24-39 | function | 1 | yes | 33 / 0 | 0 |
-| `closePool` | src/db/client.ts:41-43 | function | 0 | yes | 2 / 62 | 0 |
-| `runMigrations` | src/db/migrate.ts:24-49 | function | 1 | yes | 2 / 61 | 1 |
-| `isDirectRun` | src/db/migrate.ts:55-57 | function | 2 | yes | 1 / 1 | 0 |
 | `demoEnabled` | src/demo/policy.ts:33-37 | function | 1 | yes | 1 / 1 | 0 |
 | `isDemoWorkspaceId` | src/demo/policy.ts:39-41 | function | 1 | yes | 1 / 1 | 0 |
 | `effectiveSettlementMode` | src/demo/policy.ts:44-47 | function | 1 | yes | 5 / 1 | 0 |
@@ -935,7 +1492,6 @@ flowchart LR
 | `createDemoWorkspace` | src/demo/service.ts:148-156 | function | 1 | yes | 1 / 2 | 6 |
 | `resetDemoWorkspace` | src/demo/service.ts:164-184 | function | 2 | yes | 1 / 0 | 10 |
 | `isDemoWorkspace` | src/demo/status.ts:4-7 | function | 1 | yes | 5 / 0 | 1 |
-| `evaluateWithJevSystemOne` | src/domain/jevScorer.ts:52-244 | function | 1 | yes | 1 / 1 | 0 |
 | `setEffectFault` | src/effects/faults.ts:24-29 | function | 1 | yes | 0 / 8 | 0 |
 | `takeEffectFault` | src/effects/faults.ts:32-37 | function | 2 | yes | 1 / 0 | 0 |
 | `EffectConflictError.constructor` | src/effects/ledger.ts:70-73 | constructor | 1 | yes | 1 / 0 | 0 |
@@ -959,10 +1515,6 @@ flowchart LR
 | `encodeResult` | src/effects/serialize.ts:100-103 | function | 1 | yes | 1 / 1 | 1 |
 | `decodeResult` | src/effects/serialize.ts:106-108 | function | 1 | yes | 2 / 2 | 1 |
 | `requestHash` | src/effects/serialize.ts:114-118 | function | 1 | yes | 2 / 2 | 2 |
-| `stopAndExit` | src/index.ts:20-31 | function | 2 | no | 1 / 0 | 0 |
-| `main` | src/index.ts:33-86 | function | 0 | no | 1 / 0 | 6 |
-| `stop` | src/index.ts:66-66 | arrow | 0 | no | 0 / 0 | 0 |
-| `beforeClose` | src/index.ts:71-73 | arrow | 0 | no | 0 / 0 | 1 |
 | `sendOwnerNotification` | src/notifications/dispatch.ts:33-76 | function | 1 | yes | 2 / 1 | 3 |
 | `sendApprovalNotification` | src/notifications/dispatch.ts:82-90 | function | 1 | yes | 1 / 1 | 1 |
 | `approvalLink` | src/notifications/links.ts:7-9 | function | 1 | yes | 1 / 0 | 0 |
@@ -1027,10 +1579,6 @@ flowchart LR
 | `authorizeCommitment` | src/policy/commitment-gate.ts:242-244 | function | 1 | yes | 5 / 1 | 2 |
 | `usd` | src/policy/commitment-gate.ts:260-262 | function | 1 | no | 1 / 0 | 0 |
 | `describeCommitmentDecision` | src/policy/commitment-gate.ts:265-278 | function | 1 | yes | 4 / 0 | 1 |
-| `classifyOperation` | src/policy/effect-classifier.ts:45-54 | function | 1 | yes | 2 / 2 | 0 |
-| `isEffectPermitted` | src/policy/effect-classifier.ts:59-64 | function | 2 | yes | 1 / 0 | 0 |
-| `PolicyEngine` | src/policy/engine.ts:14-60 | class | 0 | yes | 3 / 1 | 0 |
-| `PolicyEngine.evaluate` | src/policy/engine.ts:15-59 | method | 1 | yes | 3 / 1 | 2 |
 | `ipHashOf` | src/security/rate-limit-middleware.ts:31-33 | function | 1 | yes | 1 / 0 | 0 |
 | `clientIp` | src/security/rate-limit-middleware.ts:35-37 | function | 1 | no | 2 / 0 | 0 |
 | `refuse` | src/security/rate-limit-middleware.ts:39-44 | function | 4 | no | 2 / 0 | 3 |
@@ -1043,31 +1591,6 @@ flowchart LR
 | `retryAfter` | src/security/rate-limit.ts:92-94 | function | 2 | no | 1 / 0 | 0 |
 | `rateLimitsEnabled` | src/security/rate-limit.ts:147-151 | function | 1 | yes | 1 / 1 | 0 |
 | `buildRateLimitScopes` | src/security/rate-limit.ts:196-203 | function | 1 | yes | 1 / 0 | 1 |
-| `parseDecisionBody` | src/server/app.ts:151-158 | function | 2 | no | 2 / 0 | 0 |
-| `sendApprovalError` | src/server/app.ts:161-171 | function | 2 | no | 4 / 0 | 1 |
-| `sendCancelError` | src/server/app.ts:174-185 | function | 2 | no | 1 / 0 | 0 |
-| `sendFulfilmentError` | src/server/app.ts:188-197 | function | 2 | no | 8 / 0 | 0 |
-| `sendMenuError` | src/server/app.ts:203-219 | function | 2 | no | 10 / 0 | 0 |
-| `parseCorsOrigins` | src/server/app.ts:224-229 | function | 1 | yes | 1 / 0 | 0 |
-| `jsonSafe` | src/server/app.ts:235-237 | function | 1 | no | 6 / 0 | 0 |
-| `decidedByOf` | src/server/app.ts:240-242 | function | 1 | no | 8 / 0 | 0 |
-| `sendAccountError` | src/server/app.ts:245-256 | function | 2 | no | 5 / 0 | 0 |
-| `sendTokenError` | src/server/app.ts:258-264 | function | 2 | no | 3 / 0 | 0 |
-| `credentialActorOf` | src/server/app.ts:267-269 | function | 1 | no | 3 / 0 | 0 |
-| `sendCredentialError` | src/server/app.ts:272-283 | function | 2 | no | 4 / 0 | 1 |
-| `createWithOwnerToken` | src/server/app.ts:295-315 | function | 2 | no | 2 / 0 | 3 |
-| `demoBody` | src/server/app.ts:358-360 | function | 1 | no | 2 / 0 | 0 |
-| `sendDemoDisabled` | src/server/app.ts:362-364 | function | 1 | no | 2 / 0 | 0 |
-| `sendDemoError` | src/server/app.ts:367-374 | function | 2 | no | 2 / 0 | 0 |
-| `requestSignatureValid` | src/server/app.ts:386-394 | function | 2 | no | 2 / 0 | 1 |
-| `createApp` | src/server/app.ts:396-1830 | function | 1 | yes | 1 / 38 | 14 |
-| `verify` | src/server/app.ts:473-475 | arrow | 3 | no | 0 / 0 | 0 |
-| `setHeaders` | src/server/app.ts:490-490 | arrow | 1 | no | 0 / 0 | 0 |
-| `setHeaders` | src/server/app.ts:507-507 | arrow | 1 | no | 0 / 0 | 0 |
-| `setHeaders` | src/server/app.ts:517-519 | arrow | 2 | no | 0 / 0 | 0 |
-| `handleSurfaceEvent` | src/server/app.ts:1630-1783 | function | 3 | no | 1 / 0 | 12 |
-| `handleStandardWebhook` | src/server/app.ts:1785-1812 | function | 2 | no | 1 / 0 | 3 |
-| `isText` | src/server/app.ts:1797-1798 | arrow | 1 | no | 1 / 0 | 0 |
 | `provisionDemoWorkspace` | src/server/demo.ts:11-16 | function | 0 | yes | 1 / 0 | 2 |
 | `genericCode` | src/server/error-contract.ts:72-81 | function | 1 | no | 1 / 0 | 0 |
 | `shapeFromStatus` | src/server/error-contract.ts:84-94 | function | 1 | no | 1 / 0 | 0 |
@@ -1103,35 +1626,10 @@ flowchart LR
 | `responseMeta` | src/server/response-meta.ts:175-191 | function | 3 | yes | 0 / 0 | 1 |
 | `createShutdown` | src/server/shutdown.ts:42-104 | function | 1 | yes | 1 / 2 | 1 |
 | `run` | src/server/shutdown.ts:47-98 | function | 1 | no | 1 / 0 | 0 |
-| `parseDollarToCents` | src/studio/documentsAndAccounting.ts:34-41 | function | 1 | no | 1 / 0 | 1 |
-| `boundedCents` | src/studio/documentsAndAccounting.ts:44-46 | function | 1 | no | 2 / 0 | 0 |
-| `extractDocumentDraft` | src/studio/documentsAndAccounting.ts:52-232 | function | 3 | yes | 1 / 1 | 5 |
-| `confirmStagedDocument` | src/studio/documentsAndAccounting.ts:239-487 | function | 4 | yes | 1 / 2 | 4 |
-| `settlementFor` | src/studio/documentsAndAccounting.ts:432-432 | arrow | 1 | no | 0 / 0 | 1 |
-| `loadStoredEvidence` | src/studio/documentsAndAccounting.ts:436-460 | arrow | 1 | no | 0 / 0 | 1 |
-| `listStagedDocuments` | src/studio/documentsAndAccounting.ts:489-495 | function | 1 | yes | 1 / 0 | 1 |
-| `backfillReconciledJournalEntries` | src/studio/documentsAndAccounting.ts:517-563 | function | 2 | yes | 1 / 0 | 2 |
-| `getWorkspaceAccountingLedger` | src/studio/documentsAndAccounting.ts:566-572 | function | 1 | yes | 1 / 0 | 1 |
-| `formatLedgerAsCsv` | src/studio/documentsAndAccounting.ts:574-609 | function | 1 | yes | 1 / 0 | 0 |
-| `ForbiddenCapabilityError.constructor` | src/studio/onboarding.ts:32-35 | constructor | 1 | yes | 1 / 0 | 0 |
-| `assertSafeAgentTools` | src/studio/onboarding.ts:116-130 | function | 1 | yes | 1 / 0 | 1 |
-| `getTemplateBlueprint` | src/studio/onboarding.ts:135-175 | function | 1 | yes | 1 / 0 | 1 |
-| `onboardBlankWorkspace` | src/studio/onboarding.ts:181-328 | function | 2 | yes | 1 / 0 | 5 |
-| `upsertAgentRole` | src/studio/onboarding.ts:333-406 | function | 3 | yes | 1 / 0 | 5 |
-| `syncWorkspaceDerivedTemplateFiles` | src/studio/onboarding.ts:412-496 | function | 1 | yes | 3 / 0 | 2 |
 | `writeControlAudit` | src/studio/workspaceControls.ts:18-31 | function | 6 | no | 3 / 0 | 2 |
 | `setAgentsPaused` | src/studio/workspaceControls.ts:37-56 | function | 4 | yes | 2 / 4 | 2 |
 | `viewWebhookSecret` | src/studio/workspaceControls.ts:64-76 | function | 3 | yes | 1 / 0 | 3 |
 | `rotateWebhookSecret` | src/studio/workspaceControls.ts:82-98 | function | 3 | yes | 1 / 0 | 3 |
-| `getTemplate` | src/templates/registry.ts:12-19 | function | 1 | yes | 2 / 1 | 1 |
-| `own` | src/templates/registry.ts:14-15 | arrow | 1 | no | 1 / 0 | 0 |
-| `listTemplates` | src/templates/registry.ts:21-23 | function | 0 | yes | 1 / 1 | 0 |
-| `provisionWorkspace` | src/templates/registry.ts:46-191 | function | 4 | yes | 4 / 52 | 3 |
-| `derivedArtifactsRoot` | src/utils/artifacts.ts:12-20 | function | 0 | yes | 2 / 0 | 0 |
-| `workflowsArtifactsDir` | src/utils/artifacts.ts:22-24 | function | 0 | yes | 2 / 0 | 1 |
-| `templatesArtifactsDir` | src/utils/artifacts.ts:26-28 | function | 0 | yes | 2 / 0 | 1 |
-| `canonicalStringify` | src/utils/idempotency.ts:7-16 | function | 1 | yes | 2 / 0 | 0 |
-| `generateIdempotencyKey` | src/utils/idempotency.ts:21-32 | function | 3 | yes | 1 / 3 | 1 |
 | `newId` | src/utils/ids.ts:9-14 | function | 1 | yes | 31 / 5 | 0 |
 | `safeString` | src/utils/redact.ts:66-73 | function | 1 | no | 2 / 0 | 0 |
 | `configuredSecrets` | src/utils/redact.ts:76-93 | function | 0 | no | 1 / 0 | 0 |
@@ -1166,21 +1664,6 @@ flowchart LR
 | `stateChanged` | src/workflows/cancel.ts:77-82 | function | 2 | no | 1 / 0 | 2 |
 | `cancelWorkflow` | src/workflows/cancel.ts:88-149 | function | 4 | yes | 1 / 0 | 9 |
 | `recordCancelled` | src/workflows/cancel.ts:152-169 | function | 5 | no | 1 / 0 | 1 |
-| `safeJsonStringify` | src/workflows/engine.ts:10-14 | function | 1 | no | 4 / 0 | 0 |
-| `errorMessage` | src/workflows/engine.ts:22-22 | arrow | 0 | no | 0 / 0 | 0 |
-| `errorMessage` | src/workflows/engine.ts:25-25 | arrow | 1 | no | 0 / 0 | 0 |
-| `errorMessage` | src/workflows/engine.ts:29-29 | arrow | 1 | no | 0 / 0 | 0 |
-| `ApprovalDecisionError.constructor` | src/workflows/engine.ts:40-45 | constructor | 3 | yes | 3 / 0 | 0 |
-| `WorkflowEngine` | src/workflows/engine.ts:48-302 | class | 0 | yes | 7 / 16 | 0 |
-| `WorkflowEngine.mapRow` | src/workflows/engine.ts:49-62 | method | 1 | yes | 3 / 0 | 0 |
-| `WorkflowEngine.createWorkflow` | src/workflows/engine.ts:68-85 | method | 5 | yes | 1 / 18 | 3 |
-| `WorkflowEngine.getWorkflow` | src/workflows/engine.ts:90-96 | method | 1 | yes | 5 / 8 | 2 |
-| `WorkflowEngine.transition` | src/workflows/engine.ts:101-127 | method | 2 | yes | 8 / 13 | 4 |
-| `WorkflowEngine.recordAudit` | src/workflows/engine.ts:132-169 | method | 10 | yes | 15 / 1 | 5 |
-| `WorkflowEngine.createApproval` | src/workflows/engine.ts:174-191 | method | 8 | yes | 1 / 10 | 1 |
-| `WorkflowEngine.resolveApproval` | src/workflows/engine.ts:201-239 | method | 5 | yes | 2 / 1 | 3 |
-| `WorkflowEngine.expireApprovals` | src/workflows/engine.ts:249-278 | method | 1 | yes | 3 / 1 | 1 |
-| `WorkflowEngine.explainUnresolvedApproval` | src/workflows/engine.ts:284-301 | method | 1 | yes | 1 / 0 | 3 |
 | `termsOf` | src/workflows/feedback-summary.ts:48-56 | function | 1 | no | 1 / 0 | 0 |
 | `compareText` | src/workflows/feedback-summary.ts:58-60 | function | 2 | no | 1 / 0 | 0 |
 | `firstCharacters` | src/workflows/feedback-summary.ts:63-65 | function | 2 | no | 1 / 0 | 0 |
@@ -1263,28 +1746,6 @@ flowchart LR
 | `menuProposalsAwaiting` | src/workflows/needs-attention.ts:176-190 | function | 1 | no | 1 / 0 | 3 |
 | `approvalsPending` | src/workflows/needs-attention.ts:193-207 | function | 1 | no | 1 / 0 | 3 |
 | `listNeedsAttention` | src/workflows/needs-attention.ts:210-221 | function | 1 | yes | 1 / 0 | 8 |
-| `AgentsPausedError.constructor` | src/workflows/procurement.ts:48-53 | constructor | 0 | yes | 1 / 0 | 0 |
-| `commitmentClaims` | src/workflows/procurement.ts:71-81 | function | 3 | no | 1 / 0 | 0 |
-| `ProcurementWorkflowRunner.constructor` | src/workflows/procurement.ts:91-96 | constructor | 1 | yes | 6 / 21 | 2 |
-| `ProcurementWorkflowRunner.startReplenishment` | src/workflows/procurement.ts:101-387 | method | 4 | yes | 5 / 20 | 14 |
-| `ProcurementWorkflowRunner.approveAndSubmit` | src/workflows/procurement.ts:392-467 | method | 3 | yes | 2 / 4 | 9 |
-| `ProcurementWorkflowRunner.expireApprovals` | src/workflows/procurement.ts:472-474 | method | 1 | yes | 2 / 0 | 1 |
-| `ProcurementWorkflowRunner.declineApproval` | src/workflows/procurement.ts:480-510 | method | 5 | yes | 4 / 1 | 5 |
-| `ProcurementWorkflowRunner.requestQuote` | src/workflows/procurement.ts:517-575 | method | 1 | yes | 1 / 1 | 7 |
-| `ProcurementWorkflowRunner.resumeOrderSubmission` | src/workflows/procurement.ts:585-775 | method | 1 | yes | 3 / 1 | 17 |
-| `externalRef` | src/workflows/procurement.ts:691-691 | arrow | 1 | no | 0 / 0 | 0 |
-| `ProcurementWorkflowRunner.loadOwnOrder` | src/workflows/procurement.ts:778-785 | method | 2 | yes | 1 / 0 | 1 |
-| `ProcurementWorkflowRunner.failReservation` | src/workflows/procurement.ts:788-813 | method | 3 | yes | 1 / 0 | 3 |
-| `ProcurementWorkflowRunner.fulfillAndReconcile` | src/workflows/procurement.ts:820-826 | method | 2 | yes | 1 / 10 | 3 |
-| `ProcurementWorkflowRunner.confirmSettlement` | src/workflows/procurement.ts:832-835 | method | 2 | yes | 2 / 2 | 2 |
-| `ProcurementWorkflowRunner.assertOrderInWorkspace` | src/workflows/procurement.ts:838-843 | method | 2 | yes | 2 / 0 | 2 |
-| `ProcurementWorkflowRunner.storedOrGeneratedEvidence` | src/workflows/procurement.ts:845-930 | method | 1 | yes | 1 / 0 | 5 |
-| `WorkflowCrashRecoveryRunner.constructor` | src/workflows/recovery.ts:34-36 | constructor | 1 | yes | 2 / 3 | 1 |
-| `WorkflowCrashRecoveryRunner.recoverInterruptedWorkflows` | src/workflows/recovery.ts:48-96 | method | 1 | yes | 2 / 3 | 5 |
-| `WorkflowCrashRecoveryRunner.touch` | src/workflows/recovery.ts:99-105 | method | 1 | yes | 1 / 0 | 1 |
-| `WorkflowCrashRecoveryRunner.recoverSubmitted` | src/workflows/recovery.ts:107-141 | method | 2 | yes | 1 / 0 | 3 |
-| `WorkflowCrashRecoveryRunner.recoverAuthorized` | src/workflows/recovery.ts:143-187 | method | 2 | yes | 1 / 0 | 6 |
-| `WorkflowCrashRecoveryRunner.resume` | src/workflows/recovery.ts:189-197 | method | 3 | yes | 2 / 0 | 1 |
 | `SettlementOrderError.constructor` | src/workflows/settlement.ts:62-70 | constructor | 2 | yes | 3 / 0 | 0 |
 | `outcomeOf` | src/workflows/settlement.ts:101-105 | function | 1 | no | 2 / 0 | 0 |
 | `OrderSettlementService.constructor` | src/workflows/settlement.ts:117-119 | constructor | 1 | yes | 2 / 2 | 0 |
@@ -1310,16 +1771,13 @@ flowchart LR
     n180["JournalConflictError.constructor"]
     n181["recordIdempotentJournalEntry"]
   end
-  subgraph F1["src/accounting/three-way-match.ts"]
-    n182["evaluateThreeWayMatch"]
-  end
-  subgraph F2["src/accounts/privy.ts"]
+  subgraph F1["src/accounts/privy.ts"]
     n183["b64urlToBuffer"]
     n184["parseJson"]
     n185["parseVerificationKeys"]
     n186["createPrivyVerifier"]
   end
-  subgraph F3["src/accounts/service.ts"]
+  subgraph F2["src/accounts/service.ts"]
     n187["AccountError.constructor"]
     n188["hasControl"]
     n189["sha256"]
@@ -1337,56 +1795,14 @@ flowchart LR
     n201["setMemberRole"]
     n202["removeMember"]
   end
-  subgraph F4["src/accounts/sessions.ts"]
+  subgraph F3["src/accounts/sessions.ts"]
     n203["isSessionToken"]
     n204["hash"]
     n205["createSession"]
     n206["resolveSession"]
     n207["revokeSession"]
   end
-  subgraph F5["src/adapters/circleAgentStack.ts"]
-    n208["defaultExec"]
-    n209["requiresOwnerApprovalGate"]
-    n210["isFlagEnabled"]
-    n211["redactUrls"]
-    n212["errorMessage"]
-    n213["textOf"]
-    n214["errorText"]
-    n215["wasKilledOrTimedOut"]
-    n216["classifyLiveFailure"]
-    n217["parseWhitelisted"]
-    n218["parseTxHash"]
-    n219["CircleAgentStackAdapter.constructor"]
-    n220["CircleAgentStackAdapter.isLive"]
-    n221["CircleAgentStackAdapter.queryVendorWhitelistStatus"]
-    n222["CircleAgentStackAdapter.executeBindSettlement"]
-  end
-  subgraph F6["src/adapters/marketBenchmark.ts"]
-    n223["HybridMarketBenchmarkAdapter"]
-    n224["HybridMarketBenchmarkAdapter.fetchBenchmark"]
-  end
-  subgraph F7["src/adapters/settlement/arc-l1.ts"]
-    n225["revertDataOf"]
-    n226["decodeRevert"]
-    n227["deployBlockFromConfig"]
-    n228["ArcL1SettlementAdapter.constructor"]
-    n229["ArcL1SettlementAdapter.getBalance"]
-    n230["ArcL1SettlementAdapter.transferUSDC"]
-    n231["ArcL1SettlementAdapter.confirm"]
-    n232["ArcL1SettlementAdapter.findTransfer"]
-    n233["ArcL1SettlementAdapter.depositEscrow"]
-    n234["ArcL1SettlementAdapter.releaseEscrow"]
-    n235["ArcL1SettlementAdapter.#result"]
-    n236["ArcL1SettlementAdapter.#secrets"]
-    n237["ArcL1SettlementAdapter.#classifyFailure"]
-    n238["ArcL1SettlementAdapter.#contractAddress"]
-    n239["ArcL1SettlementAdapter.#requireSettings"]
-    n240["ArcL1SettlementAdapter.#assertChain"]
-    n241["ArcL1SettlementAdapter.#settlementEvent"]
-    n242["ArcL1SettlementAdapter.#findSettlement"]
-    n243["ArcL1SettlementAdapter.#pollReceipt"]
-  end
-  subgraph F8["src/adapters/settlement/errors.ts"]
+  subgraph F4["src/adapters/settlement/errors.ts"]
     n244["SettlementNotConfiguredError.constructor"]
     n245["SettlementChainMismatchError.constructor"]
     n246["SettlementPayerMismatchError.constructor"]
@@ -1396,87 +1812,25 @@ flowchart LR
     n250["redactSecrets"]
     n251["transportErrorFrom"]
   end
-  subgraph F9["src/adapters/settlement/index.ts"]
-    n252["getSettlementAdapter"]
-  end
-  subgraph F10["src/adapters/settlement/local-sim.ts"]
-    n253["LocalSettlementSimulator.constructor"]
-    n254["LocalSettlementSimulator.getBalance"]
-    n255["LocalSettlementSimulator.transferUSDC"]
-    n256["LocalSettlementSimulator.findTransfer"]
-    n257["LocalSettlementSimulator.confirm"]
-    n258["LocalSettlementSimulator.depositEscrow"]
-    n259["LocalSettlementSimulator.releaseEscrow"]
-    n260["LocalSettlementSimulator.submitted"]
-  end
-  subgraph F11["src/adapters/socialSurface.ts"]
-    n261["SurfaceAuthorizationError.constructor"]
-    n262["assertSurfaceRoleAuthorized"]
-    n263["verifyAndAuthorizeSurfaceEvent"]
-    n264["upsertSurfaceBinding"]
-    n265["listSurfaceBindings"]
-  end
-  subgraph F12["src/adapters/suppliers/index.ts"]
-    n266["getSupplierAdapter"]
-  end
-  subgraph F13["src/adapters/suppliers/payment-address.ts"]
+  subgraph F5["src/adapters/suppliers/payment-address.ts"]
     n267["md5Hex"]
     n268["simulatedPaymentAddress"]
     n269["normalizePaymentAddress"]
   end
-  subgraph F14["src/adapters/suppliers/simulated.ts"]
-    n270["SimulatedSupplierAdapter.constructor"]
-    n271["SimulatedSupplierAdapter.acceptedKey"]
-    n272["SimulatedSupplierAdapter.requestQuote"]
-    n273["SimulatedSupplierAdapter.submitOrder"]
-    n274["SimulatedSupplierAdapter.lookupOrder"]
-    n275["SimulatedSupplierAdapter.generateDeliveryReceipt"]
-    n276["SimulatedSupplierAdapter.generateBill"]
-  end
-  subgraph F15["src/adapters/suppliers/validate.ts"]
+  subgraph F6["src/adapters/suppliers/validate.ts"]
     n277["SupplierResponseInvalidError.constructor"]
     n278["isBoundedAmount"]
     n279["isValidDate"]
     n280["validateQuoteResponse"]
     n281["validateOrderResponse"]
   end
-  subgraph F16["src/adapters/web2/notifications.ts"]
-    n282["NotificationEmitter"]
-    n283["NotificationEmitter.send"]
-    n284["NotificationEmitter.getSentNotifications"]
-    n285["NotificationEmitter.clear"]
-  end
-  subgraph F17["src/adapters/web2/webhook-receiver.ts"]
-    n286["WebhookReceiver.constructor"]
-    n287["WebhookReceiver.secret"]
-    n288["WebhookReceiver.computeSignature"]
-    n289["WebhookReceiver.verifySignature"]
-    n290["WebhookReceiver.processEvent"]
-  end
-  subgraph F18["src/agents/antiDriftWriter.ts"]
-    n291["InvariantDriftError.constructor"]
-    n292["assertNoSpecDrift"]
-    n293["writeWorkflowAntiDriftFiles"]
-  end
-  subgraph F19["src/agents/bindCircleDeepAgent.ts"]
-    n294["createBindCircleAgent"]
-  end
-  subgraph F20["src/agents/bindTemplateAgent.ts"]
-    n295["listAvailableTemplates"]
-    n296["resolveTemplateDir"]
-    n297["whitelistLabel"]
-    n298["generateVerifiableDecisionRecord"]
-  end
-  subgraph F21["src/agents/evidence-classification.ts"]
+  subgraph F7["src/agents/evidence-classification.ts"]
     n299["classifyRequestEvidence"]
   end
-  subgraph F22["src/agents/replenishmentTools.ts"]
-    n300["createReplenishmentTools"]
-  end
-  subgraph F23["src/api/event-catalogue.ts"]
+  subgraph F8["src/api/event-catalogue.ts"]
     n301["eventNameOf"]
   end
-  subgraph F24["src/api/event-routes.ts"]
+  subgraph F9["src/api/event-routes.ts"]
     n302["positiveInteger"]
     n303["resolveEventsOptions"]
     n304["eventFrame"]
@@ -1492,7 +1846,7 @@ flowchart LR
     n314["run"]
     n315["eventPollHandler"]
   end
-  subgraph F25["src/api/event-streams.ts"]
+  subgraph F10["src/api/event-streams.ts"]
     n316["publishCount"]
     n317["claimStream"]
     n318["release"]
@@ -1504,7 +1858,7 @@ flowchart LR
     n324["onDrain"]
     n325["onClose"]
   end
-  subgraph F26["src/api/events.ts"]
+  subgraph F11["src/api/events.ts"]
     n326["parseCursor"]
     n327["formatCursor"]
     n328["allowedValue"]
@@ -1519,7 +1873,7 @@ flowchart LR
     n337["readLatestEvents"]
     n338["latestCursor"]
   end
-  subgraph F27["src/api/openapi.ts"]
+  subgraph F12["src/api/openapi.ts"]
     n339["toOpenApiPath"]
     n340["jsonSchema"]
     n341["schemaOrRef"]
@@ -1530,20 +1884,20 @@ flowchart LR
     n346["buildOpenApiDocument"]
     n347["serializeOpenApiDocument"]
   end
-  subgraph F28["src/api/registry.ts"]
+  subgraph F13["src/api/registry.ts"]
     n348["err"]
     n349["ok"]
     n350["list"]
     n351["withGenericErrors"]
   end
-  subgraph F29["src/auth/middleware.ts"]
+  subgraph F14["src/auth/middleware.ts"]
     n352["bearerToken"]
     n353["authenticate"]
     n354["scopeToWorkspace"]
     n355["requireRole"]
     n356["authenticateAccount"]
   end
-  subgraph F30["src/auth/tokens.ts"]
+  subgraph F15["src/auth/tokens.ts"]
     n357["TokenError.constructor"]
     n358["generateToken"]
     n359["hashToken"]
@@ -1556,13 +1910,7 @@ flowchart LR
     n366["listTokens"]
     n367["ensureSecretOwnerToken"]
   end
-  subgraph F31["src/config/env.ts"]
-    n368["optionalSecret"]
-    n369["credentialKeyBytes"]
-    n370["optionalCredentialKey"]
-    n371["databaseUrlRule"]
-  end
-  subgraph F32["src/credentials/crypto.ts"]
+  subgraph F16["src/credentials/crypto.ts"]
     n372["CredentialStoreDisabledError.constructor"]
     n373["CredentialDecryptError.constructor"]
     n374["keyIdOf"]
@@ -1573,7 +1921,7 @@ flowchart LR
     n379["encryptSecret"]
     n380["decryptSecret"]
   end
-  subgraph F33["src/credentials/store.ts"]
+  subgraph F17["src/credentials/store.ts"]
     n381["CredentialInputError.constructor"]
     n382["CredentialNotFoundError.constructor"]
     n383["checkConnectorId"]
@@ -1588,40 +1936,30 @@ flowchart LR
     n392["verifyCredential"]
     n393["rotateCredentialKeys"]
   end
-  subgraph F34["src/credentials/verifiers.ts"]
+  subgraph F18["src/credentials/verifiers.ts"]
     n394["registerVerifier"]
     n395["findVerifier"]
     n396["clearVerifiers"]
   end
-  subgraph F35["src/db/advisory-lock.ts"]
+  subgraph F19["src/db/advisory-lock.ts"]
     n397["sleep"]
     n398["acquireAdvisoryLock"]
     n399["release"]
   end
-  subgraph F36["src/db/client.ts"]
-    n400["query"]
-    n401["getClient"]
-    n402["withTransaction"]
-    n403["closePool"]
-  end
-  subgraph F37["src/db/migrate.ts"]
-    n404["runMigrations"]
-    n405["isDirectRun"]
-  end
-  subgraph F38["src/demo/policy.ts"]
+  subgraph F20["src/demo/policy.ts"]
     n406["demoEnabled"]
     n407["isDemoWorkspaceId"]
     n408["effectiveSettlementMode"]
     n409["DemoSafetyError.constructor"]
     n410["assertDemoAdapterSimulated"]
   end
-  subgraph F39["src/demo/purge.ts"]
+  subgraph F21["src/demo/purge.ts"]
     n411["childOfRoot"]
     n412["removeDemoArtifacts"]
     n413["deleteDemoRows"]
     n414["purgeExpiredDemos"]
   end
-  subgraph F40["src/demo/service.ts"]
+  subgraph F22["src/demo/service.ts"]
     n415["DemoError.constructor"]
     n416["withCreateLock"]
     n417["countActiveDemos"]
@@ -1632,17 +1970,14 @@ flowchart LR
     n422["createDemoWorkspace"]
     n423["resetDemoWorkspace"]
   end
-  subgraph F41["src/demo/status.ts"]
+  subgraph F23["src/demo/status.ts"]
     n424["isDemoWorkspace"]
   end
-  subgraph F42["src/domain/jevScorer.ts"]
-    n425["evaluateWithJevSystemOne"]
-  end
-  subgraph F43["src/effects/faults.ts"]
+  subgraph F24["src/effects/faults.ts"]
     n426["setEffectFault"]
     n427["takeEffectFault"]
   end
-  subgraph F44["src/effects/ledger.ts"]
+  subgraph F25["src/effects/ledger.ts"]
     n428["EffectConflictError.constructor"]
     n429["EffectInDoubtError.constructor"]
     n430["newEffectId"]
@@ -1658,7 +1993,7 @@ flowchart LR
     n440["runEffect"]
     n441["listUnresolvedEffects"]
   end
-  subgraph F45["src/effects/serialize.ts"]
+  subgraph F26["src/effects/serialize.ts"]
     n442["isPlainObject"]
     n443["toTagged"]
     n444["fromTagged"]
@@ -1667,24 +2002,18 @@ flowchart LR
     n447["decodeResult"]
     n448["requestHash"]
   end
-  subgraph F46["src/index.ts"]
-    n449["stopAndExit"]
-    n450["main"]
-    n451["stop"]
-    n452["beforeClose"]
-  end
-  subgraph F47["src/notifications/dispatch.ts"]
+  subgraph F27["src/notifications/dispatch.ts"]
     n453["sendOwnerNotification"]
     n454["sendApprovalNotification"]
   end
-  subgraph F48["src/notifications/links.ts"]
+  subgraph F28["src/notifications/links.ts"]
     n455["approvalLink"]
     n456["customerOrderLink"]
   end
-  subgraph F49["src/notifications/recipients.ts"]
+  subgraph F29["src/notifications/recipients.ts"]
     n457["resolveOwnerRecipient"]
   end
-  subgraph F50["src/observability/logger.ts"]
+  subgraph F30["src/observability/logger.ts"]
     n458["setLogSink"]
     n459["thresholdLevel"]
     n460["replacer"]
@@ -1692,13 +2021,13 @@ flowchart LR
     n462["fallbackLine"]
     n463["write"]
   end
-  subgraph F51["src/observability/metrics-route.ts"]
+  subgraph F31["src/observability/metrics-route.ts"]
     n464["readSnapshot"]
     n465["applySnapshot"]
     n466["bearerMatches"]
     n467["createMetricsHandler"]
   end
-  subgraph F52["src/observability/metrics.ts"]
+  subgraph F32["src/observability/metrics.ts"]
     n468["escapeLabelValue"]
     n469["escapeHelp"]
     n470["formatValue"]
@@ -1729,12 +2058,12 @@ flowchart LR
     n495["recordWorkerTick"]
     n496["workerLagSeconds"]
   end
-  subgraph F53["src/observability/readiness.ts"]
+  subgraph F33["src/observability/readiness.ts"]
     n497["DeadlineExceeded"]
     n498["withDeadline"]
     n499["checkReadiness"]
   end
-  subgraph F54["src/observability/request-context.ts"]
+  subgraph F34["src/observability/request-context.ts"]
     n500["methodLabel"]
     n501["routePattern"]
     n502["statusClass"]
@@ -1742,39 +2071,31 @@ flowchart LR
     n504["currentRequestId"]
     n505["bindRequestId"]
   end
-  subgraph F55["src/orders/reservation.ts"]
+  subgraph F35["src/orders/reservation.ts"]
     n506["orderNumberFor"]
     n507["spendLockKey"]
     n508["loadStoredQuote"]
     n509["hasApprovedEscalation"]
     n510["reserveOrder"]
   end
-  subgraph F56["src/orders/statuses.ts"]
+  subgraph F36["src/orders/statuses.ts"]
     n511["spendStatusesSql"]
   end
-  subgraph F57["src/policy/commitment-gate.ts"]
+  subgraph F37["src/policy/commitment-gate.ts"]
     n512["decideCommitment"]
     n513["loadCommitmentFacts"]
     n514["authorizeCommitment"]
     n515["usd"]
     n516["describeCommitmentDecision"]
   end
-  subgraph F58["src/policy/effect-classifier.ts"]
-    n517["classifyOperation"]
-    n518["isEffectPermitted"]
-  end
-  subgraph F59["src/policy/engine.ts"]
-    n519["PolicyEngine"]
-    n520["PolicyEngine.evaluate"]
-  end
-  subgraph F60["src/security/rate-limit-middleware.ts"]
+  subgraph F38["src/security/rate-limit-middleware.ts"]
     n521["ipHashOf"]
     n522["clientIp"]
     n523["refuse"]
     n524["rateLimitGate"]
     n525["tokenRateLimit"]
   end
-  subgraph F61["src/security/rate-limit.ts"]
+  subgraph F39["src/security/rate-limit.ts"]
     n526["createRateLimiter"]
     n527["live"]
     n528["sweep"]
@@ -1783,37 +2104,10 @@ flowchart LR
     n531["rateLimitsEnabled"]
     n532["buildRateLimitScopes"]
   end
-  subgraph F62["src/server/app.ts"]
-    n533["parseDecisionBody"]
-    n534["sendApprovalError"]
-    n535["sendCancelError"]
-    n536["sendFulfilmentError"]
-    n537["sendMenuError"]
-    n538["parseCorsOrigins"]
-    n539["jsonSafe"]
-    n540["decidedByOf"]
-    n541["sendAccountError"]
-    n542["sendTokenError"]
-    n543["credentialActorOf"]
-    n544["sendCredentialError"]
-    n545["createWithOwnerToken"]
-    n546["demoBody"]
-    n547["sendDemoDisabled"]
-    n548["sendDemoError"]
-    n549["requestSignatureValid"]
-    n550["createApp"]
-    n551["verify"]
-    n552["setHeaders"]
-    n553["setHeaders"]
-    n554["setHeaders"]
-    n636["handleSurfaceEvent"]
-    n637["handleStandardWebhook"]
-    n638["isText"]
-  end
-  subgraph F63["src/server/demo.ts"]
+  subgraph F40["src/server/demo.ts"]
     n640["provisionDemoWorkspace"]
   end
-  subgraph F64["src/server/error-contract.ts"]
+  subgraph F41["src/server/error-contract.ts"]
     n641["genericCode"]
     n642["shapeFromStatus"]
     n643["recoveryFor"]
@@ -1821,7 +2115,7 @@ flowchart LR
     n645["enrichErrorBody"]
     n646["errorContract"]
   end
-  subgraph F65["src/server/errors.ts"]
+  subgraph F42["src/server/errors.ts"]
     n647["isInfrastructureError"]
     n648["publicErrorMessage"]
     n649["containsNul"]
@@ -1831,7 +2125,7 @@ flowchart LR
     n653["wrapped"]
     n654["wrapAsyncHandlers"]
   end
-  subgraph F66["src/server/idempotency.ts"]
+  subgraph F43["src/server/idempotency.ts"]
     n655["withoutSecrets"]
     n656["canonical"]
     n657["fingerprintOf"]
@@ -1839,7 +2133,7 @@ flowchart LR
     n659["idempotency"]
     n660["claim"]
   end
-  subgraph F67["src/server/response-meta.ts"]
+  subgraph F44["src/server/response-meta.ts"]
     n661["str"]
     n662["eventsPath"]
     n663["ownerOnly"]
@@ -1853,55 +2147,20 @@ flowchart LR
     n671["buildMeta"]
     n672["responseMeta"]
   end
-  subgraph F68["src/server/shutdown.ts"]
+  subgraph F45["src/server/shutdown.ts"]
     n673["createShutdown"]
     n674["run"]
   end
-  subgraph F69["src/studio/documentsAndAccounting.ts"]
-    n675["parseDollarToCents"]
-    n676["boundedCents"]
-    n677["extractDocumentDraft"]
-    n678["confirmStagedDocument"]
-    n679["settlementFor"]
-    n680["loadStoredEvidence"]
-    n681["listStagedDocuments"]
-    n682["backfillReconciledJournalEntries"]
-    n683["getWorkspaceAccountingLedger"]
-    n684["formatLedgerAsCsv"]
-  end
-  subgraph F70["src/studio/onboarding.ts"]
-    n685["ForbiddenCapabilityError.constructor"]
-    n686["assertSafeAgentTools"]
-    n687["getTemplateBlueprint"]
-    n688["onboardBlankWorkspace"]
-    n689["upsertAgentRole"]
-    n690["syncWorkspaceDerivedTemplateFiles"]
-  end
-  subgraph F71["src/studio/workspaceControls.ts"]
+  subgraph F46["src/studio/workspaceControls.ts"]
     n691["writeControlAudit"]
     n692["setAgentsPaused"]
     n693["viewWebhookSecret"]
     n694["rotateWebhookSecret"]
   end
-  subgraph F72["src/templates/registry.ts"]
-    n695["getTemplate"]
-    n696["own"]
-    n697["listTemplates"]
-    n698["provisionWorkspace"]
-  end
-  subgraph F73["src/utils/artifacts.ts"]
-    n699["derivedArtifactsRoot"]
-    n700["workflowsArtifactsDir"]
-    n701["templatesArtifactsDir"]
-  end
-  subgraph F74["src/utils/idempotency.ts"]
-    n702["canonicalStringify"]
-    n703["generateIdempotencyKey"]
-  end
-  subgraph F75["src/utils/ids.ts"]
+  subgraph F47["src/utils/ids.ts"]
     n704["newId"]
   end
-  subgraph F76["src/utils/redact.ts"]
+  subgraph F48["src/utils/redact.ts"]
     n705["safeString"]
     n706["configuredSecrets"]
     n707["scrubUrl"]
@@ -1911,13 +2170,13 @@ flowchart LR
     n711["redactDeep"]
     n712["walk"]
   end
-  subgraph F77["src/webhooks/signing.ts"]
+  subgraph F49["src/webhooks/signing.ts"]
     n713["WebhookNotConfiguredError.constructor"]
     n714["workspaceWebhookSecret"]
     n715["signPayload"]
     n716["verifySignature"]
   end
-  subgraph F78["src/workers/runner.ts"]
+  subgraph F50["src/workers/runner.ts"]
     n717["emptyReport"]
     n718["boundedMessage"]
     n719["resolved"]
@@ -1935,37 +2194,20 @@ flowchart LR
     n731["runOnce"]
     n732["schedule"]
   end
-  subgraph F79["src/workflows/cancel.ts"]
+  subgraph F51["src/workflows/cancel.ts"]
     n733["WorkflowCancelError.constructor"]
     n734["currentState"]
     n735["stateChanged"]
     n736["cancelWorkflow"]
     n737["recordCancelled"]
   end
-  subgraph F80["src/workflows/engine.ts"]
-    n738["safeJsonStringify"]
-    n739["errorMessage"]
-    n740["errorMessage"]
-    n741["errorMessage"]
-    n742["ApprovalDecisionError.constructor"]
-    n743["WorkflowEngine"]
-    n744["WorkflowEngine.mapRow"]
-    n745["WorkflowEngine.createWorkflow"]
-    n746["WorkflowEngine.getWorkflow"]
-    n747["WorkflowEngine.transition"]
-    n748["WorkflowEngine.recordAudit"]
-    n749["WorkflowEngine.createApproval"]
-    n750["WorkflowEngine.resolveApproval"]
-    n751["WorkflowEngine.expireApprovals"]
-    n752["WorkflowEngine.explainUnresolvedApproval"]
-  end
-  subgraph F81["src/workflows/feedback-summary.ts"]
+  subgraph F52["src/workflows/feedback-summary.ts"]
     n753["termsOf"]
     n754["compareText"]
     n755["firstCharacters"]
     n756["summarizeTexts"]
   end
-  subgraph F82["src/workflows/feedback.ts"]
+  subgraph F53["src/workflows/feedback.ts"]
     n757["FeedbackError.constructor"]
     n758["invalid"]
     n759["writeAudit"]
@@ -1973,12 +2215,12 @@ flowchart LR
     n761["summarizeFeedback"]
     n762["listFeedback"]
   end
-  subgraph F83["src/workflows/fulfilment-promise.ts"]
+  subgraph F54["src/workflows/fulfilment-promise.ts"]
     n763["hasOwn"]
     n764["invalidLineReasons"]
     n765["decidePromise"]
   end
-  subgraph F84["src/workflows/fulfilment.ts"]
+  subgraph F55["src/workflows/fulfilment.ts"]
     n766["FulfilmentError.constructor"]
     n767["invalid"]
     n768["checkExternalRef"]
@@ -2011,7 +2253,7 @@ flowchart LR
     n795["getCustomerOrder"]
     n796["listCustomerOrders"]
   end
-  subgraph F85["src/workflows/menu.ts"]
+  subgraph F56["src/workflows/menu.ts"]
     n797["MenuError.constructor"]
     n798["invalid"]
     n799["characterCount"]
@@ -2040,7 +2282,7 @@ flowchart LR
     n822["listMenuProposals"]
     n823["listMenu"]
   end
-  subgraph F86["src/workflows/needs-attention.ts"]
+  subgraph F57["src/workflows/needs-attention.ts"]
     n824["codesOnly"]
     n825["iso"]
     n826["assembleAttention"]
@@ -2053,33 +2295,7 @@ flowchart LR
     n833["approvalsPending"]
     n834["listNeedsAttention"]
   end
-  subgraph F87["src/workflows/procurement.ts"]
-    n835["AgentsPausedError.constructor"]
-    n836["commitmentClaims"]
-    n837["ProcurementWorkflowRunner.constructor"]
-    n838["ProcurementWorkflowRunner.startReplenishment"]
-    n839["ProcurementWorkflowRunner.approveAndSubmit"]
-    n840["ProcurementWorkflowRunner.expireApprovals"]
-    n841["ProcurementWorkflowRunner.declineApproval"]
-    n842["ProcurementWorkflowRunner.requestQuote"]
-    n843["ProcurementWorkflowRunner.resumeOrderSubmission"]
-    n844["externalRef"]
-    n845["ProcurementWorkflowRunner.loadOwnOrder"]
-    n846["ProcurementWorkflowRunner.failReservation"]
-    n847["ProcurementWorkflowRunner.fulfillAndReconcile"]
-    n848["ProcurementWorkflowRunner.confirmSettlement"]
-    n849["ProcurementWorkflowRunner.assertOrderInWorkspace"]
-    n850["ProcurementWorkflowRunner.storedOrGeneratedEvidence"]
-  end
-  subgraph F88["src/workflows/recovery.ts"]
-    n851["WorkflowCrashRecoveryRunner.constructor"]
-    n852["WorkflowCrashRecoveryRunner.recoverInterruptedWorkflows"]
-    n853["WorkflowCrashRecoveryRunner.touch"]
-    n854["WorkflowCrashRecoveryRunner.recoverSubmitted"]
-    n855["WorkflowCrashRecoveryRunner.recoverAuthorized"]
-    n856["WorkflowCrashRecoveryRunner.resume"]
-  end
-  subgraph F89["src/workflows/settlement.ts"]
+  subgraph F58["src/workflows/settlement.ts"]
     n857["SettlementOrderError.constructor"]
     n858["outcomeOf"]
     n859["OrderSettlementService.constructor"]
@@ -2099,7 +2315,6 @@ flowchart LR
     n873["OrderSettlementService.settleClaimedOrder"]
     n874["externalRef"]
   end
-  n181 --> n400
   n181 --> n180
   n186 --> n185
   n186 --> n183
@@ -2109,159 +2324,38 @@ flowchart LR
   n191 --> n188
   n191 --> n187
   n192 --> n191
-  n192 --> n400
   n192 --> n704
-  n193 --> n400
   n194 --> n398
-  n194 --> n400
-  n194 --> n698
-  n194 --> n402
   n194 --> n190
   n195 --> n188
   n195 --> n187
   n195 --> n704
-  n195 --> n402
   n195 --> n189
   n195 --> n190
-  n196 --> n400
-  n197 --> n402
   n197 --> n190
   n198 --> n187
-  n198 --> n402
   n198 --> n189
   n198 --> n190
-  n199 --> n400
   n201 --> n187
-  n201 --> n402
   n201 --> n200
   n201 --> n190
-  n202 --> n402
   n202 --> n200
   n202 --> n187
   n202 --> n190
-  n205 --> n400
   n205 --> n704
   n205 --> n204
   n206 --> n203
-  n206 --> n400
   n206 --> n204
-  n207 --> n400
-  n214 --> n212
-  n214 --> n213
-  n216 --> n215
-  n216 --> n214
-  n220 --> n210
-  n221 --> n220
-  n221 --> n217
-  n221 --> n211
-  n221 --> n212
-  n222 --> n220
-  n222 --> n211
-  n222 --> n212
-  n222 --> n216
-  n222 --> n218
-  n228 --> n227
-  n230 --> n239
-  n230 --> n240
-  n230 --> n246
-  n230 --> n247
-  n230 --> n237
-  n230 --> n235
-  n231 --> n247
-  n231 --> n238
-  n231 --> n243
-  n231 --> n235
-  n231 --> n251
-  n231 --> n236
-  n232 --> n238
-  n232 --> n242
-  n232 --> n249
-  n232 --> n235
-  n233 --> n248
-  n234 --> n248
-  n237 --> n225
-  n237 --> n251
-  n237 --> n236
-  n237 --> n226
-  n237 --> n247
-  n237 --> n242
-  n237 --> n235
-  n238 --> n244
-  n239 --> n244
-  n240 --> n251
-  n240 --> n236
-  n240 --> n245
-  n242 --> n241
-  n242 --> n251
-  n242 --> n236
   n250 --> n708
   n250 --> n709
   n251 --> n249
   n251 --> n250
-  n252 --> n228
-  n255 --> n254
-  n255 --> n260
-  n257 --> n247
-  n258 --> n254
-  n258 --> n260
-  n259 --> n260
-  n262 --> n261
-  n263 --> n400
-  n263 --> n261
-  n263 --> n262
-  n264 --> n400
-  n264 --> n704
-  n264 --> n504
-  n265 --> n400
-  n266 --> n270
   n268 --> n267
-  n273 --> n271
-  n274 --> n271
   n280 --> n278
   n280 --> n279
-  n283 --> n704
-  n287 --> n713
-  n288 --> n715
-  n288 --> n287
-  n289 --> n716
-  n289 --> n287
-  n290 --> n400
-  n290 --> n704
-  n292 --> n291
-  n293 --> n292
-  n293 --> n700
-  n294 --> n219
-  n294 --> n223
-  n294 --> n221
-  n294 --> n224
-  n294 --> n222
-  n298 --> n296
-  n298 --> n223
-  n298 --> n224
-  n298 --> n297
-  n298 --> n293
-  n300 --> n743
-  n300 --> n400
-  n300 --> n511
-  n300 --> n408
-  n300 --> n424
-  n300 --> n425
-  n300 --> n704
-  n300 --> n504
-  n300 --> n514
-  n300 --> n516
-  n300 --> n748
-  n300 --> n749
-  n300 --> n457
-  n300 --> n454
-  n300 --> n455
-  n300 --> n432
-  n300 --> n298
-  n300 --> n299
   n303 --> n302
   n305 --> n326
   n305 --> n327
-  n307 --> n400
   n308 --> n305
   n308 --> n306
   n308 --> n317
@@ -2302,14 +2396,11 @@ flowchart LR
   n335 --> n330
   n336 --> n326
   n336 --> n333
-  n336 --> n400
   n336 --> n335
   n336 --> n327
   n337 --> n333
-  n337 --> n400
   n337 --> n334
   n337 --> n330
-  n338 --> n400
   n338 --> n334
   n341 --> n340
   n342 --> n340
@@ -2332,26 +2423,19 @@ flowchart LR
   n363 --> n361
   n363 --> n358
   n363 --> n704
-  n363 --> n402
   n363 --> n359
   n363 --> n362
   n364 --> n203
   n364 --> n206
   n364 --> n360
-  n364 --> n400
   n364 --> n359
-  n365 --> n402
   n365 --> n357
   n365 --> n362
-  n366 --> n400
   n367 --> n360
   n367 --> n357
   n367 --> n361
-  n367 --> n400
   n367 --> n704
   n367 --> n359
-  n370 --> n369
-  n375 --> n369
   n375 --> n374
   n376 --> n372
   n376 --> n375
@@ -2369,58 +2453,38 @@ flowchart LR
   n388 --> n384
   n388 --> n385
   n388 --> n379
-  n388 --> n402
   n388 --> n704
   n388 --> n387
   n388 --> n386
   n389 --> n376
-  n389 --> n400
   n390 --> n376
   n390 --> n383
-  n390 --> n402
   n390 --> n387
   n390 --> n386
   n391 --> n376
-  n391 --> n400
   n391 --> n380
   n392 --> n376
   n392 --> n383
-  n392 --> n400
   n392 --> n382
   n392 --> n395
   n392 --> n380
   n392 --> n708
   n392 --> n709
-  n392 --> n402
   n392 --> n387
   n393 --> n376
-  n393 --> n400
-  n393 --> n402
   n393 --> n380
   n393 --> n379
   n393 --> n387
   n398 --> n397
-  n404 --> n398
   n410 --> n409
   n412 --> n407
-  n412 --> n400
   n412 --> n411
-  n412 --> n701
-  n412 --> n700
-  n413 --> n402
-  n414 --> n400
   n414 --> n412
   n414 --> n413
   n416 --> n398
   n416 --> n415
-  n417 --> n400
   n418 --> n415
-  n419 --> n698
   n419 --> n363
-  n419 --> n748
-  n419 --> n743
-  n419 --> n400
-  n420 --> n838
   n420 --> n708
   n421 --> n414
   n421 --> n708
@@ -2431,7 +2495,6 @@ flowchart LR
   n422 --> n419
   n422 --> n420
   n423 --> n416
-  n423 --> n400
   n423 --> n415
   n423 --> n418
   n423 --> n417
@@ -2440,21 +2503,15 @@ flowchart LR
   n423 --> n413
   n423 --> n708
   n423 --> n420
-  n424 --> n400
-  n431 --> n517
   n432 --> n708
   n432 --> n709
   n433 --> n428
-  n434 --> n400
   n435 --> n446
-  n435 --> n400
-  n436 --> n400
   n436 --> n432
   n437 --> n427
   n437 --> n436
   n437 --> n435
   n438 --> n430
-  n438 --> n400
   n438 --> n437
   n438 --> n434
   n438 --> n433
@@ -2470,33 +2527,20 @@ flowchart LR
   n440 --> n398
   n440 --> n439
   n440 --> n438
-  n441 --> n400
   n443 --> n442
   n444 --> n445
   n445 --> n444
   n446 --> n443
   n447 --> n444
   n448 --> n443
-  n448 --> n702
-  n450 --> n404
-  n450 --> n640
-  n450 --> n550
-  n450 --> n730
-  n450 --> n673
-  n450 --> n449
-  n452 --> n321
   n453 --> n440
-  n453 --> n283
-  n453 --> n748
   n454 --> n453
-  n457 --> n400
   n461 --> n708
   n461 --> n711
   n462 --> n708
   n463 --> n459
   n463 --> n461
   n463 --> n462
-  n464 --> n400
   n465 --> n482
   n465 --> n481
   n467 --> n466
@@ -2544,28 +2588,19 @@ flowchart LR
   n495 --> n481
   n498 --> n497
   n499 --> n498
-  n499 --> n400
   n503 --> n500
   n503 --> n501
   n503 --> n477
   n503 --> n502
   n503 --> n486
-  n508 --> n400
-  n509 --> n400
   n510 --> n398
   n510 --> n507
-  n510 --> n400
   n510 --> n514
   n510 --> n509
-  n512 --> n520
-  n512 --> n519
-  n513 --> n400
   n513 --> n511
   n514 --> n512
   n514 --> n513
   n516 --> n515
-  n520 --> n517
-  n520 --> n518
   n523 --> n477
   n523 --> n521
   n523 --> n522
@@ -2577,42 +2612,6 @@ flowchart LR
   n526 --> n529
   n526 --> n530
   n532 --> n526
-  n534 --> n648
-  n544 --> n648
-  n545 --> n398
-  n545 --> n400
-  n545 --> n363
-  n549 --> n716
-  n550 --> n654
-  n550 --> n531
-  n550 --> n532
-  n550 --> n524
-  n550 --> n303
-  n550 --> n406
-  n550 --> n837
-  n550 --> n851
-  n550 --> n538
-  n550 --> n186
-  n550 --> n286
-  n550 --> n467
-  n550 --> n308
-  n550 --> n315
-  n636 --> n400
-  n636 --> n714
-  n636 --> n549
-  n636 --> n704
-  n636 --> n263
-  n636 --> n708
-  n636 --> n838
-  n636 --> n648
-  n636 --> n839
-  n636 --> n534
-  n636 --> n841
-  n636 --> n692
-  n637 --> n549
-  n637 --> n638
-  n637 --> n290
-  n640 --> n698
   n640 --> n367
   n645 --> n641
   n645 --> n642
@@ -2626,10 +2625,8 @@ flowchart LR
   n657 --> n656
   n659 --> n657
   n659 --> n660
-  n659 --> n400
   n659 --> n658
   n659 --> n655
-  n660 --> n400
   n665 --> n661
   n666 --> n661
   n666 --> n664
@@ -2642,53 +2639,13 @@ flowchart LR
   n670 --> n661
   n672 --> n671
   n673 --> n674
-  n675 --> n676
-  n677 --> n400
-  n677 --> n675
-  n677 --> n676
-  n677 --> n704
-  n677 --> n504
-  n678 --> n400
-  n678 --> n504
-  n678 --> n859
-  n678 --> n860
-  n679 --> n252
-  n680 --> n400
-  n681 --> n400
-  n682 --> n400
-  n682 --> n181
-  n683 --> n400
-  n686 --> n685
-  n687 --> n695
-  n688 --> n268
-  n688 --> n402
-  n688 --> n704
-  n688 --> n504
-  n688 --> n690
-  n689 --> n686
-  n689 --> n400
-  n689 --> n704
-  n689 --> n504
-  n689 --> n690
-  n690 --> n400
-  n690 --> n701
   n691 --> n704
   n691 --> n504
-  n692 --> n402
   n692 --> n691
-  n693 --> n402
   n693 --> n691
   n693 --> n714
-  n694 --> n402
   n694 --> n691
   n694 --> n714
-  n695 --> n696
-  n698 --> n695
-  n698 --> n268
-  n698 --> n402
-  n700 --> n699
-  n701 --> n699
-  n703 --> n702
   n708 --> n705
   n708 --> n706
   n708 --> n707
@@ -2701,26 +2658,11 @@ flowchart LR
   n718 --> n708
   n720 --> n398
   n720 --> n718
-  n721 --> n751
-  n721 --> n743
-  n722 --> n852
-  n722 --> n851
-  n723 --> n400
-  n723 --> n837
-  n723 --> n848
   n723 --> n718
-  n724 --> n400
   n724 --> n725
   n724 --> n718
-  n725 --> n402
   n725 --> n704
   n725 --> n504
-  n726 --> n400
-  n727 --> n400
-  n727 --> n837
-  n727 --> n743
-  n727 --> n838
-  n727 --> n748
   n727 --> n718
   n728 --> n414
   n728 --> n718
@@ -2739,41 +2681,12 @@ flowchart LR
   n730 --> n731
   n731 --> n729
   n732 --> n731
-  n734 --> n400
   n735 --> n734
   n735 --> n733
   n736 --> n734
   n736 --> n733
-  n736 --> n743
-  n736 --> n400
-  n736 --> n841
-  n736 --> n837
   n736 --> n735
   n736 --> n737
-  n736 --> n747
-  n737 --> n748
-  n745 --> n400
-  n745 --> n738
-  n745 --> n744
-  n746 --> n400
-  n746 --> n744
-  n747 --> n738
-  n747 --> n400
-  n747 --> n746
-  n747 --> n744
-  n748 --> n704
-  n748 --> n711
-  n748 --> n738
-  n748 --> n504
-  n748 --> n400
-  n749 --> n400
-  n750 --> n738
-  n750 --> n400
-  n750 --> n752
-  n751 --> n400
-  n752 --> n400
-  n752 --> n742
-  n752 --> n751
   n756 --> n753
   n756 --> n754
   n756 --> n755
@@ -2781,13 +2694,10 @@ flowchart LR
   n759 --> n704
   n759 --> n504
   n760 --> n758
-  n760 --> n402
   n760 --> n704
   n760 --> n759
   n761 --> n758
-  n761 --> n400
   n761 --> n756
-  n762 --> n400
   n765 --> n764
   n765 --> n763
   n767 --> n766
@@ -2799,8 +2709,6 @@ flowchart LR
   n776 --> n766
   n777 --> n704
   n777 --> n504
-  n778 --> n520
-  n778 --> n519
   n778 --> n765
   n779 --> n704
   n779 --> n777
@@ -2810,7 +2718,6 @@ flowchart LR
   n781 --> n770
   n781 --> n771
   n781 --> n773
-  n781 --> n402
   n781 --> n704
   n781 --> n766
   n781 --> n780
@@ -2818,43 +2725,35 @@ flowchart LR
   n781 --> n779
   n781 --> n789
   n782 --> n767
-  n782 --> n402
   n782 --> n776
   n782 --> n766
   n782 --> n775
   n782 --> n778
   n782 --> n779
   n782 --> n789
-  n784 --> n748
   n785 --> n457
   n785 --> n784
   n785 --> n453
   n785 --> n783
   n785 --> n456
   n785 --> n432
-  n786 --> n400
   n787 --> n398
   n787 --> n784
   n787 --> n432
   n787 --> n786
-  n787 --> n838
-  n787 --> n837
   n788 --> n787
   n789 --> n785
   n789 --> n788
-  n790 --> n402
   n790 --> n776
   n790 --> n766
   n790 --> n794
   n790 --> n777
-  n791 --> n402
   n791 --> n776
   n791 --> n794
   n791 --> n766
   n791 --> n777
   n792 --> n767
   n792 --> n770
-  n792 --> n402
   n792 --> n704
   n792 --> n766
   n792 --> n777
@@ -2862,10 +2761,8 @@ flowchart LR
   n794 --> n766
   n794 --> n775
   n794 --> n774
-  n795 --> n400
   n795 --> n775
   n795 --> n774
-  n796 --> n400
   n796 --> n775
   n796 --> n774
   n798 --> n797
@@ -2884,14 +2781,11 @@ flowchart LR
   n806 --> n798
   n807 --> n798
   n809 --> n797
-  n809 --> n520
-  n809 --> n519
   n810 --> n797
   n811 --> n704
   n811 --> n504
   n812 --> n797
   n813 --> n797
-  n815 --> n400
   n815 --> n704
   n815 --> n504
   n816 --> n806
@@ -2901,7 +2795,6 @@ flowchart LR
   n816 --> n808
   n816 --> n704
   n816 --> n815
-  n816 --> n402
   n816 --> n809
   n816 --> n810
   n816 --> n813
@@ -2913,14 +2806,12 @@ flowchart LR
   n818 --> n819
   n818 --> n807
   n819 --> n806
-  n819 --> n402
   n819 --> n812
   n819 --> n797
   n819 --> n811
   n819 --> n814
   n820 --> n806
   n820 --> n807
-  n820 --> n402
   n820 --> n812
   n820 --> n814
   n820 --> n797
@@ -2929,7 +2820,6 @@ flowchart LR
   n821 --> n808
   n821 --> n807
   n821 --> n815
-  n821 --> n402
   n821 --> n809
   n821 --> n810
   n821 --> n812
@@ -2937,26 +2827,17 @@ flowchart LR
   n821 --> n797
   n821 --> n813
   n821 --> n811
-  n822 --> n400
-  n823 --> n400
-  n827 --> n400
   n827 --> n825
   n827 --> n824
-  n828 --> n400
   n828 --> n825
   n828 --> n824
-  n829 --> n400
   n829 --> n825
   n829 --> n824
-  n830 --> n400
   n830 --> n825
-  n831 --> n400
   n831 --> n824
   n831 --> n825
-  n832 --> n400
   n832 --> n825
   n832 --> n824
-  n833 --> n400
   n833 --> n825
   n833 --> n824
   n834 --> n827
@@ -2967,101 +2848,11 @@ flowchart LR
   n834 --> n832
   n834 --> n833
   n834 --> n826
-  n837 --> n252
-  n837 --> n859
-  n838 --> n400
-  n838 --> n835
-  n838 --> n704
-  n838 --> n703
-  n838 --> n745
-  n838 --> n748
-  n838 --> n747
-  n838 --> n268
-  n838 --> n842
-  n838 --> n300
-  n838 --> n296
-  n838 --> n408
-  n838 --> n746
-  n838 --> n843
-  n839 --> n400
-  n839 --> n742
-  n839 --> n746
-  n839 --> n514
-  n839 --> n402
-  n839 --> n750
-  n839 --> n748
-  n839 --> n516
-  n839 --> n843
-  n840 --> n751
-  n841 --> n400
-  n841 --> n742
-  n841 --> n402
-  n841 --> n750
-  n841 --> n748
-  n842 --> n410
-  n842 --> n424
-  n842 --> n440
-  n842 --> n272
-  n842 --> n280
-  n842 --> n277
-  n842 --> n400
-  n843 --> n746
-  n843 --> n747
-  n843 --> n845
-  n843 --> n508
-  n843 --> n514
-  n843 --> n836
-  n843 --> n846
-  n843 --> n510
-  n843 --> n506
-  n843 --> n410
-  n843 --> n424
-  n843 --> n440
-  n843 --> n273
-  n843 --> n281
-  n843 --> n277
-  n843 --> n400
-  n843 --> n748
-  n845 --> n400
-  n846 --> n516
-  n846 --> n747
-  n846 --> n748
-  n847 --> n849
-  n847 --> n860
-  n847 --> n850
-  n848 --> n849
-  n848 --> n861
-  n849 --> n400
-  n849 --> n857
-  n850 --> n410
-  n850 --> n424
-  n850 --> n400
-  n850 --> n275
-  n850 --> n276
-  n851 --> n837
-  n852 --> n400
-  n852 --> n854
-  n852 --> n855
-  n852 --> n747
-  n852 --> n853
-  n853 --> n400
-  n854 --> n400
-  n854 --> n747
-  n854 --> n856
-  n855 --> n514
-  n855 --> n509
-  n855 --> n516
-  n855 --> n747
-  n855 --> n748
-  n855 --> n856
-  n856 --> n843
-  n860 --> n400
   n860 --> n864
   n860 --> n863
   n860 --> n865
   n860 --> n873
   n860 --> n862
-  n861 --> n400
   n861 --> n869
   n861 --> n862
   n861 --> n866
@@ -3069,18 +2860,8 @@ flowchart LR
   n861 --> n863
   n861 --> n865
   n861 --> n857
-  n862 --> n400
-  n863 --> n400
-  n864 --> n400
-  n865 --> n400
-  n866 --> n400
   n866 --> n857
-  n867 --> n400
-  n867 --> n748
   n868 --> n858
-  n868 --> n231
-  n868 --> n257
-  n869 --> n400
   n869 --> n408
   n869 --> n868
   n869 --> n867
@@ -3088,27 +2869,13 @@ flowchart LR
   n869 --> n862
   n869 --> n865
   n869 --> n871
-  n870 --> n400
-  n871 --> n402
-  n871 --> n400
-  n871 --> n746
-  n871 --> n293
-  n871 --> n747
-  n871 --> n748
   n871 --> n181
-  n872 --> n400
-  n872 --> n402
   n872 --> n704
   n872 --> n504
   n873 --> n862
-  n873 --> n182
-  n873 --> n748
-  n873 --> n400
   n873 --> n867
   n873 --> n408
   n873 --> n440
-  n873 --> n230
-  n873 --> n255
   n873 --> n872
   n873 --> n858
   n873 --> n868
