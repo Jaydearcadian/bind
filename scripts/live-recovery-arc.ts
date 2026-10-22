@@ -35,6 +35,7 @@ import {
   decodeFunctionResult,
   encodeEventTopics,
   encodeFunctionData,
+  getAddress,
   isAddress,
   keccak256,
   stringToHex,
@@ -47,6 +48,7 @@ import { ARC_USDC_PRECOMPILE, ArcL1SettlementAdapter, USDC_ABI } from "../src/ad
 import { BIND_SETTLEMENT_ABI } from "../src/adapters/settlement/bind-settlement.abi.js";
 import { LocalSettlementSimulator } from "../src/adapters/settlement/local-sim.js";
 import type { SettlementAdapter, TransferRequest, TransferResult } from "../src/adapters/settlement/types.js";
+import { parse as parsePgConnectionString } from "pg-connection-string";
 import { redactText } from "../src/utils/redact.js";
 import { secretsOf } from "./verify-live-arc.js";
 
@@ -192,13 +194,31 @@ export interface GuardFailure {
   reason: string;
 }
 
-function hostOf(url: string | undefined): string | undefined {
-  if (!url) return undefined;
+/**
+ * The database host, as pg will connect to it. The connection string is parsed with pg-connection-string (the parser
+ * pg uses). A `host` or `hostaddr` query parameter is refused outright: pg would connect to it, whatever the authority says.
+ * Returns a reason, never the value.
+ */
+export function databaseHostProblem(databaseUrl: string | undefined): string | undefined {
+  if (!databaseUrl) return "DATABASE_URL is not set";
+  let query: URLSearchParams;
   try {
-    return new URL(url).hostname;
+    query = new URL(databaseUrl).searchParams;
   } catch {
-    return undefined;
+    return "DATABASE_URL is not a URL";
   }
+  for (const key of query.keys()) {
+    if (/^(host|hostaddr)$/i.test(key)) return "DATABASE_URL must not set a host or hostaddr query parameter";
+  }
+  let parsed: { host?: string | null };
+  try {
+    parsed = parsePgConnectionString(databaseUrl) as { host?: string | null };
+  } catch {
+    return "DATABASE_URL is not a valid connection string";
+  }
+  const host = parsed.host;
+  if (typeof host !== "string" || !LOCAL_HOSTS.has(host)) return "DATABASE_URL host must be 127.0.0.1 or localhost";
+  return undefined;
 }
 
 function isHttpUrl(value: string | undefined): boolean {
@@ -237,9 +257,8 @@ export function staticGuards(env: Env, args: CliArgs, evidenceExists: boolean): 
   }
   if (env.NODE_ENV === "production") add("node-env", "NODE_ENV is production");
 
-  const dbHost = hostOf(env.DATABASE_URL);
-  if (dbHost === undefined) add("database-host", "DATABASE_URL is not set or is not a URL");
-  else if (!LOCAL_HOSTS.has(dbHost)) add("database-host", "DATABASE_URL host must be 127.0.0.1 or localhost");
+  const dbProblem = databaseHostProblem(env.DATABASE_URL);
+  if (dbProblem !== undefined) add("database-host", dbProblem);
 
   if (env.SETTLEMENT_MODE !== undefined && env.SETTLEMENT_MODE !== "arc-testnet") {
     add("settlement-mode", "SETTLEMENT_MODE is set to something other than arc-testnet");
@@ -395,6 +414,21 @@ export async function assertContractGuards(
 // ---------------------------------------------------------------------------------------------------------------------
 // Chain facts used by the assertions
 // ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * The contract must have code at its deploy block, and that block must already exist on the chain. Otherwise the scan
+ * from the deploy block would prove nothing. Any other answer is BLOCKED, and nothing is sent.
+ */
+export async function assertDeployBlockCode(rpc: RpcCall, contract: string, deployBlock: bigint): Promise<void> {
+  const head = await blockedOn("the block number read", async () =>
+    hexQuantity(await rpc("eth_blockNumber", []), "eth_blockNumber")
+  );
+  if (deployBlock > head) throw new BlockedError("BIND_SETTLEMENT_DEPLOY_BLOCK is ahead of the chain head");
+  const code = await blockedOn("the code read", async () =>
+    hexData(await rpc("eth_getCode", [contract, `0x${deployBlock.toString(16)}`]), "eth_getCode")
+  );
+  if (code.length <= 2) throw new BlockedError("the contract has no code at BIND_SETTLEMENT_DEPLOY_BLOCK");
+}
 
 export async function readVendorBalance(rpc: RpcCall, vendor: string): Promise<bigint> {
   return blockedOn("vendor balance", async () => {
@@ -577,14 +611,41 @@ export interface SendHooks {
   beforeConfirm?: (txHash: string) => Promise<void>;
 }
 
-/** Wraps an adapter. Refuses any amount other than one cent before the hooks or the adapter run. */
-export function guardedAdapter(inner: SettlementAdapter, hooks: SendHooks): SettlementAdapter {
+/** What a transfer may name. Anything else is refused before the chain is read or the adapter is called. */
+export interface TransferPins {
+  payer: string;
+  vendor: string;
+  orderId: string;
+}
+
+function sameAddress(a: string, b: string): boolean {
+  try {
+    return getAddress(a) === getAddress(b);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Wraps an adapter. A transfer is refused unless it is exactly one cent, pays from the signer, pays the pinned vendor and
+ * is for the prepared order. These checks run before beforeTransfer, so a bad request never reaches the chain read.
+ */
+export function guardedAdapter(inner: SettlementAdapter, hooks: SendHooks, pins: TransferPins): SettlementAdapter {
   return {
     mode: inner.mode,
     getBalance: (address: string) => inner.getBalance(address),
     transferUSDC: async (req: TransferRequest): Promise<TransferResult> => {
       if (req.amountCents !== PAYMENT_CENTS) {
         throw new RefusedError([`the amount is not ${PAYMENT_LABEL}; nothing is sent`]);
+      }
+      if (!sameAddress(req.fromAddress, pins.payer)) {
+        throw new RefusedError(["the transfer does not pay from the signer; nothing is sent"]);
+      }
+      if (!sameAddress(req.toAddress, pins.vendor)) {
+        throw new RefusedError(["the transfer does not pay the pinned vendor; nothing is sent"]);
+      }
+      if (req.orderId !== pins.orderId) {
+        throw new RefusedError(["the transfer is not for the prepared order; nothing is sent"]);
       }
       await hooks.beforeTransfer();
       const result = await inner.transferUSDC(req);
@@ -833,6 +894,7 @@ export interface BroadcastRecord {
 export function timeoutAssertions(input: {
   stopped: string | undefined;
   attempts: AttemptRecord[];
+  broadcastsAfterAttempt1?: number;
   afterAttempt1: SettlementSnapshot | undefined;
   final: SettlementSnapshot | undefined;
   adapter: AdapterKind;
@@ -847,6 +909,13 @@ export function timeoutAssertions(input: {
   );
   const first = input.attempts[0];
   const a1 = input.afterAttempt1;
+  out.push(
+    check(
+      "attempt1_broadcast_exactly_once",
+      input.broadcastsAfterAttempt1 === 1,
+      `broadcasts after attempt 1: ${input.broadcastsAfterAttempt1 ?? "not recorded"}; the scenario needs exactly one`
+    )
+  );
   out.push(
     check(
       "attempt1_unknown_outcome",
@@ -872,9 +941,11 @@ export function timeoutAssertions(input: {
         input.broadcasts.length <= 2,
         `broadcasts by the signer during the scenario: ${input.broadcasts.length}`
       ),
-      info(
+      check(
         "signer_nonce_delta",
-        `signer nonce ${chain.startNonce} -> ${chain.endNonce} (delta ${BigInt(chain.endNonce) - BigInt(chain.startNonce)})`
+        BigInt(chain.endNonce) - BigInt(chain.startNonce) === BigInt(input.broadcasts.length) &&
+          (input.broadcasts.length === 1 || input.broadcasts.length === 2),
+        `signer nonce ${chain.startNonce} -> ${chain.endNonce} (delta ${BigInt(chain.endNonce) - BigInt(chain.startNonce)}) against ${input.broadcasts.length} broadcast(s): the delta must equal the broadcasts, and be 1 or 2`
       ),
       check(
         "tx_hash_matches_log",
@@ -906,8 +977,14 @@ export function timeoutAssertions(input: {
   return out;
 }
 
-export function verdictOf(assertions: Assertion[]): RunResult {
-  return assertions.some((a) => a.status === "FAIL") ? "FAIL" : "PASS";
+/**
+ * PASS only when nothing failed and, on the live chain, nothing was skipped: a skipped chain check on arc is a gap in the
+ * evidence, so it cannot pass. A local-sim rehearsal may skip its chain checks; that is what the rehearsal is.
+ */
+export function verdictOf(assertions: Assertion[], adapter: AdapterKind): RunResult {
+  if (assertions.some((a) => a.status === "FAIL")) return "FAIL";
+  if (adapter === "arc" && assertions.some((a) => a.status === "SKIPPED")) return "FAIL";
+  return "PASS";
 }
 
 /** The database state as the harness stores it. Pure, so the tests can build one from rows. */
@@ -1205,7 +1282,7 @@ async function verifyRun(args: CliArgs, state: ScenarioState, ports: HarnessPort
   const final = await ports.db.snapshot(state.orderId, state.workspaceId);
   report.step("final-snapshot", final);
   const sendResult = state.results.send as
-    | { attempts?: AttemptRecord[]; afterAttempt1?: SettlementSnapshot; afterAttempt2?: SettlementSnapshot; afterAttempt3?: SettlementSnapshot; stopped?: string; broadcasts?: string[] }
+    | { broadcastsAfterAttempt1?: number; attempts?: AttemptRecord[]; afterAttempt1?: SettlementSnapshot; afterAttempt2?: SettlementSnapshot; afterAttempt3?: SettlementSnapshot; stopped?: string; broadcasts?: string[] }
     | undefined;
   const sendBroadcasts = sendResult?.broadcasts ?? [];
 
@@ -1227,6 +1304,7 @@ async function verifyRun(args: CliArgs, state: ScenarioState, ports: HarnessPort
     assertions = timeoutAssertions({
       stopped: sendResult?.stopped,
       attempts: sendResult?.attempts ?? [],
+      broadcastsAfterAttempt1: sendResult?.broadcastsAfterAttempt1,
       afterAttempt1: sendResult?.afterAttempt1,
       final,
       adapter: args.adapter,
@@ -1256,7 +1334,7 @@ async function verifyRun(args: CliArgs, state: ScenarioState, ports: HarnessPort
     });
   }
   report.setAssertions(assertions);
-  return verdictOf(assertions);
+  return verdictOf(assertions, args.adapter);
 }
 
 /**
@@ -1281,6 +1359,7 @@ export async function runOrchestrator(args: CliArgs, ports: HarnessPorts): Promi
     if (args.adapter === "arc") {
       if (!ports.rpc) return report.end("BLOCKED", ["no RPC client"]);
       const reading = await assertContractGuards(ports.rpc, { contract, signer, vendor: VENDOR_ADDRESS });
+      await assertDeployBlockCode(ports.rpc, contract, BigInt(ports.env.BIND_SETTLEMENT_DEPLOY_BLOCK ?? "0"));
       report.step("contract-guards", { chainId: reading.chainId, owner: reading.owner, whitelisted: reading.vendorWhitelisted });
     }
 
@@ -1475,7 +1554,7 @@ export async function runChildPhase(args: CliArgs, env: Env, emit: (text: string
   const rpc = args.adapter === "arc" && env.ARC_RPC_URL ? httpRpc(env.ARC_RPC_URL) : undefined;
   const signer = signerAddressOf(env.ARC_SIGNER_PRIVATE_KEY) ?? LOCAL_SIM_PAYER;
   const contract = env.BIND_SETTLEMENT_ADDRESS ?? APPROVED_SETTLEMENT_ADDRESS;
-  const files = realFiles();
+  const files = realFiles(makeScrubber(env));
   let database: HarnessDb | undefined;
   try {
     const failures = staticGuards(env, args, false);
@@ -1484,7 +1563,10 @@ export async function runChildPhase(args: CliArgs, env: Env, emit: (text: string
     if (state === null) throw new RefusedError(["no prepared state for this scenario: run the prepare phase first"]);
     assertPhaseAllowed(state, phase, args);
     if (!state.baseline) throw new RefusedError(["the baseline is missing: the orchestrator has not started the send"]);
-    if (rpc) await assertContractGuards(rpc, { contract, signer, vendor: VENDOR_ADDRESS });
+    if (rpc) {
+      await assertContractGuards(rpc, { contract, signer, vendor: VENDOR_ADDRESS });
+      await assertDeployBlockCode(rpc, contract, BigInt(env.BIND_SETTLEMENT_DEPLOY_BLOCK ?? "0"));
+    }
 
     const db = await open();
     database = db;
@@ -1497,13 +1579,16 @@ export async function runChildPhase(args: CliArgs, env: Env, emit: (text: string
     else state.recoverStartedAt = stamp;
     files.write(args.statePath, jsonText(state, true), "overwrite");
 
+    // Every send this process makes, by hash: a transport broadcast (arc) or a simulated transfer (local-sim).
     const broadcasts: string[] = [];
     const adapter = buildAdapter(args, env, args.scenario === "timeout-retry", (hash) => broadcasts.push(hash), rpc);
     const guardCfg = { contract, signer, vendor: VENDOR_ADDRESS };
     let armedOnce = false;
-    const throwOnce = async () => {
+    // The local-sim timeout: the transfer has been made (it is recorded), and the call then fails with a timeout.
+    const timeoutAfterTransfer = async (result: TransferResult) => {
       if (armedOnce) return;
       armedOnce = true;
+      broadcasts.push(result.txHash);
       throw new Error("RPC request timed out after the transaction was sent");
     };
     const kill = (): never => {
@@ -1511,18 +1596,22 @@ export async function runChildPhase(args: CliArgs, env: Env, emit: (text: string
       process.kill(process.pid, "SIGKILL");
       throw new Error("unreachable: the process was killed");
     };
-    const guarded = guardedAdapter(adapter, {
-      beforeTransfer: async () => {
-        if (rpc) await assertContractGuards(rpc, guardCfg);
+    const guarded = guardedAdapter(
+      adapter,
+      {
+        beforeTransfer: async () => {
+          if (rpc) await assertContractGuards(rpc, guardCfg);
+        },
+        afterTransfer:
+          phase === "send" && args.scenario === "crash-before-record"
+            ? async () => kill()
+            : phase === "send" && args.scenario === "timeout-retry" && args.adapter === "local-sim"
+              ? timeoutAfterTransfer
+              : undefined,
+        beforeConfirm: phase === "send" && args.scenario === "crash-before-confirm" ? async () => kill() : undefined,
       },
-      afterTransfer:
-        phase === "send" && args.scenario === "crash-before-record"
-          ? async () => kill()
-          : phase === "send" && args.scenario === "timeout-retry" && args.adapter === "local-sim"
-            ? throwOnce
-            : undefined,
-      beforeConfirm: phase === "send" && args.scenario === "crash-before-confirm" ? async () => kill() : undefined,
-    });
+      { payer: signer, vendor: VENDOR_ADDRESS, orderId: state.orderId }
+    );
 
     const { ProcurementWorkflowRunner } = await import("../src/workflows/procurement.js");
     const runner = new ProcurementWorkflowRunner({ settlementFor: () => guarded });
@@ -1614,6 +1703,11 @@ async function timeoutSequence(input: {
   await attempt("attempt-1");
   out.afterAttempt1 = await input.db.snapshot(input.orderId, input.workspaceId);
   const a1 = out.afterAttempt1 as SettlementSnapshot;
+  out.broadcastsAfterAttempt1 = input.broadcasts.length;
+  if (input.broadcasts.length !== 1) {
+    out.stopped = `attempt 1 did not broadcast exactly once (${input.broadcasts.length} broadcasts)`;
+    return out;
+  }
   if (attempts[0].ok || a1.status !== "confirmed" || a1.effect?.status !== "failed") {
     out.stopped = `attempt 1 did not give the expected unknown outcome (order ${a1.status}, effect ${a1.effect?.status ?? "none"})`;
     return out;
@@ -1697,11 +1791,15 @@ async function recoverSequence(input: {
 // The real edges: files, the database, child processes, the entrypoint
 // ---------------------------------------------------------------------------------------------------------------------
 
-export function realFiles(): HarnessPorts["files"] {
+/**
+ * The real files port. Every write goes through `scrub` first, the same redaction as stdout, so the evidence file and the
+ * state file never hold the RPC URL, its path segments, the key or the database URL.
+ */
+export function realFiles(scrub: (text: string) => string = (text) => text): HarnessPorts["files"] {
   return {
     exists: (file) => fs.existsSync(file),
     read: (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null),
-    write: (file, text, mode) => fs.writeFileSync(file, text, { flag: mode === "new" ? "wx" : "w" }),
+    write: (file, text, mode) => fs.writeFileSync(file, scrub(text), { flag: mode === "new" ? "wx" : "w" }),
   };
 }
 
@@ -1832,7 +1930,7 @@ function realPorts(env: Env, emit: (text: string) => void, scrub: (text: string)
     notify: (text) => {
       process.stderr.write(`${scrub(text)}\n`);
     },
-    files: realFiles(),
+    files: realFiles(scrub),
     rpc: env.ARC_RPC_URL && isHttpUrl(env.ARC_RPC_URL) ? httpRpc(env.ARC_RPC_URL) : undefined,
     db: {
       prepare: async (input) => (await db()).prepare(input),

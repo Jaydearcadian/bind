@@ -18,6 +18,8 @@ import { USDC_ABI } from "../../src/adapters/settlement/arc-l1.js";
 import {
   APPROVED_SETTLEMENT_ADDRESS,
   BlockedError,
+  assertDeployBlockCode,
+  databaseHostProblem,
   KILL_ARMED_MARK,
   PAYMENT_CENTS,
   RefusedError,
@@ -125,7 +127,7 @@ interface FakeChain {
   broadcastOnly(): void;
 }
 
-function makeChain(over: { chainId?: string; owner?: string; whitelisted?: boolean; enforced?: boolean } = {}): FakeChain {
+function makeChain(over: { chainId?: string; owner?: string; whitelisted?: boolean; enforced?: boolean; noCode?: boolean } = {}): FakeChain {
   const orderTopic = keccak256(stringToHex(ORDER));
   const answers = new Map<string, () => string>();
   const put = (data: Hex, value: () => string) => answers.set(data.toLowerCase(), value);
@@ -171,6 +173,9 @@ function makeChain(over: { chainId?: string; owner?: string; whitelisted?: boole
   chain.rpc = async (method, params) => {
     chain.calls.push(method);
     if (method === "eth_chainId") return over.chainId ?? CHAIN_ID_HEX;
+    // The head is well past the deploy block used in these tests (1000), so the deploy block exists.
+    if (method === "eth_blockNumber") return "0x1388";
+    if (method === "eth_getCode") return over.noCode ? "0x" : "0x6080";
     if (method === "eth_getTransactionCount") {
       const tag = (params as unknown[])[1];
       return `0x${(tag === "pending" ? chain.pending : chain.latest).toString(16)}`;
@@ -600,11 +605,13 @@ const REQ = {
   idempotencyKey: `idem_pay_${ORDER}`,
   matchHash: `0x${"ef".repeat(32)}`,
 };
+/** The transfer's pins: the signer, the pinned vendor and the prepared order. REQ satisfies all three. */
+const PINS = { payer: SIGNER, vendor: VENDOR_ADDRESS, orderId: ORDER };
 
 describe("guarded adapter", () => {
   it("refuses any amount other than one cent before the chain is read or the adapter is called", async () => {
     const log: string[] = [];
-    const guarded = guardedAdapter(innerAdapter(log), { beforeTransfer: async () => void log.push("beforeTransfer") });
+    const guarded = guardedAdapter(innerAdapter(log), { beforeTransfer: async () => void log.push("beforeTransfer") }, PINS);
     await expect(guarded.transferUSDC({ ...REQ, amountCents: 2n })).rejects.toThrow(/not 1 cent/);
     await expect(guarded.transferUSDC({ ...REQ, amountCents: 0n })).rejects.toThrow(/nothing is sent/);
     expect(log).toEqual([]);
@@ -616,7 +623,7 @@ describe("guarded adapter", () => {
       beforeTransfer: async () => {
         throw new RefusedError(["the chain id changed"]);
       },
-    });
+    }, PINS);
     await expect(guarded.transferUSDC(REQ)).rejects.toThrow(/chain id changed/);
     expect(log).toEqual([]);
   });
@@ -626,7 +633,7 @@ describe("guarded adapter", () => {
     const guarded = guardedAdapter(innerAdapter(log), {
       beforeTransfer: async () => void log.push("beforeTransfer"),
       afterTransfer: async (result) => void log.push(`afterTransfer:${result.txHash}`),
-    });
+    }, PINS);
     const result = await guarded.transferUSDC(REQ);
     expect(result.txHash).toBe(HASH1);
     expect(log).toEqual(["beforeTransfer", "transfer", `afterTransfer:${HASH1}`]);
@@ -637,7 +644,7 @@ describe("guarded adapter", () => {
     const guarded = guardedAdapter(innerAdapter(log), {
       beforeTransfer: async () => undefined,
       beforeConfirm: async () => void log.push("beforeConfirm"),
-    });
+    }, PINS);
     await guarded.confirm(HASH1);
     expect(log).toEqual(["beforeConfirm", "confirm"]);
     expect(guarded.findTransfer).toBeUndefined();
@@ -675,7 +682,7 @@ describe("timeout transport", () => {
 describe("pre-restart assertions", () => {
   it("crash-before-record expects no hash and an unfinished effect", () => {
     const ok1 = preRestartAssertions("crash-before-record", snap());
-    expect(verdictOf(ok1)).toBe("PASS");
+    expect(verdictOf(ok1, "arc")).toBe("PASS");
     const withHash = preRestartAssertions("crash-before-record", snap({ txHash: HASH1 }));
     expect(withHash.find((a) => a.name === "pre_restart_no_hash")?.status).toBe("FAIL");
   });
@@ -687,7 +694,7 @@ describe("pre-restart assertions", () => {
       effect: { status: "completed", attempts: 1, operation: "settlement.transfer_usdc", externalRef: HASH1 },
       audits: ["settlement.submitted"],
     });
-    expect(verdictOf(preRestartAssertions("crash-before-confirm", good))).toBe("PASS");
+    expect(verdictOf(preRestartAssertions("crash-before-confirm", good), "arc")).toBe("PASS");
     const confirmed = { ...good, audits: ["settlement.submitted", "settlement.confirmed"] };
     expect(preRestartAssertions("crash-before-confirm", confirmed).find((a) => a.name === "pre_restart_confirmed_audit_absent")?.status).toBe(
       "FAIL"
@@ -732,7 +739,7 @@ describe("crash assertions", () => {
       repeat: repeatGood,
       chain: chain(),
     });
-    expect(verdictOf(out)).toBe("PASS");
+    expect(verdictOf(out, "arc")).toBe("PASS");
   });
 
   it("fails on a second settlement log, a nonce delta of two, or a vendor delta that is not exact", () => {
@@ -815,7 +822,7 @@ describe("crash assertions", () => {
       chain: undefined,
     });
     expect(out.filter((a) => a.name === "one_settlement_log").map((a) => a.status)).toEqual(["SKIPPED"]);
-    expect(verdictOf(out)).toBe("PASS");
+    expect(verdictOf(out, "local-sim")).toBe("PASS");
   });
 });
 
@@ -844,6 +851,7 @@ describe("timeout assertions", () => {
   it("passes when the first call's unknown outcome is followed by one settlement and the exact vendor delta", () => {
     const out = timeoutAssertions({
       stopped: undefined,
+      broadcastsAfterAttempt1: 1,
       attempts: [failedAttempt, { name: "attempt-2-immediate", ok: true, result: { reconciled: true } }],
       afterAttempt1,
       final: reconciledFinal,
@@ -851,12 +859,13 @@ describe("timeout assertions", () => {
       chain,
       broadcasts: [{ hash: HASH1, receipt: null }],
     });
-    expect(verdictOf(out)).toBe("PASS");
+    expect(verdictOf(out, "arc")).toBe("PASS");
   });
 
   it("fails on two settlement logs and on a vendor delta of two cents, and reports the second broadcast's revert", () => {
     const out = timeoutAssertions({
       stopped: undefined,
+      broadcastsAfterAttempt1: 1,
       attempts: [failedAttempt],
       afterAttempt1,
       final: reconciledFinal,
@@ -876,6 +885,7 @@ describe("timeout assertions", () => {
     const held = snap({ status: "payment_hold", txHash: HASH2 });
     const out = timeoutAssertions({
       stopped: undefined,
+      broadcastsAfterAttempt1: 1,
       attempts: [failedAttempt],
       afterAttempt1,
       final: held,
@@ -1243,6 +1253,7 @@ describe("orchestration, the send is one process and the restart is another", ()
           audits: ["settlement.submitted", "settlement.confirmed"],
         });
         return ok({
+          broadcastsAfterAttempt1: 1,
           attempts: [
             { name: "attempt-1", ok: false, error: { name: "SettlementTransportError", message: "timed out" } },
             { name: "attempt-2-immediate", ok: true, result: { reconciled: true } },
@@ -1270,6 +1281,7 @@ describe("orchestration, the send is one process and the restart is another", ()
         chain.broadcastAndMine(HASH2, "0x0");
         db.row = snap({ status: "payment_hold", txHash: HASH2 });
         return ok({
+          broadcastsAfterAttempt1: 1,
           attempts: [{ name: "attempt-1", ok: false, error: { name: "SettlementTransportError", message: "timed out" } }],
           afterAttempt1: snap({ status: "confirmed", effect: { status: "failed", attempts: 1, operation: "settlement.transfer_usdc", externalRef: null } }),
           broadcasts: [HASH1, HASH2],
@@ -1364,5 +1376,215 @@ describe("the payment amount", () => {
   it("is one cent and nothing else", () => {
     expect(PAYMENT_CENTS).toBe(1n);
     expect(VENDOR_ADDRESS.toLowerCase()).toBe("0xa8358aed200d6cb6c856f972d853c1be833006ea");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Review fixes: the evidence file is scrubbed, transfers are pinned, the broadcast count is exact, the database host is
+// parsed, a skip on the live chain is a failure, and the deploy block must hold code.
+// ---------------------------------------------------------------------------------------------------------------------
+
+describe("the evidence and state files go through the scrubber", () => {
+  it("a file written through the real port carries neither the RPC URL, its token, the key, nor the database URL", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "live-recovery-scrub-"));
+    const file = path.join(dir, "evidence.json");
+    const files = realFiles(makeScrubber(GOOD_ENV));
+    files.write(file, `error: ${RPC_URL} and ${DB_URL} and key ${TEST_KEY}`, "new");
+    const text = fs.readFileSync(file, "utf8");
+    expect(text).not.toContain(TOKEN);
+    expect(text).not.toContain("bind_local_only");
+    expect(text).not.toContain(TEST_KEY);
+    expect(text).not.toContain(RPC_URL);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("the orchestrator's evidence file is scrubbed when a blocked read's error text carries both URLs", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "live-recovery-evidence-"));
+    const evidence = path.join(dir, "evidence.json");
+    const db = makeDb();
+    const h = makePorts({ chain: undefined, db, spawn: async () => ok({}) });
+    h.ports.files = realFiles(makeScrubber(GOOD_ENV));
+    h.ports.rpc = async () => {
+      throw new Error(`connect to ${RPC_URL} failed for ${DB_URL}`);
+    };
+    const code = await runOrchestrator(args({ statePath: path.join(dir, "state.json"), writeEvidence: evidence }), h.ports);
+    expect(code).toBe(2);
+    const text = fs.readFileSync(evidence, "utf8");
+    expect(text).toMatch(/"result": "BLOCKED"/);
+    expect(text).not.toContain(TOKEN);
+    expect(text).not.toContain("bind_local_only");
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("the transfer is pinned to the signer, the vendor and the prepared order", () => {
+  function pinned(req: Partial<typeof REQ>) {
+    const log: string[] = [];
+    const guarded = guardedAdapter(
+      innerAdapter(log),
+      { beforeTransfer: async () => void log.push("beforeTransfer") },
+      PINS
+    );
+    return { run: () => guarded.transferUSDC({ ...REQ, ...req }), log };
+  }
+
+  it("refuses a transfer from an address other than the signer, before any chain read or send", async () => {
+    const p = pinned({ fromAddress: "0x3333333333333333333333333333333333333333" });
+    await expect(p.run()).rejects.toBeInstanceOf(RefusedError);
+    expect(p.log).toEqual([]);
+  });
+
+  it("refuses a transfer to a vendor other than the pinned one", async () => {
+    const p = pinned({ toAddress: "0x4444444444444444444444444444444444444444" });
+    await expect(p.run()).rejects.toThrow(/pinned vendor/);
+    expect(p.log).toEqual([]);
+  });
+
+  it("refuses a transfer for another order id", async () => {
+    const p = pinned({ orderId: "ord-other" });
+    await expect(p.run()).rejects.toThrow(/prepared order/);
+    expect(p.log).toEqual([]);
+  });
+
+  it("accepts the same vendor in another letter case", async () => {
+    const p = pinned({ toAddress: VENDOR_ADDRESS.toLowerCase() });
+    await expect(p.run()).resolves.toMatchObject({ txHash: HASH1 });
+    expect(p.log).toEqual(["beforeTransfer", "transfer"]);
+  });
+});
+
+describe("the broadcast count is exact in the timeout scenario", () => {
+  const afterAttempt1 = snap({
+    status: "confirmed",
+    effect: { status: "failed", attempts: 1, operation: "settlement.transfer_usdc", externalRef: null },
+  });
+  const failedAttempt = { name: "attempt-1", ok: false, error: { name: "SettlementTransportError", message: "timed out" } };
+  const chain = {
+    contract: APPROVED_SETTLEMENT_ADDRESS,
+    startNonce: "5",
+    endNonce: "7",
+    vendorBefore: "0",
+    vendorAfter: "10000",
+    expectedDelta: "10000",
+    logs: [{ transactionHash: HASH1, blockNumber: 101n }],
+    receipt: null,
+  };
+
+  it("fails attempt 1 when it broadcast twice, and the broadcast count is then not exactly one", () => {
+    const out = timeoutAssertions({
+      stopped: undefined,
+      broadcastsAfterAttempt1: 2,
+      attempts: [failedAttempt],
+      afterAttempt1,
+      final: afterAttempt1,
+      adapter: "arc",
+      chain,
+      broadcasts: [{ hash: HASH1, receipt: null }, { hash: HASH2, receipt: null }],
+    });
+    expect(out.find((a) => a.name === "attempt1_broadcast_exactly_once")?.status).toBe("FAIL");
+    expect(verdictOf(out, "arc")).toBe("FAIL");
+  });
+
+  it("makes the nonce delta a hard check: it must equal the broadcasts and be one or two", () => {
+    const base = {
+      stopped: undefined,
+      broadcastsAfterAttempt1: 1,
+      attempts: [failedAttempt],
+      afterAttempt1,
+      final: snap({ status: "reconciled", txHash: HASH1 }),
+      adapter: "arc" as const,
+    };
+    const oneBroadcastDeltaTwo = timeoutAssertions({
+      ...base,
+      chain,
+      broadcasts: [{ hash: HASH1, receipt: null }],
+    });
+    expect(oneBroadcastDeltaTwo.find((a) => a.name === "signer_nonce_delta")?.status).toBe("FAIL");
+
+    const twoBroadcastsDeltaTwo = timeoutAssertions({
+      ...base,
+      chain,
+      broadcasts: [{ hash: HASH1, receipt: null }, { hash: HASH2, receipt: null }],
+    });
+    expect(twoBroadcastsDeltaTwo.find((a) => a.name === "signer_nonce_delta")?.status).toBe("PASS");
+    expect(twoBroadcastsDeltaTwo.find((a) => a.name === "signer_nonce_delta")?.status).not.toBe("INFO");
+
+    const threeBroadcasts = timeoutAssertions({
+      ...base,
+      chain: { ...chain, endNonce: "8" },
+      broadcasts: [{ hash: HASH1, receipt: null }, { hash: HASH2, receipt: null }, { hash: HASH2, receipt: null }],
+    });
+    expect(threeBroadcasts.find((a) => a.name === "signer_nonce_delta")?.status).toBe("FAIL");
+  });
+
+  it("a skipped check on the live chain fails the run, and a skipped check on local-sim does not", () => {
+    const assertions = [
+      { name: "x", status: "PASS" as const, detail: "" },
+      { name: "y", status: "SKIPPED" as const, detail: "" },
+    ];
+    expect(verdictOf(assertions, "arc")).toBe("FAIL");
+    expect(verdictOf(assertions, "local-sim")).toBe("PASS");
+    expect(verdictOf([{ name: "z", status: "FAIL" as const, detail: "" }], "local-sim")).toBe("FAIL");
+  });
+});
+
+describe("the database host is parsed as pg parses it", () => {
+  it("accepts 127.0.0.1 and localhost, with or without other query parameters", () => {
+    expect(databaseHostProblem("postgres://u:p@127.0.0.1:5432/x")).toBeUndefined();
+    expect(databaseHostProblem("postgres://u:p@localhost:5432/x?sslmode=require")).toBeUndefined();
+  });
+
+  it("refuses a remote host, an unset URL and a value that is not a URL, and names no value", () => {
+    const remote = databaseHostProblem("postgres://u:p@db.example.test:5432/x");
+    expect(remote).toMatch(/must be 127.0.0.1 or localhost/);
+    expect(remote).not.toContain("example.test");
+    expect(databaseHostProblem(undefined)).toMatch(/not set/);
+    expect(databaseHostProblem("not a url")).toMatch(/not a URL/);
+  });
+
+  it("refuses a host or hostaddr query parameter, whatever the authority says, in any letter case", () => {
+    expect(databaseHostProblem("postgres://u:p@127.0.0.1:5432/x?host=db.example.test")).toMatch(/host or hostaddr/);
+    expect(databaseHostProblem("postgres://u:p@127.0.0.1:5432/x?hostaddr=10.0.0.1")).toMatch(/host or hostaddr/);
+    expect(databaseHostProblem("postgres://u:p@localhost:5432/x?HOST=db.example.test")).toMatch(/host or hostaddr/);
+  });
+
+  it("refuses the run through the static guards too", () => {
+    const failures = staticGuards({ ...GOOD_ENV, DATABASE_URL: "postgres://u:p@127.0.0.1:5432/x?host=db.example.test" }, args(), false);
+    expect(failures.map((f) => f.guard)).toContain("database-host");
+  });
+});
+
+describe("the deploy block must hold code, and must exist, before anything is sent", () => {
+  it("passes when the contract has code at the deploy block and the block is at or before the head", async () => {
+    const chain = makeChain();
+    await expect(assertDeployBlockCode(chain.rpc, APPROVED_SETTLEMENT_ADDRESS, 1000n)).resolves.toBeUndefined();
+  });
+
+  it("is BLOCKED when the contract has no code at the deploy block", async () => {
+    const chain = makeChain({ noCode: true });
+    await expect(assertDeployBlockCode(chain.rpc, APPROVED_SETTLEMENT_ADDRESS, 1000n)).rejects.toThrow(/no code at BIND_SETTLEMENT_DEPLOY_BLOCK/);
+  });
+
+  it("is BLOCKED when the deploy block is ahead of the chain head", async () => {
+    const chain = makeChain();
+    const err = await assertDeployBlockCode(chain.rpc, APPROVED_SETTLEMENT_ADDRESS, 999999n).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BlockedError);
+    expect((err as Error).message).toMatch(/ahead of the chain head/);
+  });
+
+  it("is BLOCKED when the read fails", async () => {
+    const down: RpcCall = async () => {
+      throw new Error("connection refused");
+    };
+    await expect(assertDeployBlockCode(down, APPROVED_SETTLEMENT_ADDRESS, 1000n)).rejects.toBeInstanceOf(BlockedError);
+  });
+
+  it("an orchestrator run stops before any send when the deploy block holds no code", async () => {
+    const db = makeDb();
+    const chain = makeChain({ noCode: true });
+    const h = makePorts({ chain, db, spawn: async () => ok({}) });
+    expect(await runOrchestrator(args({ statePath }), h.ports)).toBe(2);
+    expect(h.spawned).toEqual([]);
+    expect(db.prepared).toBe(0);
   });
 });
