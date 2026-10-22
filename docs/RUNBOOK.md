@@ -664,3 +664,50 @@ templates `kitchen-ops` and `coffee-roaster`. `ws-kitchen-` and short generic na
 the workspace's rows go with it. The script refuses when `NODE_ENV` is `production`, but that is a guard, not the control. Before
 you run `--apply`, check that `DATABASE_URL` points at a local or test database.
 
+### 16.3 Live crash and timeout recovery on Arc testnet (opt-in, spends testnet USDC)
+
+`scripts/live-recovery-arc.ts` proves that the Arc settlement path recovers from a crash and from a timeout without paying twice.
+It drives Bind's own code: `ProcurementWorkflowRunner.fulfillAndReconcile`, `OrderSettlementService`, `ArcL1SettlementAdapter`
+and the worker tick `runTick`. The harness never calls `transferUSDC` itself.
+
+**Each scenario sends exactly one payment of 1 cent (0.01 USDC) on Arc testnet. It spends 0.01 USDC of testnet funds per
+scenario.** The amount is not configurable: there is no option for it, and any unknown option is refused.
+
+| Scenario | What it does | Command |
+|---|---|---|
+| `crash-before-record` | The send process is killed (SIGKILL) right after the transfer returns, before the hash is stored. A new process runs a tick, then the reconcile, which adopts the on-chain transfer. | `npx tsx scripts/live-recovery-arc.ts crash-before-record --confirm-testnet-spend [--write-evidence <new-file>]` |
+| `crash-before-confirm` | The send process is killed inside `confirm()`, after the hash is stored. A new process runs two ticks, the second of which confirms. | `npx tsx scripts/live-recovery-arc.ts crash-before-confirm --confirm-testnet-spend [--write-evidence <new-file>]` |
+| `timeout-retry` | The first broadcast is forwarded to the node, then fails with a timeout, so the adapter sees an unknown outcome. The same key is retried at once, then again after the transfer is mined. | `npx tsx scripts/live-recovery-arc.ts timeout-retry --confirm-testnet-spend [--write-evidence <new-file>]` |
+
+Each crash scenario then repeats `fulfillAndReconcile` with the same key and checks that nothing is sent (`alreadyReconciled`,
+nonce unchanged). Required environment, by name only: `ARC_RPC_URL`, `ARC_SIGNER_PRIVATE_KEY`, `BIND_SETTLEMENT_ADDRESS` (must be
+`0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29`), `BIND_SETTLEMENT_DEPLOY_BLOCK`, and `DATABASE_URL` (its host must be `127.0.0.1`
+or `localhost`). `NODE_ENV` must not be `production`, and `SETTLEMENT_MODE`, if set, must be `arc-testnet`.
+
+The guards run before any send, in the orchestrator and again in each child process: the confirm flag, the environment rules above,
+`eth_chainId` = 5042002 (read again just before every transfer), `owner()` equal to the signer, `whitelistedVendors(vendor)` and
+`enforceVendorWhitelist()` true, and an order total of exactly 1 cent. A refusal names the rule, never a value, and sends nothing.
+
+- A second run of the same scenario is refused while its state file records a send. The default state file is
+  `os.tmpdir()/bind-live-recovery-<scenario>.json`; pass `--state <file>` to choose another. `--fresh` starts a new run, which is a
+  new payment, so use it only on purpose.
+- Output is one JSON report on stdout: the steps, the child exit signals, the database states, the nonces, the balances and the
+  assertions. `--write-evidence <new-file>` writes the same report to a new file and refuses to overwrite one.
+- Exit codes: `0` PASS, `1` FAIL (an unexpected state or a failed assertion; nothing further is sent), `2` REFUSED or BLOCKED
+  (a guard or a read stopped the run before any send).
+- Every output and every file goes through `src/utils/redact.ts`, with the RPC URL, the key and the database URL as extra secrets.
+
+**Offline rehearsal (no network, no spend).** `--adapter local-sim` swaps in the in-memory simulator and skips every chain read.
+The report says so. `ARC_RPC_URL` and `ARC_SIGNER_PRIVATE_KEY` must be unset for it to run. It proves the process kill, the
+restart and the database states. It cannot prove the one-payment rule: the simulator forgets its transfer when the process dies,
+so the restart sends again in the simulator. The report records that as information, not as evidence.
+
+```
+npx tsx scripts/live-recovery-arc.ts crash-before-record --adapter local-sim [--write-evidence <new-file>]
+```
+
+Known points a live run can show. `crash-before-confirm` leaves the order `settling` with its hash at the kill point, not
+`settlement_submitted`, because the confirm claim holds the row as `settling` (ADR 0079). The harness asserts the code's actual
+state and labels it. In `timeout-retry`, the second broadcast can revert with `OrderAlreadySettled`. The payment is still made
+once, but the order can be held with the reverted hash, and the report shows that as a failed `order_reconciled` check.
+
