@@ -709,5 +709,6 @@ npx tsx scripts/live-recovery-arc.ts crash-before-record --adapter local-sim [--
 Known points a live run can show. `crash-before-confirm` leaves the order `settling` with its hash at the kill point, not
 `settlement_submitted`, because the confirm claim holds the row as `settling` (ADR 0079). The harness asserts the code's actual
 state and labels it. In `timeout-retry`, the second broadcast can revert with `OrderAlreadySettled`. The payment is still made
-once, but the order can be held with the reverted hash, and the report shows that as a failed `order_reconciled` check.
+once. Since ADR 0079 (duplicate reverted send), the order then adopts the first, confirmed transfer and ends `reconciled`, with an
+audit row `settlement.reverted_duplicate_adopted`. A held order (`SETTLEMENT_FAILED`) in this scenario is a failure of that rule, not an expected result.
 
