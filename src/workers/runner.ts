@@ -226,7 +226,7 @@ async function settlementPollStep(cfg: Resolved, report: TickReport): Promise<vo
  * order goes back to `settlement_submitted` for step 3. Without one, the transfer may or may not have gone out, so
  * the order is held as payment_hold and never paid again by the worker.
  *
- * ADR 0078: a transfer is stored as `settlement_submitted` before its confirmation is asked for, so a crash between
+ * ADR 0079: a transfer is stored as `settlement_submitted` before its confirmation is asked for, so a crash between
  * the send and the confirmation no longer leaves a `settling` row with a hash. A row that has a hash and is still
  * `settling` now means the process died inside confirmSettlement, which had claimed it from `settlement_submitted`.
  * Moving it back to `settlement_submitted` is still the right recovery: the poll asks the adapter again, and nothing

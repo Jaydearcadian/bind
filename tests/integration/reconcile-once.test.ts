@@ -320,7 +320,7 @@ describe("Reconcile exactly once", () => {
 
     const expectedHash = `0x${crypto.createHash("sha256").update(`idem_pay_${orderId}`).digest("hex")}`;
     const order = await query(`SELECT status, tx_hash FROM orders WHERE id = $1;`, [orderId]);
-    // ADR 0078: the transfer is stored as submitted before confirmation, and a failed finalising step releases the
+    // ADR 0079: the transfer is stored as submitted before confirmation, and a failed finalising step releases the
     // confirmation claim to settlement_submitted. The payment is still recorded and never repeated.
     expect(order.rows[0].status).toBe("settlement_submitted");
     expect(order.rows[0].tx_hash).toBe(expectedHash);

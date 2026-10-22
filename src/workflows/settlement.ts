@@ -220,7 +220,7 @@ export class OrderSettlementService {
     } catch (err) {
       // Release the claim unless the adapter already returned a payment. If we fail after a successful transfer,
       // the order stays `settling` (a visible hold) rather than being offered for a second payment. Once the
-      // hash is stored (ADR 0078) the order is `settlement_submitted` instead, and this release does not run.
+      // hash is stored (ADR 0079) the order is `settlement_submitted` instead, and this release does not run.
       if (!progress.paid) {
         try {
           await this.releaseClaim(order.id, prevStatus);
@@ -449,7 +449,7 @@ export class OrderSettlementService {
   ): Promise<void> {
     // Record the confirmation, the payment and the restock in one transaction, and only if this call still
     // holds the claim, so restock cannot happen twice. The confirmation columns and the `settlement.confirmed`
-    // row commit with the restock (ADR 0078). A block number the adapter did not report is stored as NULL.
+    // row commit with the restock (ADR 0079). A block number the adapter did not report is stored as NULL.
     const finalized = await withTransaction(async (client) => {
       const upd = await client.query(
         `UPDATE orders
@@ -553,7 +553,7 @@ export class OrderSettlementService {
         [order.id, transfer.txHash, payment.amountCents, payment.receiptId, payment.billId]
       );
       if (upd.rowCount !== 1) return false;
-      // The hash is stored as `submitted`, so the submitted milestone is audited here too (ADR 0078).
+      // The hash is stored as `submitted`, so the submitted milestone is audited here too (ADR 0079).
       const evidence = { orderId: order.id, txHash: transfer.txHash };
       await insertSettlementAudit(client, order.workspace_id, "settlement.reattached", PolicyDecision.ALLOW, evidence, transfer.txHash);
       await insertSettlementAudit(client, order.workspace_id, "settlement.submitted", PolicyDecision.ALLOW, evidence, transfer.txHash);
@@ -788,7 +788,7 @@ export class OrderSettlementService {
       return { status: matchResult.status, reconciled: false, txHash: transfer.txHash, hold: "SETTLEMENT_FAILED" };
     }
 
-    // The transfer was sent. It is recorded as `submitted` before anything asks whether it was confirmed (ADR 0078):
+    // The transfer was sent. It is recorded as `submitted` before anything asks whether it was confirmed (ADR 0079):
     // the hash, the payment record and the submitted time are stored, the claim is released to `settlement_submitted`,
     // and the `settlement.submitted` row is written, all in one transaction. A crash after this point leaves the
     // order `settlement_submitted`, which the worker's confirmation poll finds. Zero rows means the claim was lost
@@ -805,7 +805,7 @@ export class OrderSettlementService {
   }
 
   /**
-   * Stores a transfer that was sent as `submitted` (ADR 0078): the hash, the payment record and
+   * Stores a transfer that was sent as `submitted` (ADR 0079): the hash, the payment record and
    * `settlement_submitted_at` on the claimed row, the claim released to `settlement_submitted`, and the
    * `settlement.submitted` audit row. One transaction, guarded on `status = 'settling'`. Returns false when the
    * claim was lost, and writes nothing.
