@@ -53,7 +53,8 @@ variable.
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn` or `error` (ADR 0032). Any other value stops startup. |
 | `BIND_SETTLEMENT_ADDRESS` | For `arc-testnet` settlement | Arc settlement refuses, naming this variable | The settlement contract address (ADR 0013). |
 | `ARC_RPC_URL` | For `arc-testnet` settlement | Falls back to `RPC_URL` | RPC endpoint of the Arc chain. Treat the whole URL as a secret: a provider URL often carries its access token in the path. `.env.local.example` shows only the placeholder `<ARC_RPC_TOKEN>`. |
-| `ARC_SIGNER_PRIVATE_KEY` | For `arc-testnet` settlement | Arc settlement refuses, naming this variable | The single signer for every settlement transfer (ADR 0013). A secret. |
+| `ARC_SIGNER_PRIVATE_KEY` | For `arc-testnet` settlement | Arc settlement refuses, naming this variable | The single signer for every settlement transfer (ADR 0013). A secret. The live read-only check (`scripts/verify-live-arc.ts`) derives the sender address from it in process; the key is never passed to a child process or printed. |
+| `ARC_SIGNER_ADDRESS` | No (used by the live read-only check) | Derived from `ARC_SIGNER_PRIVATE_KEY` when that is set | The sender address for the live revert checks (`cast call --from`). Must match the key if both are set. The all-zero address is refused. Not read by settlement. |
 | `ARC_CHAIN_ID` | No | `5042002` (Arc testnet) | Explorer links are built only for this chain (ADR 0013). |
 | `BIND_SETTLEMENT_DEPLOY_BLOCK` | No | `0` | First block scanned when looking up an earlier settlement (ADR 0013, ADR 0019). |
 | `RPC_URL` | No | `http://127.0.0.1:8545` | Fallback RPC endpoint (`src/adapters/settlement/arc-l1.ts`). |
