@@ -407,3 +407,10 @@ a.nav-item:hover { color: var(--text); background: color-mix(in srgb, var(--bord
 .test-ok { display: grid; gap: 8px; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--status-approved-tint); color: var(--text); }
 .test-ok .line-title { color: var(--status-approved-text); }
 #test-result .error { color: var(--status-refused-text); background: var(--status-refused-tint); padding: 10px 12px; border-radius: var(--radius-sm); }
+
+/* Email notices */
+.code-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.code-input { width: 9em; font-family: var(--font-mono); letter-spacing: 0.2em; }
+#email-box { display: grid; gap: 12px; margin-top: 8px; }
+#email-box[hidden] { display: none; }
+.pending-email .error { margin-top: 8px; }

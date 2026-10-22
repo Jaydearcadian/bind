@@ -44,7 +44,7 @@ variable.
 | `BIND_WORKER_ENABLED` | No | The worker runs | Only the exact value `false` disables it (ADR 0029). |
 | `BIND_RESTOCK_SWEEP` | No | **Off** | Only the exact value `true` enables it. It starts replenishments on its own, within policy (ADR 0030). Any other value is ignored. |
 | `BIND_TRUST_PROXY` | Behind a proxy | `0`: the socket address is the client | Number of proxy hops that append to `X-Forwarded-For`. Must be a non-negative integer (ADR 0033). |
-| `BIND_PUBLIC_URL` | Recommended in production | The request's own host | The https origin of the deployment, for example `https://bind.example` (no path). It is the address `/mcp` reports to clients and the only origin its Origin check accepts. `http` is allowed for `127.0.0.1` and `localhost` only. An invalid value stops startup (ADR 0075). |
+| `BIND_PUBLIC_URL` | Yes, in production | The request's own host (wrong behind a proxy: see below) | The https origin of the deployment, for example `https://bind.example` (no path). It is the address `/mcp` reports and the only origin its Origin check accepts. `http` only for `127.0.0.1` and `localhost`. An invalid value stops startup. Precedence (ADR 0075, point 7): `BIND_PUBLIC_URL`; else an explicitly set `APP_BASE_URL` that is https (one setting is enough); else the request's host. Production with neither logs one startup warning naming `BIND_PUBLIC_URL`. |
 | `BIND_EMAIL_PROVIDER` | To send owner notices by email (ADR 0074) | Email is **simulated**: a notice is recorded in memory and labelled `simulated`, nothing is sent, and the owner email routes answer **503** `EMAIL_NOT_CONFIGURED` | Only `resend`. Startup is refused unless `BIND_EMAIL_API_KEY` and `BIND_EMAIL_FROM` are set and `APP_BASE_URL` is https (or local outside production). Live sending is `NOT_RUN` until tried against a real provider account. |
 | `BIND_EMAIL_API_KEY` | With `BIND_EMAIL_PROVIDER` | As above | The Resend API key, at least 8 characters, no spaces. It is never logged and never written to an error or an audit row, and text that carries it is redacted. Keep it in the host's secret store. |
 | `BIND_EMAIL_FROM` | With `BIND_EMAIL_PROVIDER` | As above | The sender, for example `Bind <notices@your-domain>`. The domain must be verified at the provider. |
@@ -461,9 +461,19 @@ Issue a **staff** token for the agent (`POST /api/workspaces/:id/tokens` with `"
 `https://<your-bind-api-host>/mcp` and the header `Authorization: Bearer <that token>`. To stop an agent, revoke its token
 (`DELETE /api/workspaces/:id/tokens/:tokenId`); its next call is `401`. An owner key or an account session at `/mcp` is `403`.
 
-The endpoint is stateless, so there is nothing to clean up on the server when an agent disconnects. Its calls appear in the
-audit log like the REST calls they are. Each tool call costs two of the token's per-token rate-limit hits (the MCP request and
-the API call it makes), so a busy agent reaches the limit at half the call rate (ADR 0033, 0075).
+The endpoint is stateless, so there is nothing to clean up on the server when an agent disconnects.
+
+**What is recorded.** Each write tool (a tool that is not read-only) writes one audit row, `action` `agent.tool_called`, when its call
+finishes. Its `actor_type` is `staff_key`, its `actor_id` is the key's id (`tok_…`), and its `evidence` is the key's label, the tool name,
+`outcome` (`ok` or `error`) and `status` (the API's HTTP status for a refusal, `null` for a success). Its `request_id` is the same as the
+API call's and as the rows that call wrote, so you can join them. Read tools write no row. The token, the arguments and the answer are never
+recorded. The row is visible in the audit log and in the activity feed to staff and owner alike (ADR 0075, point 10).
+
+**Rate limits.** Each `tools/call` costs exactly two of the token's per-token hits: the MCP request and the API call it makes. Batches are
+refused, so one request runs one tool call (ADR 0033, 0075).
+
+**Client addresses.** Limits are keyed by the client address. When `/mcp` is exposed, set `BIND_TRUST_PROXY` to the number of proxy hops
+in front of the app. At `0` behind a proxy, every client shares the proxy's address, so one client's bad keys block all of them.
 
 Check the endpoint is up: an authenticated `GET /mcp` answers `405` with its own address; an unauthenticated one answers `401`.
 If `POST /mcp` answers `503` with "The MCP endpoint is not available", the deployment is missing the built MCP module

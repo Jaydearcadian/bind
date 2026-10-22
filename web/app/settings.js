@@ -12,7 +12,7 @@ if (!key) toSignIn();
 const bind = client(key);
 const $ = (id) => document.getElementById(id);
 
-const state = { me: null, tokens: [], confirm: null };
+const state = { me: null, ws: null, tokens: [], confirm: null, notify: null, rowError: null };
 
 // ---- Appearance -------------------------------------------------------------------------------------------------------
 
@@ -52,6 +52,7 @@ function wireTheme() {
 // ---- Workspace and sign-in --------------------------------------------------------------------------------------------
 
 function renderWorkspace(ws) {
+  state.ws = ws;
   const fact = (k, v) => h("div", { class: "fact" }, h("dt", {}, k), h("dd", {}, v));
   $("ws-facts").replaceChildren(
     fact("Name", ws.name),
@@ -70,6 +71,173 @@ function renderWorkspace(ws) {
     st.className = "status status-ok";
   });
   $("signin-sub").textContent = session ? `As ${state.me.label}.` : `The key named "${state.me.label}". Signing out of this browser doesn't turn the key off; an owner can remove it below.`;
+}
+
+// ---- Email notices (ADR 0074) -----------------------------------------------------------------------------------------
+
+function setEmailLine(sub, status, tone = "outline") {
+  $("email-sub").textContent = sub;
+  const st = $("email-status");
+  st.textContent = status;
+  st.className = `status status-${tone}`;
+}
+
+function emailError(err, fallback) {
+  const code = err instanceof BindApiError ? err.code : "";
+  if (code === "EMAIL_CODE_INVALID") return err.message || "That code is wrong. Check it and try again.";
+  if (code === "EMAIL_CODE_EXPIRED") return "That code has expired. Send a new one.";
+  if (code === "EMAIL_ATTEMPTS_EXCEEDED") return "Too many wrong codes for this address. Try again tomorrow, or use a different address.";
+  if (code === "EMAIL_SEND_LIMITED" || (err instanceof BindApiError && err.status === 429)) return "That's enough codes for now. Wait a while before asking for another.";
+  if (code === "EMAIL_NOT_CONFIGURED") return "Email isn't switched on for this Bind server yet.";
+  if (code === "EMAIL_DEMO_REFUSED") return "Demos don't send email. Start your own workspace to get notices.";
+  if (code === "EMAIL_SEND_FAILED" || (err instanceof BindApiError && err.status === 502)) return "We couldn't send the email just now. Try again in a moment.";
+  if (err instanceof BindApiError && err.status === 400) return "That doesn't look like a valid email address.";
+  return fallback;
+}
+
+function renderEmail() {
+  const box = $("email-box");
+  if (state.me.role !== "owner") {
+    setEmailLine("Owners get an email when something is waiting for them.", "Owners only");
+    return;
+  }
+  if (state.ws?.is_demo) {
+    setEmailLine("A demo doesn't send email. Your own workspace does.", "Not in a demo");
+    return;
+  }
+  if (!state.notify) {
+    setEmailLine("Couldn't load this right now.", "…");
+    return;
+  }
+  if (state.notify.emailDelivery !== "on") {
+    setEmailLine("Not switched on for this Bind server yet. Approvals still show here in Bind.", "Coming");
+    return;
+  }
+  box.hidden = false;
+  const verified = state.notify.emails.filter((e) => e.status === "verified");
+  setEmailLine(
+    verified.length ? "You get an email when an approval or an order is waiting for you." : "Add an address to get an email when something is waiting for you.",
+    verified.length ? "On" : "Off",
+    verified.length ? "ok" : "outline"
+  );
+  $("email-list").replaceChildren(
+    ...state.notify.emails.map((e) =>
+      e.status === "verified"
+        ? h(
+            "li",
+            { class: "line" },
+            h("div", { class: "line-main" }, h("p", { class: "line-title" }, e.email), h("p", { class: "line-sub" }, `Verified ${ago(e.verifiedAt)}`)),
+            h("button", { class: "btn-small", type: "button", "aria-label": `Remove ${e.email}`, onclick: () => removeEmail(e) }, "Remove")
+          )
+        : pendingRow(e)
+    )
+  );
+  $("email-add").hidden = !$("email-form").hidden;
+}
+
+function pendingRow(e) {
+  const input = h("input", { class: "text-input code-input", inputmode: "numeric", autocomplete: "one-time-code", maxlength: "6", "aria-label": `Code sent to ${e.email}`, placeholder: "6 digits" });
+  const error = h("p", { class: "error", role: "alert", hidden: !state.rowError || state.rowError.id !== e.id }, state.rowError?.id === e.id ? state.rowError.text : "");
+  const verify = h("button", { class: "btn btn-primary", type: "button" }, "Verify");
+  verify.addEventListener("click", async () => {
+    error.hidden = true;
+    state.rowError = null;
+    const code = input.value.trim();
+    if (!/^\d{6}$/.test(code)) {
+      error.textContent = "Type the 6 digits from the email.";
+      error.hidden = false;
+      return;
+    }
+    verify.disabled = true;
+    try {
+      await bind.call("verifyOwnerEmail", { params: { id: state.me.workspaceId }, body: { id: e.id, code } });
+      toast(`${e.email} is verified. You'll get notices there.`);
+      await loadNotify();
+    } catch (err) {
+      // The list is rebuilt from the server (attempts may have run out), so the message is kept across the rebuild.
+      state.rowError = { id: e.id, text: emailError(err, "Couldn't check the code. Try again.") };
+      await loadNotify().catch(() => undefined);
+      return;
+    }
+    renderEmail();
+  });
+  return h(
+    "li",
+    { class: "line pending-email" },
+    h(
+      "div",
+      { class: "line-main" },
+      h("p", { class: "line-title" }, e.email, h("span", { class: "status status-pending" }, "Waiting for the code")),
+      h("p", { class: "line-sub" }, "We emailed a 6-digit code. It works for 10 minutes."),
+      h("div", { class: "code-row" }, input, verify, h("button", { class: "btn-small", type: "button", onclick: () => sendCode(e.email) }, "Send a new code"), h("button", { class: "btn-small", type: "button", "aria-label": `Cancel ${e.email}`, onclick: () => removeEmail(e) }, "Cancel")),
+      error
+    )
+  );
+}
+
+async function loadNotify() {
+  try {
+    state.notify = await bind.call("getNotificationChannels", { params: { id: state.me.workspaceId } });
+  } catch {
+    state.notify = null;
+  }
+  renderEmail();
+}
+
+async function sendCode(email) {
+  const err = $("email-error");
+  err.hidden = true;
+  $("email-send").disabled = true;
+  try {
+    const res = await bind.call("requestOwnerEmailVerification", { params: { id: state.me.workspaceId }, body: { email } });
+    $("email-form").hidden = true;
+    $("email-address").value = "";
+    toast(res.status === "verified" ? "That address is already verified." : "We sent a code. Check your email.");
+    await loadNotify();
+  } catch (e2) {
+    const msg = emailError(e2, "Couldn't send the code. Try again.");
+    if ($("email-form").hidden) toast(msg);
+    else {
+      err.textContent = msg;
+      err.hidden = false;
+    }
+  } finally {
+    $("email-send").disabled = false;
+  }
+}
+
+async function removeEmail(e) {
+  try {
+    await bind.call("removeOwnerEmail", { params: { id: state.me.workspaceId, emailId: e.id } });
+    toast(`${e.email} was removed. No more notices there.`);
+  } catch {
+    toast("Couldn't remove it. Try again.");
+  }
+  await loadNotify();
+}
+
+function wireEmail() {
+  const form = $("email-form");
+  $("email-add").addEventListener("click", () => {
+    form.hidden = false;
+    $("email-add").hidden = true;
+    $("email-address").focus();
+  });
+  $("email-cancel").addEventListener("click", () => {
+    form.hidden = true;
+    $("email-error").hidden = true;
+    renderEmail();
+  });
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const email = $("email-address").value.trim();
+    if (!email) {
+      $("email-error").textContent = "Type your email address.";
+      $("email-error").hidden = false;
+      return;
+    }
+    sendCode(email);
+  });
 }
 
 // ---- Your wallet ------------------------------------------------------------------------------------------------------
@@ -371,6 +539,9 @@ async function main() {
     $("stale-banner").hidden = false;
   }
   renderWallet().catch(() => walletRow("Couldn't load your wallet right now. Try again in a moment."));
+  wireEmail();
+  if (state.me.role === "owner" && !state.ws?.is_demo) await loadNotify();
+  else renderEmail();
   if (state.me.role !== "owner") {
     $("builders-staff").hidden = false;
     return;

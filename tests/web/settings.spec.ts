@@ -119,3 +119,65 @@ test("staff see their settings but not keys or secrets, and coming features say 
   expect((await request.get(`/api/workspaces/${ws.id}/tokens`, auth(ws.staff))).status()).toBe(403);
   expect((await request.get(`/api/workspaces/${ws.id}/webhook-secret`, auth(ws.staff))).status()).toBe(403);
 });
+
+test("email notices: off says so plainly where the server has no email; owners only", async ({ page, request }) => {
+  const ws = await makeWorkspace(request);
+  await open(page, ws.owner);
+  await expect(page.locator("#email-sub")).toContainText("Not switched on");
+  await expect(page.locator("#email-box")).toBeHidden();
+  const staffPage = await (await page.context().browser()!.newContext()).newPage();
+  await open(staffPage, ws.staff);
+  await expect(staffPage.locator("#email-sub")).toContainText("Owners get an email");
+  await expect(staffPage.locator("#email-box")).toBeHidden();
+});
+
+test("email notices: add an address, a wrong code is explained, the right code verifies, removing it stops notices", async ({ page, request }) => {
+  const problems: string[] = [];
+  page.on("console", (m) => m.type() === "error" && !/status of 400/.test(m.text()) && problems.push(m.text()));
+  const ws = await makeWorkspace(request);
+  // The test server has no email provider, so the page is told delivery is on and the four email routes are a small fake.
+  let emails: Array<Record<string, unknown>> = [];
+  await page.route(`**/api/workspaces/${ws.id}/notifications**`, async (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    if (req.method() === "GET") return route.fulfill({ json: { emailDelivery: "on", emails } });
+    if (req.method() === "POST" && url.pathname.endsWith("/email")) {
+      emails = [{ id: "oe_1", email: "m***@kitchen.test", status: "pending", expiresAt: new Date(Date.now() + 600000).toISOString(), verifiedAt: null, attemptsRemaining: 5, createdAt: new Date().toISOString() }];
+      return route.fulfill({ status: 201, json: emails[0] });
+    }
+    if (req.method() === "POST" && url.pathname.endsWith("/verify")) {
+      const body = req.postDataJSON();
+      if (body.code !== "123456") return route.fulfill({ status: 400, json: { error: "That code is wrong. 4 attempts left.", code: "EMAIL_CODE_INVALID" } });
+      emails = [{ ...emails[0], status: "verified", verifiedAt: new Date().toISOString() }];
+      return route.fulfill({ json: emails[0] });
+    }
+    if (req.method() === "DELETE") {
+      emails = [];
+      return route.fulfill({ json: { removed: true } });
+    }
+    return route.continue();
+  });
+  await open(page, ws.owner);
+  await expect(page.locator("#email-status")).toHaveText("Off");
+  await page.getByRole("button", { name: "Add an address" }).click();
+  await page.getByRole("button", { name: "Send the code" }).click();
+  await expect(page.locator("#email-error")).toContainText("Type your email address");
+  await page.getByLabel("Where should we email you?").fill("owner@kitchen.test");
+  await page.getByRole("button", { name: "Send the code" }).click();
+  await expect(page.getByText("Waiting for the code")).toBeVisible();
+
+  await page.getByLabel(/Code sent to/).fill("12");
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.getByText("Type the 6 digits")).toBeVisible();
+  await page.getByLabel(/Code sent to/).fill("000000");
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.getByText("That code is wrong. 4 attempts left.")).toBeVisible();
+  await page.getByLabel(/Code sent to/).fill("123456");
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.locator("#email-status")).toHaveText("On");
+  await expect(page.locator("#email-list")).toContainText("Verified");
+
+  await page.getByRole("button", { name: /^Remove m\*\*\*@kitchen.test/ }).click();
+  await expect(page.locator("#email-status")).toHaveText("Off");
+  expect(problems).toEqual([]);
+});

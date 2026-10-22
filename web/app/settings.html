@@ -81,9 +81,20 @@
       <div class="panel-head"><h2 id="notify-title">Notifications</h2></div>
       <ul class="lines">
         <li class="line"><div class="line-main"><p class="line-title">In Bind</p><p class="line-sub">Today shows what needs you as it happens.</p></div><span class="status status-ok">On</span></li>
-        <li class="line"><div class="line-main"><p class="line-title">Email</p><p class="line-sub">For approvals that are waiting on you.</p></div><span class="status status-outline">Coming</span></li>
+        <li class="line email-line" id="email-line"><div class="line-main"><p class="line-title">Email</p><p class="line-sub" id="email-sub">Checking…</p></div><span class="status status-outline" id="email-status">…</span></li>
         <li class="line"><div class="line-main"><p class="line-title">Messaging apps</p><p class="line-sub">WhatsApp, Telegram and similar.</p></div><span class="status status-outline">Coming</span></li>
       </ul>
+      <div id="email-box" hidden>
+        <ul class="lines" id="email-list"></ul>
+        <form class="add-form" id="email-form" novalidate hidden>
+          <label for="email-address">Where should we email you?</label>
+          <input id="email-address" class="text-input" type="email" autocomplete="email" maxlength="120" placeholder="you@yourbusiness.com">
+          <p class="help">We email a 6-digit code to check the address is yours. Notices are short: they say something is waiting and link to Bind. They never contain a button that approves anything.</p>
+          <p class="error" id="email-error" role="alert" hidden></p>
+          <div class="form-actions"><button class="btn btn-quiet" type="button" id="email-cancel">Cancel</button><button class="btn btn-primary" type="submit" id="email-send">Send the code</button></div>
+        </form>
+        <button class="btn-small" type="button" id="email-add" hidden>Add an address</button>
+      </div>
     </section>
 
     <section class="panel" aria-labelledby="signin-title">

@@ -9,6 +9,7 @@ import { createReplenishmentTools } from "../../src/agents/replenishmentTools.js
 import { notificationEmitter } from "../../src/adapters/web2/notifications.js";
 import { sendApprovalNotification, sendOwnerNotification } from "../../src/notifications/dispatch.js";
 import { requestOwnerEmailVerification, verifyOwnerEmail } from "../../src/notifications/owner-emails.js";
+import { EmailRecipientNotVerifiedError, sendOwnerNoticeEmail } from "../../src/notifications/email.js";
 import { upsertSurfaceBinding } from "../../src/adapters/socialSurface.js";
 import { setLogSink } from "../../src/observability/logger.js";
 import { startFakeResend, codeIn, type FakeResend } from "../helpers/fake-resend.js";
@@ -298,6 +299,105 @@ describe("owner email notices, end to end, against a local fake provider", () =>
     expect(fake.received).toHaveLength(0);
     const skipped = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.skipped_no_recipient';`, [wsId]);
     expect(skipped.rows[0].n).toBe(1);
+  });
+});
+
+describe("an address is mailed only once it is verified (ADR 0074)", () => {
+  it("an owner-created email binding with no verified address sends nothing when email is on", async () => {
+    const wsId = await freshWorkspace();
+    await upsertSurfaceBinding(wsId, { surface: "email", actorId: "typed.owner@kitchen.example", actorRole: "owner" }, { type: "owner", id: "test" });
+    const { approvalId } = await evaluateNeedingApproval(wsId);
+
+    expect(fake.received).toHaveLength(0);
+    expect(notificationEmitter.getSentNotifications("email")).toHaveLength(0);
+    expect(await approvalStatus(approvalId)).toBe("pending");
+    const skipped = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.skipped_no_recipient';`, [wsId]);
+    expect(skipped.rows[0].n).toBe(1);
+  });
+
+  it("a demo workspace with an owner email binding sends nothing when email is on", async () => {
+    const wsId = await freshWorkspace();
+    await query(`UPDATE workspaces SET is_demo = true, demo_expires_at = NOW() + INTERVAL '1 day' WHERE id = $1;`, [wsId]);
+    await upsertSurfaceBinding(wsId, { surface: "email", actorId: "demo.owner@kitchen.example", actorRole: "owner" }, { type: "owner", id: "test" });
+    const { approvalId } = await evaluateNeedingApproval(wsId);
+
+    expect(fake.received).toHaveLength(0);
+    expect(await approvalStatus(approvalId)).toBe("pending");
+  });
+
+  it("the send path refuses an address that is not a verified owner address, and nothing leaves the server", async () => {
+    const wsId = await freshWorkspace();
+    await expect(
+      sendOwnerNotification({
+        workspaceId: wsId,
+        kind: "order_held",
+        refId: `ord_unverified_${run}`,
+        payload: {
+          workspaceId: wsId,
+          channel: "email",
+          recipient: "never.verified@kitchen.example",
+          title: "Bind",
+          message: "x",
+        },
+      })
+    ).resolves.toEqual({ sent: false, reason: "not_verified" });
+    expect(fake.received).toHaveLength(0);
+    const audit = await query(
+      `SELECT evidence::text AS evidence FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.skipped_no_recipient';`,
+      [wsId]
+    );
+    expect(audit.rows[0].evidence).toContain("email_not_verified");
+    expect(audit.rows[0].evidence).not.toContain("never.verified@kitchen.example");
+  });
+
+  it("the send function itself refuses an unverified address (defence in depth)", async () => {
+    const wsId = await freshWorkspace();
+    await expect(
+      sendOwnerNoticeEmail({
+        workspaceId: wsId,
+        channel: "email",
+        recipient: "direct.unverified@kitchen.example",
+        title: "Bind",
+        message: "x",
+        metadata: { noticeKind: "order_held" },
+      })
+    ).rejects.toBeInstanceOf(EmailRecipientNotVerifiedError);
+    expect(fake.received).toHaveLength(0);
+  });
+
+  it("a verified address that has since been removed is not sent to", async () => {
+    const wsId = await freshWorkspace();
+    const id = await verifiedOwner(wsId, "removed.later@kitchen.example");
+    await query(`UPDATE owner_emails SET removed_at = NOW() WHERE id = $1;`, [id]);
+    fake.received.length = 0;
+    const out = await sendOwnerNotification({
+      workspaceId: wsId,
+      kind: "order_held",
+      refId: `ord_removed_${run}`,
+      payload: { workspaceId: wsId, channel: "email", recipient: "removed.later@kitchen.example", title: "Bind", message: "x" },
+    });
+    expect(out).toEqual({ sent: false, reason: "not_verified" });
+    expect(fake.received).toHaveLength(0);
+  });
+
+  it("the ledger keeps no address: the stored effect row holds a hash, not the recipient", async () => {
+    const wsId = await freshWorkspace();
+    const address = "ledger.check@kitchen.example";
+    await verifiedOwner(wsId, address);
+    fake.received.length = 0;
+    await sendOwnerNotification({
+      workspaceId: wsId,
+      kind: "order_held",
+      refId: `ord_ledger_${run}`,
+      payload: { workspaceId: wsId, channel: "email", recipient: address, title: "Bind", message: "x" },
+    });
+    expect(fake.received).toHaveLength(1);
+    const rows = await query(`SELECT row_to_json(e)::text AS row FROM effects e WHERE workspace_id = $1 AND idempotency_key LIKE $2;`, [
+      wsId,
+      `${wsId}:notify:order_held:ord_ledger_${run}%`,
+    ]);
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0].row).not.toContain(address);
   });
 });
 
