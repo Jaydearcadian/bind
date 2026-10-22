@@ -39,6 +39,7 @@ import {
   parseState,
   preRestartAssertions,
   realFiles,
+  readSettlementLogs,
   runOrchestrator,
   scenarioRecoverPlan,
   signerAddressOf,
@@ -1586,5 +1587,281 @@ describe("the deploy block must hold code, and must exist, before anything is se
     expect(await runOrchestrator(args({ statePath }), h.ports)).toBe(2);
     expect(h.spawned).toEqual([]);
     expect(db.prepared).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// --resume: continues a run whose send started, never sends, and refuses on every missing mark.
+// ---------------------------------------------------------------------------------------------------------------------
+
+describe("--resume arguments", () => {
+  it("accepts --resume with the orchestrate phase, and an operator baseline only with --resume", () => {
+    expect(parseArgs(["crash-before-record", "--resume"], "/tmp")).toMatchObject({ resume: true });
+    expect(
+      parseArgs(["crash-before-record", "--resume", "--baseline-nonce", "9", "--baseline-vendor-balance", "61000"], "/tmp")
+    ).toMatchObject({ resume: true, baselineNonce: "9", baselineVendorBalance: "61000" });
+  });
+
+  it("refuses --resume with another phase, a baseline without --resume, and a baseline that is not a whole number", () => {
+    expect(() => parseArgs(["crash-before-record", "--resume", "--phase", "verify"])).toThrow(/orchestrate phase only/);
+    expect(() => parseArgs(["crash-before-record", "--baseline-nonce", "9"])).toThrow(/only used with --resume/);
+    expect(() => parseArgs(["crash-before-record", "--resume", "--baseline-nonce", "9.5", "--baseline-vendor-balance", "1"])).toThrow(
+      /whole number/
+    );
+  });
+});
+
+/** A state file for a crash scenario whose send started and was killed, with the kill recorded. */
+function crashState(over: Partial<ScenarioState> = {}): ScenarioState {
+  return state({
+    sendStartedAt: "2026-10-22T00:00:00.000Z",
+    baseline: {
+      startNonce: "5",
+      vendorBalanceBefore: "0",
+      decimals: 6,
+      contract: APPROVED_SETTLEMENT_ADDRESS,
+      deployBlock: DEPLOY_BLOCK,
+      signer: SIGNER,
+      vendor: VENDOR_ADDRESS,
+    },
+    results: {
+      sendChild: { signal: "SIGKILL", killArmed: true },
+      preCrash: snap(),
+      preRestart: preRestartAssertions("crash-before-record", snap()),
+    },
+    ...over,
+  });
+}
+
+describe("--resume refusals (no send is made on any refusal)", () => {
+  const withState = (st: ScenarioState | null, over: Partial<CliArgs> = {}) => {
+    const files = new Map<string, string>();
+    if (st) files.set(statePath, JSON.stringify(st, null, 2));
+    const db = makeDb();
+    const chain = makeChain();
+    const h = makePorts({ chain, db, files, spawn: async () => ok({}) });
+    return { h, db, run: () => runOrchestrator(args({ statePath, resume: true, ...over }), h.ports) };
+  };
+
+  it("refuses when there is no state file", async () => {
+    const t = withState(null);
+    expect(await t.run()).toBe(2);
+    expect(t.h.spawned).toEqual([]);
+    expect(t.h.emitted.join("\n")).toMatch(/has none/);
+  });
+
+  it("refuses when the send has not started", async () => {
+    const t = withState(crashState({ sendStartedAt: undefined }));
+    expect(await t.run()).toBe(2);
+    expect(t.h.spawned).toEqual([]);
+    expect(t.h.emitted.join("\n")).toMatch(/send has not started/);
+  });
+
+  it("refuses when the recovery already started", async () => {
+    const t = withState(crashState({ recoverStartedAt: "2026-10-22T00:00:01.000Z" }));
+    expect(await t.run()).toBe(2);
+    expect(t.h.spawned).toEqual([]);
+    expect(t.h.emitted.join("\n")).toMatch(/will not run it again/);
+  });
+
+  it("refuses a crash scenario whose kill point is not recorded", async () => {
+    const t = withState(crashState({ results: { sendChild: { signal: "SIGTERM", killArmed: false } } }));
+    expect(await t.run()).toBe(2);
+    expect(t.h.spawned).toEqual([]);
+    expect(t.h.emitted.join("\n")).toMatch(/does not record the SIGKILL/);
+  });
+
+  it("refuses timeout-retry unless the state shows attempt 1 completed", async () => {
+    const t = withState(
+      state({ scenario: "timeout-retry", sendStartedAt: "2026-10-22T00:00:00.000Z", results: { send: null } }),
+      { scenario: "timeout-retry" }
+    );
+    expect(await t.run()).toBe(2);
+    expect(t.h.spawned).toEqual([]);
+    expect(t.h.emitted.join("\n")).toMatch(/attempt 1 completed/);
+  });
+
+  it("refuses without --confirm-testnet-spend before reading the state", async () => {
+    const t = withState(crashState(), { confirmTestnetSpend: false });
+    expect(await t.run()).toBe(2);
+    expect(t.h.spawned).toEqual([]);
+  });
+});
+
+describe("--resume baseline handling", () => {
+  it("refuses a state with no baseline when no operator baseline is supplied", async () => {
+    const files = new Map<string, string>([[statePath, JSON.stringify(crashState({ baseline: undefined }))]]);
+    const h = makePorts({ chain: makeChain(), db: makeDb(), files, spawn: async () => ok({}) });
+    expect(await runOrchestrator(args({ statePath, resume: true }), h.ports)).toBe(2);
+    expect(h.spawned).toEqual([]);
+    expect(h.emitted.join("\n")).toMatch(/supply --baseline-nonce/);
+  });
+
+  it("records an operator-supplied baseline, labelled as such, and then runs only the restart", async () => {
+    const files = new Map<string, string>([[statePath, JSON.stringify(crashState({ baseline: undefined }))]]);
+    const chain = makeChain();
+    chain.broadcastAndMine(HASH1);
+    const db = makeDb(snap({ status: "settling", txHash: null, effect: { status: "started", attempts: 1, operation: "settlement.transfer_usdc", externalRef: null } }));
+    const h = makePorts({
+      chain,
+      db,
+      files,
+      spawn: async (argv) => {
+        expect(argv[argv.indexOf("--phase") + 1]).toBe("recover");
+        db.row = snap({
+          status: "reconciled",
+          txHash: HASH1,
+          submittedAt: "t",
+          confirmedAt: "t",
+          confirmedBlock: String(Number(chain.receipts.get(HASH1)!.blockNumber)),
+          effect: { status: "completed", attempts: 1, operation: "settlement.transfer_usdc", externalRef: HASH1 },
+          audits: ["settlement.submitted", "settlement.confirmed"],
+        });
+        return ok({ steps: [{ name: "fulfill-repeat", result: { alreadyReconciled: true }, nonceBefore: "6", nonceAfter: "6" }] });
+      },
+    });
+    const code = await runOrchestrator(args({ statePath, resume: true, baselineNonce: "5", baselineVendorBalance: "0" }), h.ports);
+    expect(code).toBe(0);
+    expect(h.spawned.map((a) => a[a.indexOf("--phase") + 1])).toEqual(["recover"]);
+    const saved = JSON.parse(files.get(statePath)!);
+    expect(saved.results.baselineSource).toBe("supplied by operator");
+    expect(saved.baseline.startNonce).toBe("5");
+    expect(h.emitted.join("\n")).toMatch(/"baselineSource": "supplied by operator"|supplied by operator/);
+    expect(h.emitted.join("\n")).toMatch(/"result": "PASS"/);
+  });
+
+  it("refuses a supplied baseline that differs from the state file's, and overwrites nothing", async () => {
+    const files = new Map<string, string>([[statePath, JSON.stringify(crashState())]]);
+    const h = makePorts({ chain: makeChain(), db: makeDb(), files, spawn: async () => ok({}) });
+    const before = files.get(statePath);
+    expect(await runOrchestrator(args({ statePath, resume: true, baselineNonce: "9", baselineVendorBalance: "61000" }), h.ports)).toBe(2);
+    expect(h.spawned).toEqual([]);
+    expect(files.get(statePath)).toBe(before);
+  });
+});
+
+describe("--resume never invokes the send path", () => {
+  it("a crash resume runs the restart child only, reads the chain, and sends nothing", async () => {
+    const files = new Map<string, string>([[statePath, JSON.stringify(crashState())]]);
+    const chain = makeChain();
+    chain.broadcastAndMine(HASH1);
+    const db = makeDb(snap({ status: "settling", txHash: null, effect: { status: "started", attempts: 1, operation: "settlement.transfer_usdc", externalRef: null } }));
+    const phases: string[] = [];
+    const h = makePorts({
+      chain,
+      db,
+      files,
+      spawn: async (argv) => {
+        phases.push(argv[argv.indexOf("--phase") + 1]);
+        db.row = snap({
+          status: "reconciled",
+          txHash: HASH1,
+          submittedAt: "t",
+          confirmedAt: "t",
+          confirmedBlock: String(Number(chain.receipts.get(HASH1)!.blockNumber)),
+          effect: { status: "completed", attempts: 1, operation: "settlement.transfer_usdc", externalRef: HASH1 },
+          audits: ["settlement.submitted", "settlement.confirmed"],
+        });
+        return ok({ steps: [{ name: "fulfill-repeat", result: { alreadyReconciled: true }, nonceBefore: "6", nonceAfter: "6" }] });
+      },
+    });
+    // The fake chain answers no eth_sendRawTransaction: a send from this process would throw, and the test would fail.
+    expect(await runOrchestrator(args({ statePath, resume: true }), h.ports)).toBe(0);
+    expect(phases).toEqual(["recover"]);
+    expect(db.prepared).toBe(0);
+    expect(chain.calls).not.toContain("eth_sendRawTransaction");
+    expect(h.emitted.join("\n")).toMatch(/"sendsSpawnedByResume": 0/);
+  });
+
+  it("a timeout-retry resume with attempt 1 completed verifies the outcome and spawns nothing", async () => {
+    const files = new Map<string, string>([
+      [
+        statePath,
+        JSON.stringify(
+          state({
+            scenario: "timeout-retry",
+            sendStartedAt: "2026-10-22T00:00:00.000Z",
+            baseline: {
+              startNonce: "5",
+              vendorBalanceBefore: "0",
+              decimals: 6,
+              contract: APPROVED_SETTLEMENT_ADDRESS,
+              deployBlock: DEPLOY_BLOCK,
+              signer: SIGNER,
+              vendor: VENDOR_ADDRESS,
+            },
+            results: {
+              send: {
+                attempts: [
+                  { name: "attempt-1", ok: false, error: { name: "SettlementTransportError", message: "timed out" } },
+                  { name: "attempt-2-immediate", ok: true, result: { reconciled: true } },
+                  { name: "attempt-3-after-mining", ok: true, result: { reconciled: false, alreadyReconciled: true } },
+                ],
+                broadcastsAfterAttempt1: 1,
+                afterAttempt1: snap({ status: "confirmed", effect: { status: "failed", attempts: 1, operation: "settlement.transfer_usdc", externalRef: null } }),
+                broadcasts: [HASH1],
+              },
+            },
+          }),
+          null,
+          2
+        ),
+      ],
+    ]);
+    const chain = makeChain();
+    chain.broadcastAndMine(HASH1);
+    const db = makeDb(
+      snap({
+        status: "reconciled",
+        txHash: HASH1,
+        submittedAt: "t",
+        confirmedAt: "t",
+        confirmedBlock: String(Number(chain.receipts.get(HASH1)!.blockNumber)),
+        effect: { status: "completed", attempts: 2, operation: "settlement.transfer_usdc", externalRef: HASH1 },
+        audits: ["settlement.submitted", "settlement.confirmed"],
+      })
+    );
+    const h = makePorts({ chain, db, files, spawn: async () => ok({}) });
+    expect(await runOrchestrator(args({ statePath, resume: true, scenario: "timeout-retry" }), h.ports)).toBe(0);
+    expect(h.spawned).toEqual([]);
+    expect(h.emitted.join("\n")).toMatch(/"result": "PASS"/);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The harness's own settlement-log read is chunked too.
+// ---------------------------------------------------------------------------------------------------------------------
+
+describe("the harness's settlement-log read scans in windows", () => {
+  /** A range-limited RPC: refuses any eth_getLogs over 100000 blocks, like the Arc endpoint, and answers the rest. */
+  function rangeLimitedRpc(head: bigint, logBlocks: bigint[], refuseFromBlock?: bigint) {
+    const spans: Array<[bigint, bigint]> = [];
+    const rpc: RpcCall = async (method, params) => {
+      if (method === "eth_blockNumber") return `0x${head.toString(16)}`;
+      if (method !== "eth_getLogs") throw new Error(`stub does not answer ${method}`);
+      const filter = params[0] as { fromBlock: string; toBlock: string };
+      const from = BigInt(filter.fromBlock);
+      const to = BigInt(filter.toBlock);
+      spans.push([from, to]);
+      if (to - from + 1n > 100_000n) throw new Error("eth_getLogs: query exceeds max block range 100000");
+      if (refuseFromBlock !== undefined && from === refuseFromBlock) throw new Error("eth_getLogs: upstream returned 503");
+      return logBlocks
+        .filter((b) => b >= from && b <= to)
+        .map((b) => ({ transactionHash: `0x${b.toString(16).padStart(64, "0")}`, blockNumber: `0x${b.toString(16)}` }));
+    };
+    return { rpc, spans };
+  }
+
+  it("finds every log across a 1.37M-block span, with every window under the RPC limit", async () => {
+    const stub = rangeLimitedRpc(1_370_000n, [1_000_500n, 1_300_000n]);
+    const logs = await readSettlementLogs(stub.rpc, APPROVED_SETTLEMENT_ADDRESS, ORDER, 1000n);
+    expect(logs.map((l) => l.blockNumber)).toEqual([1_300_000n, 1_000_500n]);
+    expect(stub.spans.length).toBeGreaterThan(1);
+    for (const [from, to] of stub.spans) expect(to - from + 1n).toBeLessThanOrEqual(100_000n);
+  });
+
+  it("a failed window is BLOCKED, never an incomplete answer", async () => {
+    const stub = rangeLimitedRpc(1_370_000n, [1_300_000n], 1_370_000n - 90_000n + 1n);
+    await expect(readSettlementLogs(stub.rpc, APPROVED_SETTLEMENT_ADDRESS, ORDER, 1000n)).rejects.toBeInstanceOf(BlockedError);
   });
 });

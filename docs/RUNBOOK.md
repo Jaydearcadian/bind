@@ -697,6 +697,31 @@ The guards run before any send, in the orchestrator and again in each child proc
   (a guard or a read stopped the run before any send).
 - Every output and every file goes through `src/utils/redact.ts`, with the RPC URL, the key and the database URL as extra secrets.
 
+**Range limit.** The Arc RPC refuses an `eth_getLogs` over 100000 blocks (`query exceeds max block range 100000`). Every
+settlement log read, in the adapter's recovery lookup (`findTransfer`) and in this harness, therefore scans the span from the deploy
+block to the head in windows of at most 90000 blocks, newest first (`src/adapters/settlement/log-scan.ts`). A failed window throws
+and is never read as "no settlement". A refusal that names a smaller `max block range N` shrinks the window once, to N, and retries
+that window once. A second refusal throws. Before this change, a recovery lookup over a 1.37M-block span failed on this RPC.
+
+**Resume (`--resume`).** Use it when the send child has already been killed after its broadcast, or the process stopped before
+verification, and a plain re-run would be refused (the state records that the send started). `--resume` sends nothing: the parent
+makes no transfer and no send child is spawned. It refuses unless the state file of the same scenario shows the send started, and:
+
+- for the crash scenarios, the kill point recorded as `SIGKILL` (`results.sendChild`);
+- for `timeout-retry`, attempt 1 completed (`results.send.attempts` and `afterAttempt1`); resume then only verifies, because the
+  attempts already ran;
+- and the recovery has not already started.
+
+It runs the chain checks first (chain id, owner, whitelist, deploy-block code), restores the baseline from the state, waits for the
+crashed transfer to be mined, runs the restart child (`recover`, which includes the same-key repeat), and verifies. The baseline is
+the start nonce and the vendor balance taken before the send. If the state has none, supply them with `--baseline-nonce` and
+`--baseline-vendor-balance` (whole numbers, token base units). They are recorded in the state as `supplied by operator`. A supplied
+value that differs from the state's is refused. `--resume` needs `--confirm-testnet-spend`, and it does not take `--phase`.
+
+```
+npx tsx scripts/live-recovery-arc.ts crash-before-record --resume --confirm-testnet-spend --state <the state file> [--write-evidence <new-file>]
+```
+
 **Offline rehearsal (no network, no spend).** `--adapter local-sim` swaps in the in-memory simulator and skips every chain read.
 The report says so. `ARC_RPC_URL` and `ARC_SIGNER_PRIVATE_KEY` must be unset for it to run. It proves the process kill, the
 restart and the database states. It cannot prove the one-payment rule: the simulator forgets its transfer when the process dies,

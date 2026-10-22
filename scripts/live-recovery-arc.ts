@@ -49,6 +49,7 @@ import { BIND_SETTLEMENT_ABI } from "../src/adapters/settlement/bind-settlement.
 import { LocalSettlementSimulator } from "../src/adapters/settlement/local-sim.js";
 import type { SettlementAdapter, TransferRequest, TransferResult } from "../src/adapters/settlement/types.js";
 import { parse as parsePgConnectionString } from "pg-connection-string";
+import { ARC_LOG_CHUNK_BLOCKS, collectLogs, rangeLimitOfError } from "../src/adapters/settlement/log-scan.js";
 import { redactText } from "../src/utils/redact.js";
 import { secretsOf } from "./verify-live-arc.js";
 
@@ -132,6 +133,11 @@ export interface CliArgs {
   writeEvidence?: string;
   statePath: string;
   fresh: boolean;
+  /** Continue a run whose send already started, without sending. See runResume. */
+  resume?: boolean;
+  /** Only with resume, and only when the state has no baseline. Recorded in the state and the report as supplied by the operator. */
+  baselineNonce?: string;
+  baselineVendorBalance?: string;
 }
 
 export const USAGE =
@@ -150,6 +156,9 @@ export function parseArgs(argv: string[], tmpDir: string = os.tmpdir()): CliArgs
   let statePath: string | undefined;
   let adapter: string = "arc";
   let phase: string = "orchestrate";
+  let resume = false;
+  let baselineNonce: string | undefined;
+  let baselineVendorBalance: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const value = (name: string): string => {
@@ -164,6 +173,9 @@ export function parseArgs(argv: string[], tmpDir: string = os.tmpdir()): CliArgs
     else if (arg === "--state") statePath = value(arg);
     else if (arg === "--adapter") adapter = value(arg);
     else if (arg === "--phase") phase = value(arg);
+    else if (arg === "--resume") resume = true;
+    else if (arg === "--baseline-nonce") baselineNonce = value(arg);
+    else if (arg === "--baseline-vendor-balance") baselineVendorBalance = value(arg);
     else if (arg.startsWith("--")) throw new Error(`unknown option ${arg.split("=")[0]}. ${USAGE}`);
     else positional.push(arg);
   }
@@ -172,6 +184,14 @@ export function parseArgs(argv: string[], tmpDir: string = os.tmpdir()): CliArgs
   if (!(SCENARIOS as readonly string[]).includes(scenario)) throw new Error(`unknown scenario. ${USAGE}`);
   if (adapter !== "arc" && adapter !== "local-sim") throw new Error(`--adapter must be arc or local-sim. ${USAGE}`);
   if (!(PHASES as readonly string[]).includes(phase)) throw new Error(`unknown phase. ${USAGE}`);
+  if (resume && phase !== "orchestrate") throw new Error(`--resume is used with the orchestrate phase only. ${USAGE}`);
+  if (baselineNonce !== undefined && !/^\d+$/.test(baselineNonce)) throw new Error("--baseline-nonce must be a whole number");
+  if (baselineVendorBalance !== undefined && !/^\d+$/.test(baselineVendorBalance)) {
+    throw new Error("--baseline-vendor-balance must be a whole number of token base units");
+  }
+  if ((baselineNonce !== undefined || baselineVendorBalance !== undefined) && !resume) {
+    throw new Error("--baseline-nonce and --baseline-vendor-balance are only used with --resume");
+  }
   return {
     scenario: scenario as Scenario,
     phase: phase as Phase,
@@ -180,6 +200,9 @@ export function parseArgs(argv: string[], tmpDir: string = os.tmpdir()): CliArgs
     writeEvidence,
     statePath: statePath ?? path.join(tmpDir, `bind-live-recovery-${scenario}.json`),
     fresh,
+    resume,
+    baselineNonce,
+    baselineVendorBalance,
   };
 }
 
@@ -455,7 +478,10 @@ export interface LogFact {
   blockNumber: bigint;
 }
 
-/** Every SettlementExecuted log for this order id, from the deploy block to the latest block. */
+/**
+ * Every SettlementExecuted log for this order id, from the deploy block to the head. The span is read in windows of at most
+ * ARC_LOG_CHUNK_BLOCKS, because the RPC refuses a single eth_getLogs over 100000 blocks. Any failed window is BLOCKED.
+ */
 export async function readSettlementLogs(rpc: RpcCall, contract: string, orderId: string, deployBlock: bigint): Promise<LogFact[]> {
   return blockedOn("settlement logs", async () => {
     const topics = encodeEventTopics({
@@ -463,14 +489,23 @@ export async function readSettlementLogs(rpc: RpcCall, contract: string, orderId
       eventName: "SettlementExecuted",
       args: { orderId: keccak256(stringToHex(orderId)) },
     } as never);
-    const logs = (await rpc("eth_getLogs", [
-      { address: contract, fromBlock: `0x${deployBlock.toString(16)}`, toBlock: "latest", topics },
-    ])) as unknown;
-    if (!Array.isArray(logs)) throw new BlockedError("unexpected RPC answer for eth_getLogs");
-    return logs.map((log: { transactionHash?: unknown; blockNumber?: unknown }) => ({
-      transactionHash: String(log.transactionHash),
-      blockNumber: hexQuantity(log.blockNumber, "log block number"),
-    }));
+    const latest = hexQuantity(await rpc("eth_blockNumber", []), "eth_blockNumber");
+    return collectLogs<LogFact>({
+      latest,
+      deployBlock,
+      chunkBlocks: ARC_LOG_CHUNK_BLOCKS,
+      rangeLimitOf: rangeLimitOfError,
+      fetchRange: async (from, to) => {
+        const logs = (await rpc("eth_getLogs", [
+          { address: contract, fromBlock: `0x${from.toString(16)}`, toBlock: `0x${to.toString(16)}`, topics },
+        ])) as unknown;
+        if (!Array.isArray(logs)) throw new BlockedError("unexpected RPC answer for eth_getLogs");
+        return logs.map((log: { transactionHash?: unknown; blockNumber?: unknown }) => ({
+          transactionHash: String(log.transactionHash),
+          blockNumber: hexQuantity(log.blockNumber, "log block number"),
+        }));
+      },
+    });
   });
 }
 
@@ -1182,6 +1217,7 @@ class ReportBuilder {
       harnessVersion: 1,
       scenario: this.args.scenario,
       phase: this.args.phase,
+      resume: this.args.resume === true,
       adapter: this.args.adapter,
       mode: adapterIsArc ? "LIVE_ARC_TESTNET" : "LOCAL_SIMULATOR_NO_CHAIN",
       chainAssertions: adapterIsArc
@@ -1220,6 +1256,130 @@ class ReportBuilder {
 // ---------------------------------------------------------------------------------------------------------------------
 // The orchestrator (runs in the parent process)
 // ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Continues a run whose send already started. It never sends: the parent makes no transfer, and no send-child is spawned.
+ * What it does: refuses unless the state shows the send started and the crash (or, for timeout-retry, attempt 1) was
+ * recorded; checks the chain (chain id, owner, whitelist, deploy-block code) fresh; restores the baseline from the state, or
+ * from --baseline-nonce and --baseline-vendor-balance when the state has none (recorded as supplied by the operator); waits
+ * for the crashed transfer to be mined; runs the restart child (recover), which includes the same-key repeat; then verifies.
+ * For timeout-retry the attempts already ran in the send child, so resume only verifies.
+ */
+async function runResume(args: CliArgs, ports: HarnessPorts, report: ReportBuilder): Promise<number> {
+  const previous = loadState(ports.files, args.statePath);
+  if (previous === null) {
+    return report.end("REFUSED", ["resume needs the state file of the send, and this scenario has none"]);
+  }
+  assertStateMatches(previous, args);
+  if (previous.recoverStartedAt !== undefined) {
+    return report.end("REFUSED", ["the recovery already started for this scenario; resume will not run it again"]);
+  }
+  if (previous.sendStartedAt === undefined) {
+    return report.end("REFUSED", ["resume refused: the send has not started (the state file has no sendStartedAt)"]);
+  }
+  if (args.scenario === "timeout-retry") {
+    const send = previous.results.send as { attempts?: unknown[]; afterAttempt1?: unknown } | null | undefined;
+    if (!send || !Array.isArray(send.attempts) || send.attempts.length < 1 || send.afterAttempt1 === undefined) {
+      return report.end("REFUSED", ["resume refused for timeout-retry: the state does not show attempt 1 completed"]);
+    }
+  } else {
+    const sendChild = previous.results.sendChild as { signal?: string | null; killArmed?: boolean } | undefined;
+    if (!sendChild || sendChild.signal !== "SIGKILL" || sendChild.killArmed !== true) {
+      return report.end("REFUSED", ["resume refused: the state does not record the SIGKILL at the kill point"]);
+    }
+  }
+
+  const signer = signerAddressOf(ports.env.ARC_SIGNER_PRIVATE_KEY) ?? LOCAL_SIM_PAYER;
+  const contract = ports.env.BIND_SETTLEMENT_ADDRESS ?? APPROVED_SETTLEMENT_ADDRESS;
+  const deployBlock = ports.env.BIND_SETTLEMENT_DEPLOY_BLOCK ?? "0";
+  if (args.adapter === "arc") {
+    if (!ports.rpc) return report.end("BLOCKED", ["no RPC client"]);
+    const reading = await assertContractGuards(ports.rpc, { contract, signer, vendor: VENDOR_ADDRESS });
+    await assertDeployBlockCode(ports.rpc, contract, BigInt(deployBlock));
+    report.step("contract-guards", { chainId: reading.chainId, owner: reading.owner, whitelisted: reading.vendorWhitelisted });
+  }
+
+  let state = previous;
+  let baselineSource: "state file" | "supplied by operator" = "state file";
+  const supplied = args.baselineNonce !== undefined || args.baselineVendorBalance !== undefined;
+  if (state.baseline === undefined) {
+    if (args.baselineNonce === undefined || args.baselineVendorBalance === undefined) {
+      return report.end("REFUSED", [
+        "the state has no baseline: supply --baseline-nonce and --baseline-vendor-balance (they are recorded as supplied by the operator)",
+      ]);
+    }
+    const decimals = args.adapter === "arc" && ports.rpc ? await readDecimals(ports.rpc) : 18;
+    const baseline: Baseline = {
+      startNonce: args.baselineNonce,
+      vendorBalanceBefore: args.baselineVendorBalance,
+      decimals,
+      contract: args.adapter === "arc" ? contract : "",
+      deployBlock: args.adapter === "arc" ? deployBlock : "0",
+      signer,
+      vendor: VENDOR_ADDRESS,
+    };
+    state = updateState(ports, args.statePath, (s) => {
+      s.baseline = baseline;
+      s.results.baselineSource = "supplied by operator";
+    });
+    baselineSource = "supplied by operator";
+  } else {
+    const b = state.baseline;
+    if (supplied && (b.startNonce !== args.baselineNonce || b.vendorBalanceBefore !== args.baselineVendorBalance)) {
+      return report.end("REFUSED", ["the supplied baseline differs from the baseline in the state file; nothing is overwritten"]);
+    }
+    if (args.adapter === "arc" && (b.contract.toLowerCase() !== contract.toLowerCase() || b.deployBlock !== deployBlock)) {
+      return report.end("REFUSED", ["the state's baseline names another contract or deploy block than this environment"]);
+    }
+  }
+  report.step("baseline", { ...state.baseline, source: baselineSource });
+
+  if (args.adapter === "arc") {
+    if (!ports.rpc) return report.end("BLOCKED", ["no RPC client"]);
+    const rpc = ports.rpc;
+    const startNonce = BigInt(state.baseline!.startNonce);
+    const mined = await waitUntil(
+      async () => {
+        const logs = await readSettlementLogs(rpc, contract, state.orderId, BigInt(state.baseline!.deployBlock));
+        const latest = await readNonce(rpc, signer, "latest");
+        return logs.length >= 1 && latest > startNonce;
+      },
+      { timeoutMs: CRASH_WAIT_MS, pollMs: POLL_MS, now: ports.now, sleep: ports.sleep }
+    );
+    report.step("wait-for-mining", { mined, timeoutMs: CRASH_WAIT_MS });
+    if (!mined) {
+      return report.end("FAIL", ["the transfer is not mined within the bound; resume runs nothing further"]);
+    }
+  }
+
+  if (args.scenario !== "timeout-retry") {
+    if (state.results.preRestart === undefined) {
+      const preCrash = await ports.db.snapshot(state.orderId, state.workspaceId);
+      const preRestart = preRestartAssertions(args.scenario, preCrash);
+      state = updateState(ports, args.statePath, (s) => {
+        s.results.preCrash = preCrash;
+        s.results.preRestart = preRestart;
+      });
+    }
+    assertPhaseAllowed(state, "recover", args);
+    // The restart child is the only process spawned here. The send-child is never spawned by resume.
+    const recover = await ports.spawnPhase(childArgs(args, "recover"), CHILD_TIMEOUT_MS);
+    report.child("recover", recover);
+    state = updateState(ports, args.statePath, (s) => {
+      s.results.recover = recover.result ?? null;
+    });
+    if (recover.code === 2) {
+      const stop = childStop(recover);
+      return report.end(stop.result, stop.reasons);
+    }
+    if (recover.code !== 0 || recover.result === undefined) {
+      return report.end("FAIL", ["the recover process did not finish cleanly; nothing further was sent"]);
+    }
+  }
+  report.step("resume", { baselineSource, sendsSpawnedByResume: 0 });
+  const verdict = await verifyRun(args, state, ports, report);
+  return report.end(verdict);
+}
 
 function loadState(files: HarnessPorts["files"], file: string): ScenarioState | null {
   const text = files.read(file);
@@ -1347,6 +1507,7 @@ export async function runOrchestrator(args: CliArgs, ports: HarnessPorts): Promi
     const evidenceExists = args.writeEvidence !== undefined && ports.files.exists(path.resolve(args.writeEvidence));
     const failures = staticGuards(ports.env, args, evidenceExists);
     if (failures.length > 0) return report.end("REFUSED", failures.map((f) => f.reason));
+    if (args.resume) return await runResume(args, ports, report);
 
     const previous = loadState(ports.files, args.statePath);
     if (previous !== null && args.phase !== "verify") assertStateMatches(previous, args);
