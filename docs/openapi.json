@@ -14075,7 +14075,7 @@
                 }
               }
             },
-            "description": "Owner role required."
+            "description": "A demo workspace sends no email (EMAIL_DEMO_REFUSED)."
           },
           "404": {
             "content": {
@@ -14086,6 +14086,16 @@
               }
             },
             "description": "Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many wrong codes for this address in the last day (EMAIL_ATTEMPTS_EXCEEDED). Nothing was sent."
           },
           "413": {
             "content": {
@@ -14105,7 +14115,7 @@
                 }
               }
             },
-            "description": "Three codes were already sent to this address in the last hour (EMAIL_SEND_LIMITED). Retry-After is set."
+            "description": "A send limit is reached (EMAIL_SEND_LIMITED): three codes per address per hour, five addresses or ten codes per workspace per day. Retry-After is set."
           },
           "500": {
             "content": {
@@ -14254,7 +14264,7 @@
                 }
               }
             },
-            "description": "Owner role required."
+            "description": "A demo workspace verifies no email (EMAIL_DEMO_REFUSED)."
           },
           "404": {
             "content": {
@@ -14274,7 +14284,7 @@
                 }
               }
             },
-            "description": "The code expired (EMAIL_CODE_EXPIRED) or five wrong codes were entered (EMAIL_ATTEMPTS_EXCEEDED)."
+            "description": "The code expired (EMAIL_CODE_EXPIRED), or the code's five attempts or the address's ten wrong guesses in a day are used up (EMAIL_ATTEMPTS_EXCEEDED)."
           },
           "413": {
             "content": {

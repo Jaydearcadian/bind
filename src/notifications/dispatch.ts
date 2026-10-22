@@ -1,11 +1,38 @@
+import { createHash } from "node:crypto";
 import { notificationEmitter } from "../adapters/web2/notifications.js";
 import type { NotificationPayload } from "../adapters/web2/types.js";
+import { config } from "../config/env.js";
 import { EffectInDoubtError, runEffect } from "../effects/ledger.js";
 import { EffectClass } from "../policy/effect-classifier.js";
 import { PolicyDecision } from "../policy/engine.js";
 import { WorkflowEngine } from "../workflows/engine.js";
+import { EmailRecipientNotVerifiedError } from "./email.js";
+import { isVerifiedOwnerAddress } from "./recipients.js";
 
 const engine = new WorkflowEngine();
+
+/**
+ * An email that is not to a verified owner address is not sent. It is audited as a skip (ADR 0074). The audit row names the
+ * notice's kind and reference only, never the address.
+ */
+async function skipUnverified(
+  workspaceId: string,
+  workflowId: string | undefined,
+  kind: OwnerNoticeKind,
+  refId: string
+): Promise<{ sent: boolean; reason: "not_verified" }> {
+  await engine.recordAudit(
+    workspaceId,
+    workflowId ?? null,
+    "system",
+    "system:notifications",
+    EffectClass.EXTERNAL_REQUEST,
+    "notification.skipped_no_recipient",
+    PolicyDecision.ALLOW,
+    { kind, refId, reason: "email_not_verified" }
+  );
+  return { sent: false, reason: "not_verified" };
+}
 
 /**
  * What an owner notice is about (ADR 0027). `approval` is a commitment waiting for the owner (ADR 0020, ADR 0025).
@@ -42,7 +69,7 @@ export async function sendOwnerNotification(input: {
    * id to the key, so each is told once.
    */
   recipientId?: string | null;
-}): Promise<{ sent: boolean; reason?: "in_doubt" }> {
+}): Promise<{ sent: boolean; reason?: "in_doubt" | "not_verified" }> {
   const { workspaceId, workflowId, kind, refId, recipientId } = input;
   // The notice kind travels in the payload metadata. The email content is chosen from it (ADR 0074), never from the text.
   const payload: NotificationPayload = {
@@ -50,6 +77,17 @@ export async function sendOwnerNotification(input: {
     metadata: { ...(input.payload.metadata ?? {}), noticeKind: kind },
   };
   const recipientSuffix = recipientId ? `:${recipientId}` : "";
+  const emailOn = payload.channel === "email" && config.BIND_EMAIL_PROVIDER !== undefined;
+  // With email on, an address is sent to only when it is a verified owner address of this workspace (ADR 0074). Refused
+  // here and audited as a skip. The send path checks again.
+  if (emailOn && !(await isVerifiedOwnerAddress(workspaceId, payload.recipient.toLowerCase()))) {
+    return skipUnverified(workspaceId, workflowId, kind, refId);
+  }
+  // The ledger keeps only a hash of the request. For email the hash is taken over a digest of the address, so the address
+  // is not part of the stored request. The send itself still uses the real payload.
+  const request: NotificationPayload = emailOn
+    ? { ...payload, recipient: createHash("sha256").update(payload.recipient.toLowerCase()).digest("hex") }
+    : payload;
   try {
     await runEffect(
       {
@@ -59,13 +97,16 @@ export async function sendOwnerNotification(input: {
         operation: OPERATION_FOR_KIND[kind],
         // The workspace id is part of the key, so a key cannot be probed or reused across tenants.
         idempotencyKey: `${workspaceId}:notify:${kind}:${refId}${recipientSuffix}`,
-        request: payload,
+        request,
         externalDedupes: false,
       },
       () => notificationEmitter.send(payload)
     );
     return { sent: true };
   } catch (err) {
+    if (err instanceof EmailRecipientNotVerifiedError) {
+      return skipUnverified(workspaceId, workflowId, kind, refId);
+    }
     if (err instanceof EffectInDoubtError) {
       // Evidence holds the ids only. The message text is never written to the audit log.
       // An approval keeps its original evidence key (approvalId), so existing audit readers are unchanged.
@@ -97,7 +138,7 @@ export async function sendApprovalNotification(input: {
   approvalId: string;
   payload: NotificationPayload;
   recipientId?: string | null;
-}): Promise<{ sent: boolean; reason?: "in_doubt" }> {
+}): Promise<{ sent: boolean; reason?: "in_doubt" | "not_verified" }> {
   const { workspaceId, workflowId, approvalId, payload, recipientId } = input;
   return sendOwnerNotification({ workspaceId, workflowId, kind: "approval", refId: approvalId, payload, recipientId });
 }

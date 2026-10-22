@@ -2,6 +2,15 @@ import { config, emailBaseUrlAllowed } from "../config/env.js";
 import { createResendTransport, type EmailTransport } from "../adapters/email/resend.js";
 import type { NotificationPayload } from "../adapters/web2/types.js";
 import type { OwnerNoticeKind } from "./dispatch.js";
+import { isVerifiedOwnerAddress } from "./recipients.js";
+
+/** The send was refused because the address is not a verified owner address of the workspace. Carries no address. */
+export class EmailRecipientNotVerifiedError extends Error {
+  constructor() {
+    super("The email recipient is not a verified owner address");
+    this.name = "EmailRecipientNotVerifiedError";
+  }
+}
 
 /** The subject and body of an email, without its recipient. */
 export interface EmailContent {
@@ -57,7 +66,14 @@ export function maskEmailAddress(address: string): string {
   return `${local[0]}***@${domain[0] ?? ""}***${tld}`;
 }
 
-const ADDRESS = /^[a-z0-9._%+-]{1,64}@[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63})*\.[a-z]{2,24}$/;
+/**
+ * An address: the local part may not start with a dot, contain two dots in a row, or end with one. Each domain label starts
+ * and ends with a letter or digit. The top-level domain is letters only.
+ */
+const ADDRESS = /^(?!\.)(?!.*\.\.)[a-z0-9._%+-]{1,64}(?<!\.)@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/;
+
+/** Text that could be a link, an address, a domain, or a phone-like number (ADR 0074). Such a supplier name is not shown. */
+const LOOKS_LIKE_LINK_OR_CONTACT = /@|:\/\/|www\.|\w\.[a-z]{2,}|\d{6,}/i;
 
 /** The longest owner address accepted. It is the surface binding's actor-id limit, so a binding can always be stored. */
 export const MAX_OWNER_EMAIL_LENGTH = 120;
@@ -105,9 +121,10 @@ function amountText(cents: unknown): string | null {
 function noticeSentence(kind: OwnerNoticeKind, metadata: Record<string, unknown>): string {
   switch (kind) {
     case "approval": {
-      // A supplier name that looks like a link is left out: a link in a notice is what a phisher would send.
+      // A supplier name that could carry a link, an address, a domain or a long number is left out: a notice must not hand
+      // a phisher a place to send people. The generic sentence is used instead.
       const named = sanitizeUntrustedText(metadata.supplierName);
-      const supplier = named && !/:\/\/|www\./i.test(named) ? named : null;
+      const supplier = named && !LOOKS_LIKE_LINK_OR_CONTACT.test(named) ? named : null;
       const amount = amountText(metadata.amountCents);
       if (supplier && amount) return `A purchase from ${supplier} for $${amount} USDC is waiting for your approval.`;
       if (supplier) return `A purchase from ${supplier} is waiting for your approval.`;
@@ -163,6 +180,9 @@ export function buildVerificationEmail(input: { code: string; expiresMinutes: nu
 export async function sendOwnerNoticeEmail(payload: NotificationPayload): Promise<{ id: string }> {
   const to = normaliseEmailAddress(payload.recipient);
   if (!to) throw new Error("The email recipient is not an address");
+  // Defence in depth (ADR 0074): an address that is not a live, verified owner address of this workspace is never sent to,
+  // whatever the caller resolved. The caller audits the refusal.
+  if (!(await isVerifiedOwnerAddress(payload.workspaceId, to))) throw new EmailRecipientNotVerifiedError();
   const message = buildOwnerNoticeEmail({
     kind: payload.metadata?.noticeKind,
     metadata: payload.metadata ?? {},

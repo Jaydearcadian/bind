@@ -17,17 +17,28 @@ import { startFakeResend, codeIn, type FakeResend } from "../helpers/fake-resend
  */
 
 const run = Date.now();
-const wsA = `ws-oe-a-${run}`;
 const wsB = `ws-oe-b-${run}`;
 const KEY = "re_route_test_key_0123456789";
 const FROM = "Bind <notices@example.test>";
 
+// Each test gets its own workspace for the owner, so the per-workspace send caps (ADR 0074) never leak between tests.
+let wsA = "";
 let server: Server;
 let baseUrl = "";
 let fake: FakeResend;
 let ownerA: { token: string };
 let staffA: { token: string };
 let ownerB: { token: string };
+const createdWorkspaces: string[] = [];
+let workspaceCounter = 0;
+
+async function newWorkspace(): Promise<string> {
+  workspaceCounter += 1;
+  const id = `ws-oe-${run}-${workspaceCounter}`;
+  createdWorkspaces.push(id);
+  await provisionWorkspace(id, "Email Kitchen", "kitchen-v1");
+  return id;
+}
 const logged: string[] = [];
 let addressCounter = 0;
 
@@ -91,10 +102,8 @@ async function requestFor(address: string, token = ownerA.token) {
 
 beforeAll(async () => {
   await runMigrations();
-  await provisionWorkspace(wsA, "Email Kitchen A", "kitchen-v1");
   await provisionWorkspace(wsB, "Email Kitchen B", "kitchen-v1");
-  ownerA = await issueToken(wsA, "owner", "owner-a");
-  staffA = await issueToken(wsA, "staff", "line-cook");
+  createdWorkspaces.push(wsB);
   ownerB = await issueToken(wsB, "owner", "owner-b");
 
   fake = await startFakeResend();
@@ -109,13 +118,16 @@ beforeAll(async () => {
   });
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   fake.received.length = 0;
   fake.status = 200;
   fake.delayMs = 0;
   fake.rawBody = null;
   logged.length = 0;
   enableEmail();
+  wsA = await newWorkspace();
+  ownerA = await issueToken(wsA, "owner", "owner-a");
+  staffA = await issueToken(wsA, "staff", "line-cook");
 });
 
 afterAll(async () => {
@@ -126,7 +138,7 @@ afterAll(async () => {
   config.BIND_EMAIL_API_BASE = saved.base;
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await fake.close();
-  await query(`DELETE FROM workspaces WHERE id = ANY($1::text[]);`, [[wsA, wsB]]);
+  await query(`DELETE FROM workspaces WHERE id = ANY($1::text[]);`, [createdWorkspaces]);
   await closePool();
 });
 
@@ -319,15 +331,16 @@ describe("verifying a code", () => {
     const { out: requested, code } = await requestFor(address);
     const wrong = code === "000000" ? "000001" : "000000";
 
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
       const out = await call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: requested.body.id, code: wrong } });
       expect(out.status, `attempt ${attempt}`).toBe(400);
       expect(out.body.code).toBe("EMAIL_CODE_INVALID");
       expect(out.body.error).toBe(`The code is not right. ${5 - attempt} attempts left.`);
     }
-    const fifth = await call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: requested.body.id, code: wrong } });
-    expect(fifth.status).toBe(409);
-    expect(fifth.body.code).toBe("EMAIL_ATTEMPTS_EXCEEDED");
+    // After the fifth wrong guess the code is used up: a sixth guess is refused as exceeded.
+    const sixth = await call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: requested.body.id, code: wrong } });
+    expect(sixth.status).toBe(409);
+    expect(sixth.body.code).toBe("EMAIL_ATTEMPTS_EXCEEDED");
 
     // Even the right code is now refused: a new code is needed.
     const right = await call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: requested.body.id, code } });
@@ -470,6 +483,165 @@ describe("listing and removing", () => {
       expect(row.evidence).not.toContain(code as string);
       expect(row.evidence).toMatch(/"maskedEmail":\s*"o\*\*\*@k\*\*\*\.example"/);
     }
+  });
+});
+
+/** Marks a workspace as a demo, which is the flag the server reads (ADR 0057). */
+async function makeDemo(ws: string): Promise<void> {
+  await query(`UPDATE workspaces SET is_demo = true, demo_expires_at = NOW() + INTERVAL '1 day' WHERE id = $1;`, [ws]);
+}
+
+const wrongCodeFor = (code: string | null) => (code === "000000" ? "000001" : "000000");
+
+describe("demo workspaces send and verify no email (ADR 0074)", () => {
+  it("refuses a request and a verification with a plain message, and sends nothing", async () => {
+    await makeDemo(wsA);
+    const sent = await call("POST", requestPath(wsA), { token: ownerA.token, body: { email: freshAddress() } });
+    expect(sent.status).toBe(403);
+    expect(sent.body.code).toBe("EMAIL_DEMO_REFUSED");
+    expect(sent.body.error).toMatch(/Demo workspaces do not send email/);
+
+    const verified = await call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: "oem_none", code: "123456" } });
+    expect(verified.status).toBe(403);
+    expect(verified.body.code).toBe("EMAIL_DEMO_REFUSED");
+
+    expect(fake.received).toHaveLength(0);
+    const rows = await query(`SELECT COUNT(*)::int AS n FROM owner_emails WHERE workspace_id = $1;`, [wsA]);
+    expect(rows.rows[0].n).toBe(0);
+  });
+});
+
+describe("per-workspace limits on codes (ADR 0074)", () => {
+  it("the sixth distinct address in a day is refused, while an address already asked for is not counted again", async () => {
+    const addresses = Array.from({ length: 5 }, () => freshAddress());
+    for (const address of addresses) {
+      expect((await call("POST", requestPath(wsA), { token: ownerA.token, body: { email: address } })).status).toBe(201);
+    }
+    const sixth = await call("POST", requestPath(wsA), { token: ownerA.token, body: { email: freshAddress() } });
+    expect(sixth.status).toBe(429);
+    expect(sixth.body.code).toBe("EMAIL_SEND_LIMITED");
+    expect(Number(sixth.headers.get("retry-after"))).toBeGreaterThan(0);
+
+    // One of the five may still be sent to again.
+    expect((await call("POST", requestPath(wsA), { token: ownerA.token, body: { email: addresses[0] } })).status).toBe(201);
+    expect(fake.received).toHaveLength(6);
+  });
+
+  it("the eleventh code in a day is refused", async () => {
+    const addresses = Array.from({ length: 5 }, () => freshAddress());
+    for (const address of addresses) {
+      expect((await call("POST", requestPath(wsA), { token: ownerA.token, body: { email: address } })).status).toBe(201);
+    }
+    for (const address of addresses) {
+      expect((await call("POST", requestPath(wsA), { token: ownerA.token, body: { email: address } })).status).toBe(201);
+    }
+    expect(fake.received).toHaveLength(10);
+
+    // The third code for the first address is within its own hourly limit, so only the daily total refuses it.
+    const eleventh = await call("POST", requestPath(wsA), { token: ownerA.token, body: { email: addresses[0] } });
+    expect(eleventh.status).toBe(429);
+    expect(eleventh.body.code).toBe("EMAIL_SEND_LIMITED");
+    expect(fake.received).toHaveLength(10);
+  });
+
+  it("concurrent requests for one new address send no more than the hourly limit", async () => {
+    const address = freshAddress();
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => call("POST", requestPath(wsA), { token: ownerA.token, body: { email: address } }))
+    );
+    expect(results.filter((r) => r.status === 201)).toHaveLength(3);
+    expect(results.filter((r) => r.status === 429)).toHaveLength(2);
+    expect(fake.received).toHaveLength(3);
+  });
+});
+
+describe("wrong guesses per address survive re-sends (ADR 0074)", () => {
+  it("ten wrong guesses across two codes refuse the address, sending nothing, until the day passes", async () => {
+    const address = freshAddress();
+    const first = await requestFor(address);
+    for (let i = 0; i < 5; i += 1) {
+      await call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: first.out.body.id, code: wrongCodeFor(first.code) } });
+    }
+    // A new code does not reset the count.
+    const second = await requestFor(address);
+    expect(second.out.status).toBe(201);
+    for (let i = 0; i < 5; i += 1) {
+      await call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: second.out.body.id, code: wrongCodeFor(second.code) } });
+    }
+    const failures = await query(`SELECT COUNT(*)::int AS n FROM owner_email_failures WHERE workspace_id = $1 AND email = $2;`, [wsA, address.toLowerCase()]);
+    expect(failures.rows[0].n).toBe(10);
+
+    const sentBefore = fake.received.length;
+    const refused = await call("POST", requestPath(wsA), { token: ownerA.token, body: { email: address } });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("EMAIL_ATTEMPTS_EXCEEDED");
+    expect(refused.body.error).toMatch(/Try again in a day/);
+    expect(fake.received.length).toBe(sentBefore);
+
+    const right = await call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: second.out.body.id, code: second.code } });
+    expect(right.status).toBe(409);
+    expect(right.body.code).toBe("EMAIL_ATTEMPTS_EXCEEDED");
+
+    // Once the day has passed, the address may be asked again, and a correct code verifies it.
+    await query(`UPDATE owner_email_failures SET failed_at = NOW() - INTERVAL '25 hours' WHERE workspace_id = $1 AND email = $2;`, [
+      wsA,
+      address.toLowerCase(),
+    ]);
+    const later = await requestFor(address);
+    expect(later.out.status).toBe(201);
+    const verified = await call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: later.out.body.id, code: later.code } });
+    expect(verified.status).toBe(200);
+    const cleared = await query(`SELECT COUNT(*)::int AS n FROM owner_email_failures WHERE workspace_id = $1 AND email = $2;`, [wsA, address.toLowerCase()]);
+    expect(cleared.rows[0].n).toBe(0);
+  });
+
+  it("twenty concurrent wrong guesses on one code: exactly five are counted, five answer wrong-code and fifteen are exceeded", async () => {
+    const address = freshAddress();
+    const { out, code } = await requestFor(address);
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: out.body.id, code: wrongCodeFor(code) } }))
+    );
+    expect(results.filter((r) => r.body.code === "EMAIL_CODE_INVALID")).toHaveLength(5);
+    expect(results.filter((r) => r.body.code === "EMAIL_ATTEMPTS_EXCEEDED")).toHaveLength(15);
+
+    const row = await query(`SELECT attempts FROM owner_emails WHERE id = $1;`, [out.body.id]);
+    expect(row.rows[0].attempts).toBe(5);
+    const failures = await query(`SELECT COUNT(*)::int AS n FROM owner_email_failures WHERE workspace_id = $1 AND email = $2;`, [wsA, address.toLowerCase()]);
+    expect(failures.rows[0].n).toBe(5);
+  });
+});
+
+describe("the email binding is removed only if the verification created it and it is unchanged (ADR 0074)", () => {
+  it("a binding the owner sets through /surfaces after verification survives removal", async () => {
+    const address = freshAddress();
+    const { out, code } = await requestFor(address);
+    await call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: out.body.id, code } });
+
+    const touched = await call("POST", `/api/workspaces/${wsA}/surfaces`, {
+      token: ownerA.token,
+      body: { surface: "email", actorId: address.toLowerCase(), actorRole: "owner", integrationStatus: "simulated" },
+    });
+    expect(touched.status).toBe(201);
+
+    expect((await call("DELETE", removePath(wsA, out.body.id), { token: ownerA.token })).status).toBe(200);
+    const still = await query(`SELECT COUNT(*)::int AS n FROM surface_bindings WHERE workspace_id = $1 AND actor_id = $2;`, [wsA, address.toLowerCase()]);
+    expect(still.rows[0].n).toBe(1);
+  });
+
+  it("a /surfaces write that races the verification: both succeed and one binding is left", async () => {
+    const address = freshAddress();
+    const { out, code } = await requestFor(address);
+    const [verified, surfaced] = await Promise.all([
+      call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: out.body.id, code } }),
+      call("POST", `/api/workspaces/${wsA}/surfaces`, {
+        token: ownerA.token,
+        body: { surface: "email", actorId: address.toLowerCase(), actorRole: "owner", integrationStatus: "simulated" },
+      }),
+    ]);
+    expect(verified.status).toBe(200);
+    expect(surfaced.status).toBe(201);
+    const rows = await query(`SELECT COUNT(*)::int AS n FROM surface_bindings WHERE workspace_id = $1 AND actor_id = $2;`, [wsA, address.toLowerCase()]);
+    expect(rows.rows[0].n).toBe(1);
   });
 });
 

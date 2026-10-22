@@ -9191,7 +9191,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Owner role required. */
+            /** @description A demo workspace sends no email (EMAIL_DEMO_REFUSED). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9209,6 +9209,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Too many wrong codes for this address in the last day (EMAIL_ATTEMPTS_EXCEEDED). Nothing was sent. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Request body too large (over 256 kB). */
             413: {
                 headers: {
@@ -9218,7 +9227,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Three codes were already sent to this address in the last hour (EMAIL_SEND_LIMITED). Retry-After is set. */
+            /** @description A send limit is reached (EMAIL_SEND_LIMITED): three codes per address per hour, five addresses or ten codes per workspace per day. Retry-After is set. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -9312,7 +9321,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Owner role required. */
+            /** @description A demo workspace verifies no email (EMAIL_DEMO_REFUSED). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -9330,7 +9339,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description The code expired (EMAIL_CODE_EXPIRED) or five wrong codes were entered (EMAIL_ATTEMPTS_EXCEEDED). */
+            /** @description The code expired (EMAIL_CODE_EXPIRED), or the code's five attempts or the address's ten wrong guesses in a day are used up (EMAIL_ATTEMPTS_EXCEEDED). */
             409: {
                 headers: {
                     [name: string]: unknown;

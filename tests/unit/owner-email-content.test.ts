@@ -92,6 +92,20 @@ describe("buildOwnerNoticeEmail", () => {
     }
   });
 
+  it("drops a supplier name that carries an address, a domain, www, or a long number, and says the generic sentence", async () => {
+    for (const supplierName of ["pay-now.example.com/refund", "Visit evil.io", "a@b.co", "www.x", "Acme 123456", "Supplier Co. Ltd"]) {
+      const out = buildOwnerNoticeEmail({ kind: "approval", metadata: { supplierName, amountCents: 500 }, baseUrl: BASE });
+      const sentence = out.text.split("\n")[0];
+      if (supplierName === "Supplier Co. Ltd") {
+        // A name with an ordinary full stop and no domain is kept.
+        expect(sentence, supplierName).toBe("A purchase from Supplier Co. Ltd for $5.00 USDC is waiting for your approval.");
+      } else {
+        expect(sentence, supplierName).toBe("A purchase is waiting for your approval.");
+      }
+      expect(sentence, supplierName).not.toMatch(/@|\.[a-z]{2,}/i);
+    }
+  });
+
   it("leaves the amount out when it is not a whole number of cents", () => {
     for (const amountCents of [-1, 1.5, Number.NaN, "300" as unknown as number]) {
       const out = buildOwnerNoticeEmail({ kind: "approval", metadata: { supplierName: "Acme", amountCents }, baseUrl: BASE });
@@ -151,5 +165,14 @@ describe("addresses", () => {
     expect(normaliseEmailAddress("a\n@example.com")).toBeNull();
     expect(normaliseEmailAddress(`${"a".repeat(115)}@example.com`)).toBeNull();
     expect(normaliseEmailAddress(42)).toBeNull();
+    // A local part may not start with a dot, or hold two dots in a row, or end with one.
+    expect(normaliseEmailAddress(".owner@kitchen.example")).toBeNull();
+    expect(normaliseEmailAddress("own..er@kitchen.example")).toBeNull();
+    expect(normaliseEmailAddress("owner.@kitchen.example")).toBeNull();
+    // A domain label may not start or end with a hyphen.
+    expect(normaliseEmailAddress("owner@-kitchen.example")).toBeNull();
+    expect(normaliseEmailAddress("owner@kitchen-.example")).toBeNull();
+    expect(normaliseEmailAddress("owner@kitchen.example-")).toBeNull();
+    expect(normaliseEmailAddress("first.last+tag@kitchen-team.example")).toBe("first.last+tag@kitchen-team.example");
   });
 });

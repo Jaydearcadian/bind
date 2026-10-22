@@ -13,19 +13,33 @@ import { configuredEmailTransport, emailDeliveryOn, maskEmailAddress, normaliseE
  * Owner email addresses for notices (ADR 0074). An address is added by a code that the owner receives at that address, so
  * nobody can make the server send notices to someone else's address by typing it. Only a verified address receives notices.
  *
- * The rules: a code is six digits, valid for 10 minutes, and stored only as a salted SHA-256. A new code replaces the old one.
- * Five wrong codes end the code, and a new one is needed. At most three codes per address per workspace per hour are sent.
- * An audit row names the address only in masked form. No row, log or response carries a code.
+ * Limits, all enforced here in the database transaction:
+ * - a code is six digits, valid 10 minutes, stored only as a salted SHA-256; a new request replaces the code;
+ * - five wrong guesses end a code (per code);
+ * - ten wrong guesses per address per 24 hours, across codes and re-sends, then the address is refused until the window
+ *   passes (reset only by a successful verification);
+ * - three codes per address per hour, five distinct addresses per workspace per 24 hours, ten codes per workspace per 24 hours;
+ * - a demo workspace sends no email at all.
+ * No row, log or response carries a code, and an audit row carries the address only in masked form.
  */
 
 export const CODE_TTL_MINUTES = 10;
+/** Codes sent to one address in one hour. */
 export const MAX_SENDS_PER_HOUR = 3;
+/** Wrong guesses for one code. */
 export const MAX_ATTEMPTS = 5;
+/** Distinct addresses a workspace may ask codes for in 24 hours. */
+export const MAX_DISTINCT_ADDRESSES_PER_DAY = 5;
+/** Codes a workspace may send in 24 hours. */
+export const MAX_SENDS_PER_DAY = 10;
+/** Wrong guesses for one address in 24 hours, across all its codes. */
+export const MAX_FAILED_GUESSES_PER_DAY = 10;
 
 const engine = new WorkflowEngine();
 
 export type OwnerEmailErrorCode =
   | "EMAIL_NOT_CONFIGURED"
+  | "EMAIL_DEMO_REFUSED"
   | "INVALID_INPUT"
   | "EMAIL_NOT_FOUND"
   | "EMAIL_SEND_LIMITED"
@@ -75,6 +89,10 @@ interface OwnerEmailRow {
   removed_at: Date | null;
 }
 
+const DEMO_REFUSED_MESSAGE = "Demo workspaces do not send email. Use a real workspace to get owner notices by email.";
+const GUESSES_REFUSED_MESSAGE = "Too many wrong codes for this address. Try again in a day.";
+const NOT_FOUND_MESSAGE = "That email address was not found for this workspace.";
+
 const sha256Hex = (value: string): string => createHash("sha256").update(value).digest("hex");
 
 function requireDelivery(): void {
@@ -83,13 +101,23 @@ function requireDelivery(): void {
   }
 }
 
-/** The channels view: whether email is on for this server, and the workspace's email addresses (never a code or a hash). */
+/** Demo workspaces never send or verify email (ADR 0057, ADR 0074). Throws inside the caller's transaction. */
+async function refuseDemo(client: PoolClient, workspaceId: string): Promise<void> {
+  const res = await client.query<{ is_demo: boolean }>(`SELECT is_demo FROM workspaces WHERE id = $1;`, [workspaceId]);
+  if (res.rows[0]?.is_demo === true) {
+    throw new OwnerEmailError("EMAIL_DEMO_REFUSED", 403, DEMO_REFUSED_MESSAGE);
+  }
+}
+
+/**
+ * The channels view: whether email is on for this server, and the workspace's email addresses (never a code or a hash).
+ */
 export async function listNotificationChannels(workspaceId: string): Promise<{
   emailDelivery: "on" | "simulated";
   emails: OwnerEmailSummary[];
 }> {
   const res = await query<OwnerEmailRow>(
-    `SELECT id, workspace_id, email, code_salt, code_hash, code_expires_at, attempts, verified_at, binding_id, created_at, removed_at
+    `SELECT id, workspace_id, email, code_expires_at, attempts, verified_at, binding_id, created_at, removed_at
        FROM owner_emails WHERE workspace_id = $1 AND removed_at IS NULL ORDER BY created_at ASC, id ASC LIMIT 100;`,
     [workspaceId]
   );
@@ -113,8 +141,8 @@ function summaryOf(row: OwnerEmailRow): OwnerEmailSummary {
 }
 
 /**
- * Starts (or re-sends) the verification for an address. The response shape is the same whether or not the address is
- * verified elsewhere, because the check is only within this workspace. An address already verified here is answered as
+ * Starts (or re-sends) the verification for an address. The answer has the same shape whether or not the address is
+ * verified elsewhere, because every check is within this workspace. An address already verified here is answered as
  * verified and nothing is sent.
  */
 export async function requestOwnerEmailVerification(
@@ -128,6 +156,9 @@ export async function requestOwnerEmailVerification(
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   const prepared = await withTransaction(async (client) => {
+    await refuseDemo(client, workspaceId);
+    // One request at a time per workspace: the workspace-wide caps below are counted, then a send is recorded, in one step.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0));`, [`owner_email:${workspaceId}`]);
     await client.query(
       `INSERT INTO owner_emails (id, workspace_id, added_by, email) VALUES ($1, $2, $3, $4)
        ON CONFLICT (workspace_id, email) WHERE removed_at IS NULL DO NOTHING;`,
@@ -146,7 +177,42 @@ export async function requestOwnerEmailVerification(
       return { kind: "verified" as const, row };
     }
 
-    const sends = (
+    const guesses = (
+      await client.query<{ n: number }>(
+        `SELECT COUNT(*)::int AS n FROM owner_email_failures
+          WHERE workspace_id = $1 AND email = $2 AND failed_at > NOW() - INTERVAL '1 day';`,
+        [workspaceId, email]
+      )
+    ).rows[0];
+    if (guesses.n >= MAX_FAILED_GUESSES_PER_DAY) {
+      throw new OwnerEmailError("EMAIL_ATTEMPTS_EXCEEDED", 409, GUESSES_REFUSED_MESSAGE);
+    }
+
+    // The workspace's sends in the last 24 hours: the total, the distinct addresses, and when the oldest one ages out.
+    const day = (
+      await client.query<{ total: number; distinct_n: number; for_address: number; retry_after: number | null }>(
+        `SELECT COUNT(*)::int AS total,
+                COUNT(DISTINCT email)::int AS distinct_n,
+                COUNT(*) FILTER (WHERE email = $2)::int AS for_address,
+                CEIL(EXTRACT(EPOCH FROM (MIN(sent_at) + INTERVAL '1 day' - NOW())))::int AS retry_after
+           FROM owner_email_sends WHERE workspace_id = $1 AND sent_at > NOW() - INTERVAL '1 day';`,
+        [workspaceId, email]
+      )
+    ).rows[0];
+    const dayRetry = Math.max(1, day.retry_after ?? 3600);
+    if (day.total >= MAX_SENDS_PER_DAY) {
+      throw new OwnerEmailError("EMAIL_SEND_LIMITED", 429, "This workspace has sent its verification codes for today. Try again later.", dayRetry);
+    }
+    if (day.for_address === 0 && day.distinct_n >= MAX_DISTINCT_ADDRESSES_PER_DAY) {
+      throw new OwnerEmailError(
+        "EMAIL_SEND_LIMITED",
+        429,
+        `This workspace has asked for codes for ${MAX_DISTINCT_ADDRESSES_PER_DAY} addresses today. Try again later.`,
+        dayRetry
+      );
+    }
+
+    const hour = (
       await client.query<{ n: number; retry_after: number | null }>(
         `SELECT COUNT(*)::int AS n,
                 CEIL(EXTRACT(EPOCH FROM (MIN(sent_at) + INTERVAL '1 hour' - NOW())))::int AS retry_after
@@ -154,12 +220,12 @@ export async function requestOwnerEmailVerification(
         [workspaceId, email]
       )
     ).rows[0];
-    if (sends.n >= MAX_SENDS_PER_HOUR) {
+    if (hour.n >= MAX_SENDS_PER_HOUR) {
       throw new OwnerEmailError(
         "EMAIL_SEND_LIMITED",
         429,
         "Too many codes were sent to this address. Try again later.",
-        Math.max(1, sends.retry_after ?? 60)
+        Math.max(1, hour.retry_after ?? 60)
       );
     }
 
@@ -186,7 +252,7 @@ export async function requestOwnerEmailVerification(
       ...buildVerificationEmail({ code, expiresMinutes: CODE_TTL_MINUTES }),
     });
   } catch (err) {
-    // The row keeps its code, which the owner never received. A new request sends a new one (and counts against the limit).
+    // The row keeps its code, which the owner never received. A new request sends a new one (and counts against the limits).
     await engine.recordAudit(
       workspaceId,
       null,
@@ -213,7 +279,8 @@ export async function requestOwnerEmailVerification(
 
 /**
  * Checks a code. On success the address is verified, and (when none exists) the owner's email surface binding is created
- * in the same transaction. Verifying an address that is already verified changes nothing and says so.
+ * in the same transaction, with ON CONFLICT DO NOTHING so a concurrent /surfaces write never makes this fail. Verifying an
+ * address that is already verified changes nothing and says so.
  */
 export async function verifyOwnerEmail(
   workspaceId: string,
@@ -229,22 +296,33 @@ export async function verifyOwnerEmail(
   type Outcome =
     | { kind: "not_found" }
     | { kind: "already_verified"; row: OwnerEmailRow }
+    | { kind: "guesses_refused"; row: OwnerEmailRow }
     | { kind: "attempts_exceeded"; row: OwnerEmailRow }
     | { kind: "expired"; row: OwnerEmailRow }
     | { kind: "wrong"; row: OwnerEmailRow; attempts: number }
     | { kind: "verified"; row: OwnerEmailRow; bindingCreated: boolean; verifiedAt: Date };
 
   const outcome: Outcome = await withTransaction(async (client: PoolClient) => {
+    await refuseDemo(client, workspaceId);
     const row = (
-      await client.query<OwnerEmailRow>(
+      await client.query<OwnerEmailRow & { code_live: boolean }>(
         `SELECT id, workspace_id, email, code_salt, code_hash, code_expires_at, attempts, verified_at, binding_id, created_at, removed_at,
                 (code_expires_at IS NOT NULL AND code_expires_at > NOW()) AS code_live
            FROM owner_emails WHERE id = $1 AND workspace_id = $2 AND removed_at IS NULL FOR UPDATE;`,
         [emailId, workspaceId]
       )
-    ).rows[0] as (OwnerEmailRow & { code_live: boolean }) | undefined;
+    ).rows[0];
     if (!row) return { kind: "not_found" };
     if (row.verified_at) return { kind: "already_verified", row };
+
+    const guesses = (
+      await client.query<{ n: number }>(
+        `SELECT COUNT(*)::int AS n FROM owner_email_failures
+          WHERE workspace_id = $1 AND email = $2 AND failed_at > NOW() - INTERVAL '1 day';`,
+        [workspaceId, row.email]
+      )
+    ).rows[0];
+    if (guesses.n >= MAX_FAILED_GUESSES_PER_DAY) return { kind: "guesses_refused", row };
     if (row.attempts >= MAX_ATTEMPTS) return { kind: "attempts_exceeded", row };
     if (!row.code_hash || !row.code_salt || !row.code_live) return { kind: "expired", row };
 
@@ -252,10 +330,12 @@ export async function verifyOwnerEmail(
     const given = Buffer.from(sha256Hex(`${row.code_salt}:${rawCode}`), "hex");
     const stored = Buffer.from(row.code_hash, "hex");
     if (!timingSafeEqual(given, stored)) {
+      // The row lock serialises concurrent guesses, so the count is exact.
       const updated = await client.query<{ attempts: number }>(
         `UPDATE owner_emails SET attempts = attempts + 1 WHERE id = $1 RETURNING attempts;`,
         [row.id]
       );
+      await client.query(`INSERT INTO owner_email_failures (id, workspace_id, email) VALUES ($1, $2, $3);`, [newId("oef"), workspaceId, row.email]);
       return { kind: "wrong", row, attempts: updated.rows[0].attempts };
     }
 
@@ -266,24 +346,28 @@ export async function verifyOwnerEmail(
         [row.id]
       )
     ).rows[0];
-    // The surface binding that the existing recipient path reads. It is created only when none exists, so an owner's or a
-    // staff member's own binding for this address is never changed here (its role and status stay as they were).
-    const existing = (
-      await client.query<{ id: string }>(
-        `SELECT id FROM surface_bindings WHERE workspace_id = $1 AND surface = 'email' AND actor_id = $2 LIMIT 1;`,
-        [workspaceId, row.email]
-      )
-    ).rows[0];
-    let bindingCreated = false;
-    if (!existing) {
-      const bindingId = surfaceBindingId(workspaceId, "email", row.email);
+    // A successful verification clears the address's wrong-guess history.
+    await client.query(`DELETE FROM owner_email_failures WHERE workspace_id = $1 AND email = $2;`, [workspaceId, row.email]);
+
+    // The binding the existing recipient path reads. It is created only when none exists, and a concurrent /surfaces write is
+    // never a reason to fail (ON CONFLICT DO NOTHING). Its updated_at is kept as a marker: removal deletes the binding only
+    // while it is unchanged, so a binding the owner touches later through /surfaces survives.
+    const bindingId = surfaceBindingId(workspaceId, "email", row.email);
+    const created = await client.query<{ id: string }>(
+      `INSERT INTO surface_bindings (id, workspace_id, surface, actor_id, actor_label, actor_role, integration_status, created_at, updated_at)
+       VALUES ($1, $2, 'email', $3, $3, 'owner', $4, NOW(), NOW())
+       ON CONFLICT (workspace_id, surface, actor_id) DO NOTHING
+       RETURNING id;`,
+      [bindingId, workspaceId, row.email, effectiveIntegrationStatus("verified")]
+    );
+    const bindingCreated = created.rows.length === 1;
+    if (bindingCreated) {
       await client.query(
-        `INSERT INTO surface_bindings (id, workspace_id, surface, actor_id, actor_label, actor_role, integration_status, created_at, updated_at)
-         VALUES ($1, $2, 'email', $3, $3, 'owner', $4, NOW(), NOW());`,
-        [bindingId, workspaceId, row.email, effectiveIntegrationStatus("verified")]
+        `UPDATE owner_emails AS oe SET binding_id = sb.id, binding_marker = sb.updated_at
+           FROM surface_bindings AS sb
+          WHERE oe.id = $1 AND sb.id = $2;`,
+        [row.id, bindingId]
       );
-      await client.query(`UPDATE owner_emails SET binding_id = $2 WHERE id = $1;`, [row.id, bindingId]);
-      bindingCreated = true;
     }
     return { kind: "verified", row, bindingCreated, verifiedAt: verifiedRow.verified_at };
   });
@@ -291,9 +375,11 @@ export async function verifyOwnerEmail(
   const masked = (row: OwnerEmailRow) => maskEmailAddress(row.email);
   switch (outcome.kind) {
     case "not_found":
-      throw new OwnerEmailError("EMAIL_NOT_FOUND", 404, "That email address was not found for this workspace.");
+      throw new OwnerEmailError("EMAIL_NOT_FOUND", 404, NOT_FOUND_MESSAGE);
     case "already_verified":
       return { id: outcome.row.id, email: outcome.row.email, status: "verified", verifiedAt: outcome.row.verified_at!.toISOString() };
+    case "guesses_refused":
+      throw new OwnerEmailError("EMAIL_ATTEMPTS_EXCEEDED", 409, GUESSES_REFUSED_MESSAGE);
     case "attempts_exceeded":
       throw new OwnerEmailError("EMAIL_ATTEMPTS_EXCEEDED", 409, "Too many wrong codes. Ask for a new one.");
     case "expired":
@@ -304,10 +390,12 @@ export async function verifyOwnerEmail(
         maskedEmail: masked(outcome.row),
         attempts: outcome.attempts,
       });
-      if (outcome.attempts >= MAX_ATTEMPTS) {
-        throw new OwnerEmailError("EMAIL_ATTEMPTS_EXCEEDED", 409, "Too many wrong codes. Ask for a new one.");
-      }
-      throw new OwnerEmailError("EMAIL_CODE_INVALID", 400, `The code is not right. ${MAX_ATTEMPTS - outcome.attempts} attempts left.`);
+      // The fifth wrong guess is still a wrong code (0 attempts left). Only a guess after that is refused as exceeded.
+      throw new OwnerEmailError(
+        "EMAIL_CODE_INVALID",
+        400,
+        `The code is not right. ${Math.max(0, MAX_ATTEMPTS - outcome.attempts)} attempts left.`
+      );
     }
     case "verified": {
       await engine.recordAudit(workspaceId, null, "owner", actorLabel, EffectClass.EXTERNAL_REQUEST, "notification.email_verified", PolicyDecision.ALLOW, {
@@ -321,26 +409,31 @@ export async function verifyOwnerEmail(
 }
 
 /**
- * Removes an address (soft). The surface binding it created goes with it; a binding that was there before stays.
- * An address that is removed stops receiving notices at once.
+ * Removes an address (soft). An address stops receiving notices at once. The surface binding is deleted only when this row
+ * created it and the binding has not been changed since (its updated_at is still the marker). A binding that existed before,
+ * or that the owner set through /surfaces afterwards, is left in place.
  */
 export async function removeOwnerEmail(workspaceId: string, emailId: string, actorLabel: string): Promise<{ id: string; removed: true }> {
   const result = await withTransaction(async (client: PoolClient) => {
     const row = (
-      await client.query<{ email: string; binding_id: string | null }>(
-        `UPDATE owner_emails SET removed_at = NOW()
-          WHERE id = $1 AND workspace_id = $2 AND removed_at IS NULL
-          RETURNING email, binding_id;`,
+      await client.query<{ email: string; binding_id: string | null; binding_removed: boolean }>(
+        `WITH removed AS (
+           UPDATE owner_emails SET removed_at = NOW()
+            WHERE id = $1 AND workspace_id = $2 AND removed_at IS NULL
+            RETURNING email, binding_id, binding_marker
+         ), deleted AS (
+           DELETE FROM surface_bindings sb
+            USING removed r
+            WHERE r.binding_id IS NOT NULL AND sb.id = r.binding_id AND sb.workspace_id = $2
+              AND sb.surface = 'email' AND sb.actor_role = 'owner'
+              AND r.binding_marker IS NOT NULL AND sb.updated_at = r.binding_marker
+            RETURNING sb.id
+         )
+         SELECT r.email, r.binding_id, EXISTS (SELECT 1 FROM deleted) AS binding_removed FROM removed r;`,
         [emailId, workspaceId]
       )
     ).rows[0];
     if (!row) return null;
-    if (row.binding_id) {
-      await client.query(`DELETE FROM surface_bindings WHERE id = $1 AND workspace_id = $2 AND surface = 'email' AND actor_role = 'owner';`, [
-        row.binding_id,
-        workspaceId,
-      ]);
-    }
     await engine.recordAudit(
       workspaceId,
       null,
@@ -349,12 +442,12 @@ export async function removeOwnerEmail(workspaceId: string, emailId: string, act
       EffectClass.EXTERNAL_REQUEST,
       "notification.email_removed",
       PolicyDecision.ALLOW,
-      { emailId, maskedEmail: maskEmailAddress(row.email), bindingRemoved: row.binding_id !== null },
+      { emailId, maskedEmail: maskEmailAddress(row.email), bindingRemoved: row.binding_removed },
       undefined,
       client
     );
     return row;
   });
-  if (!result) throw new OwnerEmailError("EMAIL_NOT_FOUND", 404, "That email address was not found for this workspace.");
+  if (!result) throw new OwnerEmailError("EMAIL_NOT_FOUND", 404, NOT_FOUND_MESSAGE);
   return { id: emailId, removed: true };
 }
