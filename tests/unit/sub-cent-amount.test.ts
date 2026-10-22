@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { custom, numberToHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { ArcL1SettlementAdapter, ARC_TESTNET_CHAIN_ID } from "../../src/adapters/settlement/arc-l1.js";
+import {
+  ArcL1SettlementAdapter,
+  ARC_TESTNET_CHAIN_ID,
+} from "../../src/adapters/settlement/arc-l1.js";
 import { LocalSettlementSimulator } from "../../src/adapters/settlement/local-sim.js";
 import {
   SettlementRejectedError,
@@ -18,11 +21,13 @@ import type { TransferRequest } from "../../src/adapters/settlement/types.js";
 
 const TREASURY = "0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2";
 const SUPPLIER = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
-const TEST_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+const TEST_KEY =
+  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const CONTRACT = "0x1111111111111111111111111111111111111111";
 const MATCH_HASH = `0x${"ab".repeat(32)}`;
 const SIGNER = privateKeyToAccount(TEST_KEY).address;
-const MESSAGE = "amounts below one cent (0.01 USDC) are not supported yet, only whole cents are paid";
+const MESSAGE =
+  "amounts below one cent (0.01 USDC) are not supported yet, only whole cents are paid";
 
 interface RpcCall {
   method: string;
@@ -35,7 +40,8 @@ function rpcStub() {
     async request({ method, params }) {
       calls.push({ method, params });
       if (method === "eth_chainId") return numberToHex(ARC_TESTNET_CHAIN_ID);
-      if (method === "eth_call") throw new Error("stub stops the flow after the pre-flight");
+      if (method === "eth_call")
+        throw new Error("stub stops the flow after the pre-flight");
       throw new Error(`unexpected RPC method in test: ${method}`);
     },
   });
@@ -53,7 +59,9 @@ function arcAdapter(transport: ReturnType<typeof custom>) {
 }
 
 /** A request as an untyped caller might send it: `amountCents` may be any value, so the cast goes through unknown. */
-function request(overrides: { amountCents?: unknown; orderId?: string } = {}): TransferRequest {
+function request(
+  overrides: { amountCents?: unknown; orderId?: string } = {},
+): TransferRequest {
   return {
     fromAddress: SIGNER,
     toAddress: SUPPLIER,
@@ -66,7 +74,9 @@ function request(overrides: { amountCents?: unknown; orderId?: string } = {}): T
   } as unknown as TransferRequest;
 }
 
-async function rejectionOf(promise: Promise<unknown>): Promise<SettlementRejectedError> {
+async function rejectionOf(
+  promise: Promise<unknown>,
+): Promise<SettlementRejectedError> {
   try {
     await promise;
   } catch (error) {
@@ -94,6 +104,10 @@ const REFUSED_AMOUNTS: Array<[string, unknown]> = [
   ["a JS number with a fraction above one", 1.5],
   ["an integer JS number", 5],
   ["a numeric string", "100"],
+  ["a numeric string with a fraction", "0.5"],
+  ["NaN", NaN],
+  ["Infinity", Infinity],
+  ["-Infinity", -Infinity],
   ["undefined", undefined],
   ["null", null],
 ];
@@ -104,7 +118,9 @@ describe("sub-cent amounts are refused before any network call (Arc adapter)", (
       const { transport, calls } = rpcStub();
       const adapter = arcAdapter(transport);
 
-      const error = await rejectionOf(adapter.transferUSDC(request({ amountCents: amount })));
+      const error = await rejectionOf(
+        adapter.transferUSDC(request({ amountCents: amount })),
+      );
 
       expect(error.code).toBe(SUB_CENT_AMOUNT_NOT_SUPPORTED);
       expect(error.message).toContain(MESSAGE);
@@ -116,7 +132,9 @@ describe("sub-cent amounts are refused before any network call (Arc adapter)", (
     const { transport } = rpcStub();
     const adapter = arcAdapter(transport);
 
-    const error = await rejectionOf(adapter.transferUSDC(request({ amountCents: 0.5 })));
+    const error = await rejectionOf(
+      adapter.transferUSDC(request({ amountCents: 0.5 })),
+    );
     expect(error).toBeInstanceOf(SettlementRejectedError);
     expect(error.name).toBe("SettlementRejectedError");
   });
@@ -125,7 +143,9 @@ describe("sub-cent amounts are refused before any network call (Arc adapter)", (
     const { transport, calls } = rpcStub();
     const adapter = arcAdapter(transport);
 
-    const error = await rejectionOf(adapter.transferUSDC(request({ amountCents: 0n, orderId: "" })));
+    const error = await rejectionOf(
+      adapter.transferUSDC(request({ amountCents: 0n, orderId: "" })),
+    );
     expect(error.code).toBe(SUB_CENT_AMOUNT_NOT_SUPPORTED);
     expect(calls).toEqual([]);
   });
@@ -136,10 +156,14 @@ describe("one cent passes the guard and reaches the pre-flight with the exact we
     const { transport, calls } = rpcStub();
     const adapter = arcAdapter(transport);
 
-    const error = await thrownBy(adapter.transferUSDC(request({ amountCents: 1n })));
+    const error = await thrownBy(
+      adapter.transferUSDC(request({ amountCents: 1n })),
+    );
     // The stub stops the pre-flight with a plain error, so the adapter reports a transport failure, not a refusal.
     expect(error).toBeInstanceOf(SettlementTransportError);
-    expect((error as SettlementTransportError).operation).toBe("pre-flight call");
+    expect((error as SettlementTransportError).operation).toBe(
+      "pre-flight call",
+    );
 
     const methods = calls.map((c) => c.method);
     expect(methods).toContain("eth_chainId");
@@ -168,7 +192,9 @@ describe("one cent passes the guard and reaches the pre-flight with the exact we
     const { transport, calls } = rpcStub();
     const adapter = arcAdapter(transport);
 
-    const error = await rejectionOf(adapter.transferUSDC(request({ amountCents: 1n, orderId: "" })));
+    const error = await rejectionOf(
+      adapter.transferUSDC(request({ amountCents: 1n, orderId: "" })),
+    );
     expect(error.code).toBe("INVALID_REQUEST");
     expect(calls.map((c) => c.method)).not.toContain("eth_call");
   });
@@ -181,7 +207,9 @@ describe("local simulator parity", () => {
       const treasuryBefore = await sim.getBalance(TREASURY);
       const supplierBefore = await sim.getBalance(SUPPLIER);
 
-      const error = await rejectionOf(sim.transferUSDC(request({ amountCents: amount })));
+      const error = await rejectionOf(
+        sim.transferUSDC(request({ amountCents: amount })),
+      );
 
       expect(error.code).toBe(SUB_CENT_AMOUNT_NOT_SUPPORTED);
       expect(error.message).toContain(MESSAGE);
@@ -212,7 +240,9 @@ describe("local simulator parity", () => {
     const sim = new LocalSettlementSimulator();
     const treasuryBefore = await sim.getBalance(TREASURY);
 
-    const error = await rejectionOf(sim.depositEscrow(request({ amountCents: 0.5 }), "ms_subcent_1"));
+    const error = await rejectionOf(
+      sim.depositEscrow(request({ amountCents: 0.5 }), "ms_subcent_1"),
+    );
 
     expect(error.code).toBe(SUB_CENT_AMOUNT_NOT_SUPPORTED);
     expect(await sim.getBalance(TREASURY)).toBe(treasuryBefore);
@@ -221,11 +251,19 @@ describe("local simulator parity", () => {
 
 describe("SettlementRejectedError message", () => {
   it("keeps the code-only message when no detail is given", () => {
-    expect(new SettlementRejectedError("INVALID_REQUEST").message).toBe("Settlement rejected: INVALID_REQUEST");
+    expect(new SettlementRejectedError("INVALID_REQUEST").message).toBe(
+      "Settlement rejected: INVALID_REQUEST",
+    );
   });
 
   it("appends the plain detail when one is given", () => {
-    const error = new SettlementRejectedError(SUB_CENT_AMOUNT_NOT_SUPPORTED, undefined, MESSAGE);
-    expect(error.message).toBe(`Settlement rejected: SUB_CENT_AMOUNT_NOT_SUPPORTED: ${MESSAGE}`);
+    const error = new SettlementRejectedError(
+      SUB_CENT_AMOUNT_NOT_SUPPORTED,
+      undefined,
+      MESSAGE,
+    );
+    expect(error.message).toBe(
+      `Settlement rejected: SUB_CENT_AMOUNT_NOT_SUPPORTED: ${MESSAGE}`,
+    );
   });
 });

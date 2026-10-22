@@ -43,7 +43,11 @@ export class SettlementRejectedError extends Error {
   readonly args?: unknown[];
 
   constructor(code: string, args?: unknown[], detail?: string) {
-    super(detail ? `Settlement rejected: ${code}: ${detail}` : `Settlement rejected: ${code}`);
+    super(
+      detail
+        ? `Settlement rejected: ${code}: ${detail}`
+        : `Settlement rejected: ${code}`,
+    );
     this.name = "SettlementRejectedError";
     this.code = code;
     this.args = args;
@@ -57,15 +61,22 @@ export class SettlementRejectedError extends Error {
  */
 export const SUB_CENT_AMOUNT_NOT_SUPPORTED = "SUB_CENT_AMOUNT_NOT_SUPPORTED";
 
-const SUB_CENT_DETAIL = "amounts below one cent (0.01 USDC) are not supported yet, only whole cents are paid";
+const SUB_CENT_DETAIL =
+  "amounts below one cent (0.01 USDC) are not supported yet, only whole cents are paid";
 
 /**
  * Refuses an amount that is not a positive whole number of cents. It is synchronous and makes no network call, so an
  * adapter runs it before any RPC or chain read. The message never includes the amount.
  */
-export function assertPayableCentAmount(amountCents: unknown): asserts amountCents is bigint {
+export function assertPayableCentAmount(
+  amountCents: unknown,
+): asserts amountCents is bigint {
   if (typeof amountCents !== "bigint" || amountCents <= 0n) {
-    throw new SettlementRejectedError(SUB_CENT_AMOUNT_NOT_SUPPORTED, undefined, SUB_CENT_DETAIL);
+    throw new SettlementRejectedError(
+      SUB_CENT_AMOUNT_NOT_SUPPORTED,
+      undefined,
+      SUB_CENT_DETAIL,
+    );
   }
 }
 

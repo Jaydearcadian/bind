@@ -33,7 +33,7 @@ export class LocalSettlementSimulator implements SettlementAdapter {
   async transferUSDC(req: TransferRequest): Promise<TransferResult> {
     // Parity with the Arc adapter: refused before the replay lookup and before any balance change.
     assertPayableCentAmount(req.amountCents);
-    const replay =this.transfersByKey.get(req.idempotencyKey) ?? this.transfersByOrder.get(req.orderId);
+    const replay = this.transfersByKey.get(req.idempotencyKey) ?? this.transfersByOrder.get(req.orderId);
     if (replay) {
       this.transfersByKey.set(req.idempotencyKey, replay);
       return replay;

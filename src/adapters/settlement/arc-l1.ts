@@ -225,7 +225,11 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
     if (!isAddress(req.fromAddress) || getAddress(req.fromAddress) !== signer.address) {
       throw new SettlementPayerMismatchError();
     }
-    if (!isAddress(req.toAddress) || !req.orderId || !HASH_RE.test(req.matchHash ?? "")) {
+    if (
+      !isAddress(req.toAddress) ||
+      !req.orderId ||
+      !HASH_RE.test(req.matchHash ?? "")
+    ) {
       throw new SettlementRejectedError("INVALID_REQUEST");
     }
 
