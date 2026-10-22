@@ -514,3 +514,32 @@ the npm registry package `@foundry-rs/cast` into a scratch directory outside the
 Not reproduced: the claim that the previous deployment `0x6cb7…` lacked an on-chain policy, the behaviour of the ERC-8183 reference contract, and the
 RPC provider name. Contract state is unchanged by this run: the owner's balance and the contract were only read.
 No settlement has been sent in this session.
+
+## Live Arc Testnet settlement through Bind's own code (2026-10-22)
+
+One payment of 1 cent (0.01 USDC), approved by the owner in this session for this payment only. The adapter takes whole cents, so 0.01 USDC is its
+smallest amount (the owner raised the earlier 0.001 USDC cap for this payment). Run against a **local** Postgres database and the local server code
+(`ProcurementWorkflowRunner` → `OrderSettlementService` → `ArcL1SettlementAdapter`, workspace `settlement_mode = arc-testnet`). The deployed site, the
+production database and Vercel were not used. The driver was a one-off script outside the repository. As a test fixture, the local order was edited to
+1 unit at 1 cent after the normal replenishment flow created it, so the three-way match produced a payable amount of exactly 1 cent.
+
+Checks immediately before sending, all as reported: chain id 5042002, `owner()` = the signer `0xA4D1…9C2`, `whitelistedVendors(0xa835…06ea)` = true,
+`enforceVendorWhitelist` = true, limit 1e18. A guard in the driver refused to send unless the order total was exactly 1 cent.
+
+Idempotency key (ledger): `ws-arc-live-1792669114820:settle:ord_wf_proc_3fb32ea6-fafa-4921-a471-cf891c5a6c28`; adapter key `idem_pay_<orderId>`; contract order id
+`keccak256(utf8(orderId))`. Fresh, never used before.
+
+| # | Check | Observed | Class |
+| :--- | :--- | :--- | :--- |
+| S1 | Transaction | `0xea73b2b1130ec88d75ec831ce19d74d0f6becea2f0009592bdde68b61c6a899d`, from the signer to `0x16E1…aA29`, value 1e16 wei (0.01 USDC), one send | VERIFIED_REMOTE |
+| S2 | Submitted vs confirmed | The adapter's `transferUSDC` returned `submitted` with the hash, then `confirm()` polled the receipt in the same call and returned `confirmed`. The runner reports both steps in one call (total about 3.4 s), so the `submitted` result was not captured on its own. Confirmation was then repeated independently with `cast receipt`. | VERIFIED_REMOTE |
+| S3 | Receipt (independent `cast receipt`) | status success, block 68513952, gas used 76014, effective gas price 40 gwei (fee 0.00304056 USDC) | VERIFIED_REMOTE |
+| S4 | Event | The contract (`0x16e1…aa29`) emitted `SettlementExecuted` with amount 1e16. Two native-transfer logs came from the system emitter `0xffff…fffe` (payer to contract, contract to vendor). | VERIFIED_REMOTE |
+| S5 | Balance deltas | Signer 4857129833337643373 → 4844089273337643373 wei (down 0.01304056 USDC: 0.01 payment + 0.00304056 gas). Vendor 51000000000000000 → 61000000000000000 (up 0.01 USDC). Contract balance 0 before and after. | VERIFIED_REMOTE |
+| S6 | `dailySpent` | 1e15 → 1e16. It did not become 1.1e16: `lastDayReset` moved from 1791978785 to 1792669139, because the fixed 24-hour window had expired and the earlier 0.001 USDC no longer counted. This is the fixed-window behaviour described in CONTRACT_SCOPE section 7. | VERIFIED_REMOTE |
+| S7 | Local ledger | Order `reconciled` with the hash; effect `settlement.transfer_usdc` `completed`, attempts 1, external_ref = the hash | LOCAL_PASS |
+| S8 | Repeat with the same key | `fulfillAndReconcile` again: returned `alreadyReconciled: true` with the same hash in 5 ms and did not call the adapter. Signer nonce 9 before and after, same balances, same `dailySpent`, no new block activity from the signer. | VERIFIED_REMOTE |
+| S9 | Contract-level guard for the same order id | An `eth_call` (nothing sent) of `settleOrder` for the same order id reverts with `0x4747436c`, which is `OrderAlreadySettled()` | LIVE_READ_PASS |
+
+Not covered: the timeout path was not exercised (no timeout occurred, so no retry decision was needed); only one payment was made; crash recovery against
+a live chain is not tested. The adapter handles whole cents only (see ADR 0076).
