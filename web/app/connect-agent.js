@@ -207,8 +207,8 @@ async function testConnection() {
         { class: "error", role: "alert" },
         status === 401 || status === 403
           ? "Bind refused the key. Make a new key and try again."
-          : status === 404
-            ? "This Bind server doesn't have the agent endpoint switched on yet."
+          : status === 404 || status === 503
+            ? "This Bind server doesn't have the agent endpoint available right now."
             : "Couldn't reach the agent endpoint. Check your connection and try again."
       )
     );

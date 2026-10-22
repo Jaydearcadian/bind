@@ -77,7 +77,9 @@ test("an owner makes an agent's key, sees the setup text, tests it for real, and
   const listed = await (await mcp(request, agentKey, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })).json();
   const names: string[] = listed.result.tools.map((t: { name: string }) => t.name);
   expect(names.length).toBeGreaterThan(10);
-  expect(names.filter((n) => /approv|reject|pay|settle|credential|token|secret|connector/i.test(n))).toEqual([]);
+  // Reading what waits for approval is fine (list_approvals); nothing that approves, rejects, pays or touches keys.
+  expect(names.filter((n) => /approv|reject|pay|settle|credential|token|secret|connector/i.test(n) && !/^(list|get)_/.test(n))).toEqual([]);
+  expect(names).toContain("list_approvals");
 
   // Done hides the key from the page and from storage.
   await page.getByRole("button", { name: "Done: hide the key" }).click();
