@@ -102,6 +102,12 @@ CREATE TABLE IF NOT EXISTS orders (
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS settled_amount_cents BIGINT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS settled_receipt_id TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS settled_bill_id TEXT;
+-- Settlement milestones. `submitted` is when the transfer's hash was stored (the order is then `settlement_submitted`);
+-- `confirmed` is when the adapter confirmed it and the order was finished. A submitted transfer is not a confirmed
+-- settlement, so the two are kept apart. NULL until each milestone is reached.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS settlement_submitted_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS settlement_confirmed_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS settlement_confirmed_block BIGINT;
 
 CREATE TABLE IF NOT EXISTS delivery_receipts (
     id VARCHAR(64) PRIMARY KEY,

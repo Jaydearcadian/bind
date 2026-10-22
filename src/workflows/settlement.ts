@@ -94,14 +94,47 @@ export type EvidenceLoader = (order: any) => Promise<
  * that threw: the payment may already exist on chain, so it is never read as a failure.
  */
 type TransferOutcome =
-  | { kind: "confirmed"; timestamp: Date }
+  | { kind: "confirmed"; timestamp: Date; blockNumber?: number }
   | { kind: "failed"; failureCode?: string }
   | { kind: "unconfirmed" };
 
 function outcomeOf(result: TransferResult): TransferOutcome {
-  if (result.status === "confirmed") return { kind: "confirmed", timestamp: result.timestamp };
+  if (result.status === "confirmed") {
+    return { kind: "confirmed", timestamp: result.timestamp, blockNumber: result.blockNumber };
+  }
   if (result.status === "failed") return { kind: "failed", failureCode: result.failureCode };
   return { kind: "unconfirmed" };
+}
+
+/** The part of a pg client that the settlement writes use; the transaction helper passes a PoolClient. */
+type TxClient = { query: (text: string, params?: unknown[]) => Promise<{ rowCount: number | null }> };
+
+/**
+ * Writes one settlement audit row on the caller's client, so it commits or rolls back with the write it records.
+ * The columns and the request id match the rows that WorkflowEngine.recordAudit writes.
+ */
+async function insertSettlementAudit(
+  client: TxClient,
+  workspaceId: string,
+  action: string,
+  decision: PolicyDecision,
+  evidence: Record<string, unknown>,
+  txHash: string | null
+): Promise<void> {
+  await client.query(
+    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at, request_id)
+     VALUES ($1, $2, NULL, 'system', 'settlement_engine', $3, $4, $5, $6, $7, NOW(), $8);`,
+    [
+      newId("audit"),
+      workspaceId,
+      EffectClass.COMMERCIAL_COMMITMENT,
+      action,
+      decision,
+      JSON.stringify(evidence),
+      txHash,
+      currentRequestId(),
+    ]
+  );
 }
 
 /**
@@ -185,9 +218,9 @@ export class OrderSettlementService {
     try {
       return await this.settleClaimedOrder(order, loadEvidence, progress, prevStatus);
     } catch (err) {
-      // Release the claim unless the adapter already returned a payment. If we fail
-      // after a successful transfer the order stays `settling` (a visible hold)
-      // rather than being offered for a second payment.
+      // Release the claim unless the adapter already returned a payment. If we fail after a successful transfer,
+      // the order stays `settling` (a visible hold) rather than being offered for a second payment. Once the
+      // hash is stored (ADR 0078) the order is `settlement_submitted` instead, and this release does not run.
       if (!progress.paid) {
         try {
           await this.releaseClaim(order.id, prevStatus);
@@ -384,6 +417,7 @@ export class OrderSettlementService {
     await this.finaliseConfirmedPayment(order, {
       txHash: order.tx_hash,
       settledAt: outcome.timestamp,
+      blockNumber: outcome.blockNumber,
       receivedQuantity: Number(receiptRes.rows[0].received_quantity),
       payableAmountCents: BigInt(order.settled_amount_cents),
       mode: adapter.mode,
@@ -407,21 +441,33 @@ export class OrderSettlementService {
     payment: {
       txHash: string;
       settledAt: Date;
+      blockNumber?: number;
       receivedQuantity: number;
       payableAmountCents: bigint;
       mode: "local" | "arc-testnet";
     }
   ): Promise<void> {
-    // Record the payment and restock in one transaction, and only if this call still
-    // holds the claim, so restock cannot happen twice.
+    // Record the confirmation, the payment and the restock in one transaction, and only if this call still
+    // holds the claim, so restock cannot happen twice. The confirmation columns and the `settlement.confirmed`
+    // row commit with the restock (ADR 0078). A block number the adapter did not report is stored as NULL.
     const finalized = await withTransaction(async (client) => {
       const upd = await client.query(
-        `UPDATE orders SET status = 'reconciled', tx_hash = $1, updated_at = NOW()
+        `UPDATE orders
+         SET status = 'reconciled', tx_hash = $1, settlement_confirmed_at = NOW(), settlement_confirmed_block = $3,
+             updated_at = NOW()
          WHERE id = $2 AND status = 'settling'
          RETURNING id;`,
-        [payment.txHash, order.id]
+        [payment.txHash, order.id, payment.blockNumber ?? null]
       );
       if (upd.rows.length === 0) return false;
+      await insertSettlementAudit(
+        client,
+        order.workspace_id,
+        "settlement.confirmed",
+        PolicyDecision.ALLOW,
+        { orderId: order.id, txHash: payment.txHash, blockNumber: payment.blockNumber ?? null },
+        payment.txHash
+      );
       await client.query(
         `UPDATE inventory_items
          SET current_quantity = current_quantity + $1, updated_at = NOW()
@@ -501,25 +547,16 @@ export class OrderSettlementService {
       const upd = await client.query(
         `UPDATE orders
          SET status = 'settlement_submitted', tx_hash = $2, settled_amount_cents = $3, settled_receipt_id = $4,
-             settled_bill_id = $5, updated_at = NOW()
+             settled_bill_id = $5, settlement_submitted_at = NOW(), updated_at = NOW()
          WHERE id = $1 AND status = 'payment_hold' AND tx_hash IS NULL
          RETURNING id;`,
         [order.id, transfer.txHash, payment.amountCents, payment.receiptId, payment.billId]
       );
       if (upd.rowCount !== 1) return false;
-      await client.query(
-        `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at, request_id)
-         VALUES ($1, $2, NULL, 'system', 'settlement_engine', $3, 'settlement.reattached', $4, $5, $6, NOW(), $7);`,
-        [
-          newId("audit"),
-          order.workspace_id,
-          EffectClass.COMMERCIAL_COMMITMENT,
-          PolicyDecision.ALLOW,
-          JSON.stringify({ orderId: order.id, txHash: transfer.txHash }),
-          transfer.txHash,
-          currentRequestId(),
-        ]
-      );
+      // The hash is stored as `submitted`, so the submitted milestone is audited here too (ADR 0078).
+      const evidence = { orderId: order.id, txHash: transfer.txHash };
+      await insertSettlementAudit(client, order.workspace_id, "settlement.reattached", PolicyDecision.ALLOW, evidence, transfer.txHash);
+      await insertSettlementAudit(client, order.workspace_id, "settlement.submitted", PolicyDecision.ALLOW, evidence, transfer.txHash);
       return true;
     });
     if (!attached) {
@@ -723,75 +760,79 @@ export class OrderSettlementService {
       throw err;
     }
     progress.paid = true;
+    const payment = {
+      amountCents: matchResult.payableAmountCents,
+      receiptId: receipt.receiptId,
+      billId: bill.billId,
+    };
 
-    // Make the transfer durable on the claimed row before anything else, so a failure from here on
-    // leaves the order `settling` with the hash recorded. The payment record (amount and the receipt and bill
-    // it was matched against) is written in the same statement, so confirmation finishes this payment as made.
-    // The row count is checked: zero means the claim was lost after the money moved (ADR 0030).
-    const recorded = await query(
-      `UPDATE orders
-       SET tx_hash = $1, settled_amount_cents = $3, settled_receipt_id = $4, settled_bill_id = $5, updated_at = NOW()
-       WHERE id = $2 AND status = 'settling';`,
-      [transfer.txHash, order.id, matchResult.payableAmountCents, receipt.receiptId, bill.billId]
-    );
-    if (recorded.rowCount !== 1) {
-      return this.reattachLostTransfer(order, transfer, matchResult.status, {
-        amountCents: matchResult.payableAmountCents,
-        receiptId: receipt.receiptId,
-        billId: bill.billId,
-      });
-    }
-
-    let outcome = outcomeOf(transfer);
-    if (outcome.kind === "unconfirmed") {
-      outcome = await this.confirmOnce(settlementAdapter, transfer.txHash);
-    }
-
-    if (outcome.kind === "failed") {
+    if (transfer.status === "failed") {
+      // The adapter reports the transfer as failed outright (ADR 0014). Nothing is pending, so there is no
+      // `submitted` milestone. The hash and the payment record are stored on the claim, and the order is held.
+      // The row count is checked: zero means the claim was lost after the money moved (ADR 0030).
+      const recorded = await query(
+        `UPDATE orders
+         SET tx_hash = $1, settled_amount_cents = $3, settled_receipt_id = $4, settled_bill_id = $5, updated_at = NOW()
+         WHERE id = $2 AND status = 'settling';`,
+        [transfer.txHash, order.id, payment.amountCents, payment.receiptId, payment.billId]
+      );
+      if (recorded.rowCount !== 1) {
+        return this.reattachLostTransfer(order, transfer, matchResult.status, payment);
+      }
       await this.holdClaim(order, "settlement.failed", {
         orderId: order.id,
         hold: "SETTLEMENT_FAILED",
         txHash: transfer.txHash,
-        failureCode: outcome.failureCode,
+        failureCode: transfer.failureCode,
       });
       return { status: matchResult.status, reconciled: false, txHash: transfer.txHash, hold: "SETTLEMENT_FAILED" };
     }
 
-    if (outcome.kind === "unconfirmed") {
-      // The transfer may exist on chain. Keep the hash, wait for confirmSettlement, and do not restock,
-      // journal or touch the workflow.
-      await this.releaseClaim(order.id, "settlement_submitted");
-      await this.workflowEngine.recordAudit(
+    // The transfer was sent. It is recorded as `submitted` before anything asks whether it was confirmed (ADR 0078):
+    // the hash, the payment record and the submitted time are stored, the claim is released to `settlement_submitted`,
+    // and the `settlement.submitted` row is written, all in one transaction. A crash after this point leaves the
+    // order `settlement_submitted`, which the worker's confirmation poll finds. Zero rows means the claim was lost
+    // after the money moved (ADR 0030).
+    const submitted = await this.recordSubmitted(order, transfer, payment);
+    if (!submitted) {
+      return this.reattachLostTransfer(order, transfer, matchResult.status, payment);
+    }
+
+    // Confirmation is a fresh claim from `settlement_submitted` (confirmSettlement). It asks the adapter once and
+    // finishes the order only on `confirmed`. An unresolved outcome leaves the order `settlement_submitted`, and a
+    // failed one holds it with SETTLEMENT_FAILED, exactly as the separate confirmation path does.
+    return this.confirmSettlement(order.id);
+  }
+
+  /**
+   * Stores a transfer that was sent as `submitted` (ADR 0078): the hash, the payment record and
+   * `settlement_submitted_at` on the claimed row, the claim released to `settlement_submitted`, and the
+   * `settlement.submitted` audit row. One transaction, guarded on `status = 'settling'`. Returns false when the
+   * claim was lost, and writes nothing.
+   */
+  private async recordSubmitted(
+    order: any,
+    transfer: TransferResult,
+    payment: { amountCents: bigint; receiptId: string; billId: string }
+  ): Promise<boolean> {
+    return withTransaction(async (client) => {
+      const upd = await client.query(
+        `UPDATE orders
+         SET status = 'settlement_submitted', tx_hash = $2, settled_amount_cents = $3, settled_receipt_id = $4,
+             settled_bill_id = $5, settlement_submitted_at = NOW(), updated_at = NOW()
+         WHERE id = $1 AND status = 'settling';`,
+        [order.id, transfer.txHash, payment.amountCents, payment.receiptId, payment.billId]
+      );
+      if (upd.rowCount !== 1) return false;
+      await insertSettlementAudit(
+        client,
         order.workspace_id,
-        null,
-        "system",
-        "settlement_engine",
-        EffectClass.COMMERCIAL_COMMITMENT,
         "settlement.submitted",
         PolicyDecision.ALLOW,
         { orderId: order.id, txHash: transfer.txHash },
         transfer.txHash
       );
-      return {
-        status: matchResult.status,
-        reconciled: false,
-        txHash: transfer.txHash,
-        pending: "AWAITING_SETTLEMENT_CONFIRMATION",
-      };
-    }
-
-    await this.finaliseConfirmedPayment(order, {
-      txHash: transfer.txHash,
-      settledAt: outcome.timestamp,
-      receivedQuantity: receipt.receivedQuantity,
-      payableAmountCents: matchResult.payableAmountCents,
-      mode: settlementAdapter.mode,
+      return true;
     });
-
-    return {
-      status: matchResult.status,
-      reconciled: true,
-      txHash: transfer.txHash,
-    };
   }
 }
