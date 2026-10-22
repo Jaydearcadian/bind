@@ -17,7 +17,7 @@ import type {
 import { runTick } from "../../src/workers/runner.js";
 
 /**
- * Settlement milestones (ADR 0078). A transfer that was sent is `submitted` and is stored before anything asks
+ * Settlement milestones (ADR 0079). A transfer that was sent is `submitted` and is stored before anything asks
  * whether it was confirmed. A confirmation is a separate record, `confirmed`, with its own time and block. The spy
  * below is the only adapter; nothing is broadcast and the keys are local test values.
  *
@@ -87,6 +87,10 @@ class MilestoneSettlement implements SettlementAdapter {
   readonly snapshots: Snapshot[] = [];
   transferStatus: SettlementStatus = "submitted";
   confirmMode: ConfirmMode = "confirmed";
+  /** Runs inside transferUSDC after the money has moved and before the adapter returns (claim-steal scenarios). */
+  beforeReturn: (() => Promise<void>) | null = null;
+  /** Hashes this spy produced. The worker poll also sees other tests' orders; those are answered `submitted`. */
+  private readonly sent = new Set<string>();
 
   async getBalance(): Promise<bigint> {
     return 1_000_000n;
@@ -95,12 +99,15 @@ class MilestoneSettlement implements SettlementAdapter {
   async transferUSDC(req: TransferRequest): Promise<TransferResult> {
     this.transfers.push(req);
     const txHash = `0x${crypto.createHash("sha256").update(`${req.idempotencyKey}:${this.transfers.length}`).digest("hex")}`;
+    this.sent.add(txHash);
+    if (this.beforeReturn) await this.beforeReturn();
     return this.result(txHash, this.transferStatus, this.transferStatus === "failed" ? "REVERTED" : undefined);
   }
 
   async confirm(txHash: string): Promise<TransferResult> {
     this.confirmCalls.push(txHash);
     this.snapshots.push(await snapshotByHash(txHash));
+    if (!this.sent.has(txHash)) return this.result(txHash, "submitted");
     if (this.confirmMode === "throws") throw new Error("confirm: rpc unreachable");
     const failureCode = this.confirmMode === "failed" ? "REVERTED" : undefined;
     return this.result(txHash, this.confirmMode === "failed" ? "failed" : this.confirmMode === "submitted" ? "submitted" : "confirmed", failureCode);
@@ -465,5 +472,187 @@ describe("settlement milestones: submitted and confirmed are separate records (P
     expect(await auditRows(ws, "settlement.confirmed")).toHaveLength(1);
     expect(await journalCount(orderId)).toBe(1);
     expect(settle.transfers.filter((t) => t.orderId === orderId)).toHaveLength(1);
+  });
+
+  describe("kill points (ADR 0079)", () => {
+    /**
+     * Makes UPDATEs of one order raise while `when` holds. The trigger is scoped to the order id. The returned
+     * function drops it; callers run it in `finally`, so a failed assertion does not leave the trigger behind.
+     */
+    async function blockOrderUpdate(orderId: string, when: string, name: string, message: string): Promise<() => Promise<void>> {
+      const drop = async () => {
+        await query(`DROP TRIGGER IF EXISTS ${name} ON orders;`);
+        await query(`DROP FUNCTION IF EXISTS ${name}();`);
+      };
+      await query(`
+        CREATE OR REPLACE FUNCTION ${name}() RETURNS trigger AS $f$
+        BEGIN RAISE EXCEPTION '${message}'; END;
+        $f$ LANGUAGE plpgsql;`);
+      try {
+        await query(
+          `CREATE TRIGGER ${name} BEFORE UPDATE ON orders FOR EACH ROW WHEN (NEW.id = '${orderId}' AND ${when})
+           EXECUTE FUNCTION ${name}();`
+        );
+      } catch (err) {
+        await drop();
+        throw err;
+      }
+      return drop;
+    }
+
+    /** Ages one order's row so the worker's stale-claim step (not a live claim) is the one that picks it up. */
+    async function ageOrder(orderId: string, status: string): Promise<void> {
+      await query(`UPDATE orders SET status = $2, updated_at = NOW() - INTERVAL '1 hour' WHERE id = $1;`, [orderId, status]);
+    }
+
+    it("A: a failed record of the transfer leaves no hash; a stuck-claim tick and a retry never send a second transfer", async () => {
+      const ws = await newWorkspace("recfail");
+      const settle = new MilestoneSettlement();
+      const deps = { supplierFor: () => supplier, settlementFor: () => settle };
+      const runner = new ProcurementWorkflowRunner(deps);
+      const { orderId } = await confirmedOrder(runner, ws);
+      const stockBefore = await stockOf(ws, FLOUR);
+      const drop = await blockOrderUpdate(
+        orderId,
+        "NEW.status = 'settlement_submitted'",
+        "test_ms_block_record",
+        "simulated failure while recording the transfer"
+      );
+      try {
+        await expect(runner.fulfillAndReconcile(orderId, ws)).rejects.toThrow(/simulated failure while recording the transfer/);
+      } finally {
+        await drop();
+      }
+
+      // The send happened; its record rolled back. The claim is still held, with no hash and no submitted milestone.
+      expect(settle.transfers.filter((t) => t.orderId === orderId)).toHaveLength(1);
+      let row = await orderRow(orderId);
+      expect(row.status).toBe("settling");
+      expect(row.tx_hash).toBeNull();
+      expect(row.settlement_submitted_at).toBeNull();
+      expect(await auditRows(ws, "settlement.submitted")).toHaveLength(0);
+
+      // The worker's stale-claim step moves a settling order with no hash to payment_hold. It does not send.
+      await ageOrder(orderId, "settling");
+      await runTick({ deps, stuckSettlingAfterMs: 60_000, confirmAfterMs: 30_000 });
+      row = await orderRow(orderId);
+      expect(row.status).toBe("payment_hold");
+      expect(settle.transfers.filter((t) => t.orderId === orderId)).toHaveLength(1);
+
+      // The retry replays the completed transfer from the ledger, so the adapter is not called again.
+      const retried = await runner.fulfillAndReconcile(orderId, ws);
+      expect(retried).toMatchObject({ status: MatchStatus.MATCHED, reconciled: true, txHash: expect.stringMatching(/^0x/) });
+      expect(settle.transfers.filter((t) => t.orderId === orderId)).toHaveLength(1);
+      row = await orderRow(orderId);
+      expect(row.status).toBe("reconciled");
+      expect(row.tx_hash).toBe(retried.txHash);
+      expect(settle.confirmCalls.filter((hash) => hash === retried.txHash)).toHaveLength(1);
+      expect(await stockOf(ws, FLOUR)).toBe(stockBefore + Number(row.quantity));
+      expect(await journalCount(orderId)).toBe(1);
+      expect(await auditRows(ws, "settlement.confirmed")).toHaveLength(1);
+    });
+
+    it("B: five parallel confirmations, two worker ticks and a settle finish the payment exactly once", async () => {
+      const ws = await newWorkspace("parallel");
+      const settle = new MilestoneSettlement();
+      settle.confirmMode = "throws";
+      const deps = { supplierFor: () => supplier, settlementFor: () => settle };
+      const runner = new ProcurementWorkflowRunner(deps);
+      const { orderId } = await confirmedOrder(runner, ws);
+      const stockBefore = await stockOf(ws, FLOUR);
+      const qty = Number((await orderRow(orderId)).quantity);
+      const crashed = await runner.fulfillAndReconcile(orderId, ws);
+      expect(crashed.pending).toBe(AWAITING);
+
+      settle.confirmMode = "confirmed";
+      const parallel = await Promise.allSettled(Array.from({ length: 5 }, () => runner.confirmSettlement(orderId, ws)));
+      // No call may throw. A caller that lost the claim reports the order as in progress or already reconciled.
+      expect(parallel.every((p) => p.status === "fulfilled")).toBe(true);
+      const results = parallel.map((p) => (p as PromiseFulfilledResult<any>).value);
+      expect(results.some((r) => r.reconciled === true)).toBe(true);
+      for (const r of results) {
+        expect(r.reconciled || r.hold === "RECONCILE_IN_PROGRESS").toBe(true);
+      }
+
+      await runTick({ deps, confirmAfterMs: 0 });
+      await runTick({ deps, confirmAfterMs: 0 });
+      const again = await runner.fulfillAndReconcile(orderId, ws);
+      expect(again).toMatchObject({ reconciled: true, alreadyReconciled: true, txHash: crashed.txHash });
+
+      const row = await orderRow(orderId);
+      expect(row.status).toBe("reconciled");
+      expect(await stockOf(ws, FLOUR)).toBe(stockBefore + qty);
+      expect(await journalCount(orderId)).toBe(1);
+      expect(await auditRows(ws, "settlement.confirmed")).toHaveLength(1);
+      expect(settle.transfers.filter((t) => t.orderId === orderId)).toHaveLength(1);
+      // One call before the crash and one for the winning confirmation. The ticks and the settle asked nothing.
+      expect(settle.confirmCalls.filter((hash) => hash === crashed.txHash)).toHaveLength(2);
+    });
+
+    it("C: an order forced back to settling with a hash is recovered by the worker and finished once", async () => {
+      const ws = await newWorkspace("stuck");
+      const settle = new MilestoneSettlement();
+      settle.confirmMode = "throws";
+      const deps = { supplierFor: () => supplier, settlementFor: () => settle };
+      const runner = new ProcurementWorkflowRunner(deps);
+      const { orderId } = await confirmedOrder(runner, ws);
+      const stockBefore = await stockOf(ws, FLOUR);
+      const crashed = await runner.fulfillAndReconcile(orderId, ws);
+      expect(crashed.pending).toBe(AWAITING);
+
+      // A process died inside confirmSettlement: the claim is held with the hash, and the row has gone stale.
+      await ageOrder(orderId, "settling");
+      settle.confirmMode = "confirmed";
+
+      await runTick({ deps, stuckSettlingAfterMs: 60_000, confirmAfterMs: 30_000 });
+      let row = await orderRow(orderId);
+      expect(row.status).toBe("settlement_submitted");
+      expect(row.tx_hash).toBe(crashed.txHash);
+      expect(await auditRows(ws, "settlement.recovered_to_submitted")).toHaveLength(1);
+
+      await runTick({ deps, stuckSettlingAfterMs: 60_000, confirmAfterMs: 0 });
+      row = await orderRow(orderId);
+      expect(row.status).toBe("reconciled");
+      expect(await stockOf(ws, FLOUR)).toBe(stockBefore + Number(row.quantity));
+      expect(await journalCount(orderId)).toBe(1);
+      expect(await auditRows(ws, "settlement.confirmed")).toHaveLength(1);
+      expect(settle.transfers.filter((t) => t.orderId === orderId)).toHaveLength(1);
+
+      await runTick({ deps, stuckSettlingAfterMs: 60_000, confirmAfterMs: 0 });
+      expect(await stockOf(ws, FLOUR)).toBe(stockBefore + Number(row.quantity));
+      expect(await auditRows(ws, "settlement.confirmed")).toHaveLength(1);
+      expect(settle.transfers.filter((t) => t.orderId === orderId)).toHaveLength(1);
+    });
+
+    it("D: a claim stolen to payment_hold right after the transfer returns is reattached, and the transfer is not repeated", async () => {
+      const ws = await newWorkspace("stolen");
+      const settle = new MilestoneSettlement();
+      const runner = new ProcurementWorkflowRunner({ supplierFor: () => supplier, settlementFor: () => settle });
+      const { orderId } = await confirmedOrder(runner, ws);
+      const stockBefore = await stockOf(ws, FLOUR);
+      settle.beforeReturn = async () => {
+        // Another holder takes the order from `settling` while the transfer is in flight.
+        await query(`UPDATE orders SET status = 'payment_hold', updated_at = NOW() WHERE id = $1 AND status = 'settling';`, [orderId]);
+      };
+
+      const result = await runner.fulfillAndReconcile(orderId, ws);
+
+      // The record write matched no row, so the transfer was attached to the hold instead.
+      expect(result).toMatchObject({ status: MatchStatus.MATCHED, reconciled: false, pending: AWAITING, txHash: expect.any(String) });
+      expect(settle.transfers.filter((t) => t.orderId === orderId)).toHaveLength(1);
+      const row = await orderRow(orderId);
+      expect(row.status).toBe("settlement_submitted");
+      expect(row.tx_hash).toBe(result.txHash);
+      expect(row.settlement_submitted_at).toBeInstanceOf(Date);
+      expect(row.settlement_confirmed_at).toBeNull();
+      expect(await auditRows(ws, "settlement.reattached")).toHaveLength(1);
+      expect(await auditRows(ws, "settlement.submitted")).toHaveLength(1);
+
+      const finished = await runner.confirmSettlement(orderId, ws);
+      expect(finished).toMatchObject({ reconciled: true, txHash: result.txHash });
+      expect(settle.transfers.filter((t) => t.orderId === orderId)).toHaveLength(1);
+      expect(await stockOf(ws, FLOUR)).toBe(stockBefore + Number((await orderRow(orderId)).quantity));
+      expect(await auditRows(ws, "settlement.confirmed")).toHaveLength(1);
+    });
   });
 });
