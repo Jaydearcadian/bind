@@ -399,3 +399,11 @@ a.nav-item:hover { color: var(--text); background: color-mix(in srgb, var(--bord
 .signin-card .text-input { width: 100%; }
 .choice.is-disabled { opacity: 0.6; cursor: not-allowed; }
 #view-start .btn { justify-self: start; }
+
+/* Connect an agent */
+.head-link { color: var(--text-muted); margin-top: 6px; }
+.code-block { margin: 0; padding: 14px 16px; border-radius: var(--radius-sm); background: #1A1612; color: #F2EBDD; border: 1px solid #2E2822; font: 400 13.5px/1.55 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.code-block:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.test-ok { display: grid; gap: 8px; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--status-approved-tint); color: var(--text); }
+.test-ok .line-title { color: var(--status-approved-text); }
+#test-result .error { color: var(--status-refused-text); background: var(--status-refused-tint); padding: 10px 12px; border-radius: var(--radius-sm); }
