@@ -405,15 +405,18 @@ were added; the map was regenerated from the final test set and the second full 
 This section records one change. Branch `worktree-agent-acd2c81ecb86759f4`, fast-forwarded to `claude/capabilities-overview-c6elxr`
 first. The record is `docs/decisions/0074-owner-email-notices.md`.
 
-Commands, run from the worktree, with `DATABASE_URL` pointing at a database of its own on the local cluster (`bind_acd2c81e`):
+Commands, run from the worktree, with `DATABASE_URL` pointing at a database created for this run on the local cluster
+(`bind_priv_acd2_r2`, dropped after the run). The branch was merged with the latest `claude/capabilities-overview-c6elxr`
+before the second review round. The second round fixed the review's blocking findings (demo refusal, verification-only recipients,
+persistent wrong-guess cap, workspace send caps, binding removal marker, race-safe binding insert) and its should-fix items.
 
 | Command | Result | Class |
 |---|---|---|
 | `npm ci` | exit 0 | LOCAL_PASS |
 | `npm run lint` | no problems | LOCAL_PASS |
 | `npm run typecheck` (root, sdk, mcp) | no errors | LOCAL_PASS |
-| `npm run test:unit` | 60 files, 638 tests passed | LOCAL_PASS |
-| `npm run test:integration` (full, sequential) | 73 files passed, 1 skipped (the skip predates this change); 667 tests passed, 10 skipped | LOCAL_PASS |
+| `npm run test:unit` | 60 files, 639 tests passed | LOCAL_PASS |
+| `npm run test:integration` (full, sequential) | 74 files passed, 1 skipped (the skip predates this change); 704 tests passed, 10 skipped | LOCAL_PASS |
 | `npm run build`, `npm run mcp:build` | exit 0 | LOCAL_PASS |
 | `npm run api:spec`, `sdk:generate`, `capabilities:generate` run twice | every generated file unchanged by the second run | LOCAL_PASS |
 | `npm run map:functions` | **not run.** This worktree has no `.ua/knowledge-graph.json`. The committed map was generated with it, and without it the layer section is rewritten. The map was left unchanged | BLOCKED: the `map drift` gate fails until the map is regenerated where the graph exists |

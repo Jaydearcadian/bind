@@ -252,8 +252,7 @@ function sendOwnerEmailError(res: Response, err: unknown) {
     return res.status(err.status).json({ error: err.message, code: err.code });
   }
   // The log carries the error class only: a database or provider message could name an address.
-  log.error("owner_email.unexpected", { error: err instanceof Error ? err.name : "unknown" });
-  return res.status(500).json({ error: "Email notice operation failed" });
+  log.error("owner_email.unexpected", { error: err instanceof Error ? err.name : "unknown" });  return res.status(500).json({ error: "Email notice operation failed" });
 }
 
 function sendAccountError(res: Response, err: unknown) {

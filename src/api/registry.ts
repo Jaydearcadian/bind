@@ -966,7 +966,11 @@ export const ROUTES: RouteSpec[] = [
       201: ok("A code was sent and the address is pending.", OwnerEmailRequestedSchema),
       200: ok("The address is already verified for this workspace. Nothing was sent.", OwnerEmailRequestedSchema),
       400: err("The address is not a valid email address (INVALID_INPUT)."),
-      429: err("Three codes were already sent to this address in the last hour (EMAIL_SEND_LIMITED). Retry-After is set."),
+      403: err("A demo workspace sends no email (EMAIL_DEMO_REFUSED)."),
+      409: err("Too many wrong codes for this address in the last day (EMAIL_ATTEMPTS_EXCEEDED). Nothing was sent."),
+      429: err(
+        "A send limit is reached (EMAIL_SEND_LIMITED): three codes per address per hour, five addresses or ten codes per workspace per day. Retry-After is set."
+      ),
       502: err("The email provider refused or did not answer (EMAIL_SEND_FAILED). Nothing was verified."),
       503: err("Email notices are not set up on this server (EMAIL_NOT_CONFIGURED). Nothing was sent."),
     },
@@ -985,8 +989,11 @@ export const ROUTES: RouteSpec[] = [
     responses: {
       200: ok("Verified (also when the address was verified before).", OwnerEmailVerifiedSchema),
       400: err("The code is wrong (EMAIL_CODE_INVALID) or not six digits (INVALID_INPUT). The message says how many attempts are left."),
+      403: err("A demo workspace verifies no email (EMAIL_DEMO_REFUSED)."),
       404: err("No such address on this workspace's list (EMAIL_NOT_FOUND)."),
-      409: err("The code expired (EMAIL_CODE_EXPIRED) or five wrong codes were entered (EMAIL_ATTEMPTS_EXCEEDED)."),
+      409: err(
+        "The code expired (EMAIL_CODE_EXPIRED), or the code's five attempts or the address's ten wrong guesses in a day are used up (EMAIL_ATTEMPTS_EXCEEDED)."
+      ),
       503: err("Email notices are not set up on this server (EMAIL_NOT_CONFIGURED)."),
     },
     contractTested: false,

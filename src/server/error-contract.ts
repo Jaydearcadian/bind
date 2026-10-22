@@ -63,6 +63,7 @@ export const ERROR_CODES: Readonly<Record<string, ErrorShape>> = {
   DEMO_CAPACITY_REACHED: { category: "unavailable", retryable: true },
   DEMO_BUSY: { category: "unavailable", retryable: true },
   EMAIL_NOT_CONFIGURED: { category: "unavailable", retryable: false },
+  EMAIL_DEMO_REFUSED: { category: "policy", retryable: false },
   EMAIL_NOT_FOUND: { category: "not_found", retryable: false },
   EMAIL_SEND_LIMITED: { category: "rate_limited", retryable: true },
   EMAIL_SEND_FAILED: { category: "upstream", retryable: true },

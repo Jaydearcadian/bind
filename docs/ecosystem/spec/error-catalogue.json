@@ -83,6 +83,14 @@
       "note": "Owner email is not set up on this server (ADR 0074). Nothing is sent."
     },
     {
+      "code": "EMAIL_DEMO_REFUSED",
+      "httpStatus": 403,
+      "category": "policy",
+      "retryable": false,
+      "existing": true,
+      "note": "A demo workspace sends and verifies no email (ADR 0074)."
+    },
+    {
       "code": "EMAIL_NOT_FOUND",
       "httpStatus": 404,
       "category": "not_found",

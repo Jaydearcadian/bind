@@ -560,9 +560,13 @@ CREATE TABLE IF NOT EXISTS owner_emails (
   verified_at TIMESTAMPTZ,
   -- The surface binding this row created, if it created one. Removing the row removes only that binding.
   binding_id VARCHAR(64),
+  -- The binding's updated_at when this row created it. Removal deletes the binding only while it is still unchanged, so a
+  -- binding the owner later sets through /surfaces survives.
+  binding_marker TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   removed_at TIMESTAMPTZ
 );
+ALTER TABLE owner_emails ADD COLUMN IF NOT EXISTS binding_marker TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_owner_emails_live ON owner_emails(workspace_id, email) WHERE removed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_owner_emails_verified ON owner_emails(workspace_id, verified_at) WHERE verified_at IS NOT NULL AND removed_at IS NULL;
 
@@ -574,3 +578,14 @@ CREATE TABLE IF NOT EXISTS owner_email_sends (
   sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_owner_email_sends_addr ON owner_email_sends(workspace_id, email, sent_at);
+CREATE INDEX IF NOT EXISTS idx_owner_email_sends_ws ON owner_email_sends(workspace_id, sent_at);
+
+-- One row per wrong code guess for an address (ADR 0074). It is not tied to a code, so a new code does not reset it. Rows
+-- older than a day do not count. A successful verification of the address deletes the address's rows.
+CREATE TABLE IF NOT EXISTS owner_email_failures (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  failed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_owner_email_failures_addr ON owner_email_failures(workspace_id, email, failed_at);

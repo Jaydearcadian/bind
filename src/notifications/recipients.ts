@@ -1,4 +1,5 @@
 import { query } from "../db/client.js";
+import { config } from "../config/env.js";
 import type { NotificationChannel } from "../adapters/web2/types.js";
 
 export interface OwnerRecipient {
@@ -18,12 +19,17 @@ export interface OwnerRecipient {
  *    within the channel. The channel order is unchanged.
  * 2. Otherwise, the owner's verified email addresses (owner_emails, verified and not removed): every one, oldest verified
  *    first. The first is the primary recipient (recipientId null), the rest carry their row id.
- * 3. Otherwise, an owner email binding (surface_bindings), as before owner_emails existed: the single recipient.
+ * 3. Otherwise, an owner email binding (surface_bindings), as before owner_emails existed, but only while email delivery is
+ *    off (simulated). With delivery on, a binding is never a recipient unless it is a verified owner address (step 2), so an
+ *    owner cannot make the server mail an address by writing a binding through /surfaces.
  *
- * Staff bindings and other workspaces' rows are never used. Returns an empty list when there is none, in which case no
- * notice is sent.
+ * Demo workspaces never get email (ADR 0057, ADR 0074). Staff bindings and other workspaces' rows are never used. Returns an
+ * empty list when there is none, in which case no notice is sent.
  */
 export async function resolveOwnerRecipients(workspaceId: string): Promise<OwnerRecipient[]> {
+  const workspace = await query<{ is_demo: boolean }>(`SELECT is_demo FROM workspaces WHERE id = $1;`, [workspaceId]);
+  const isDemo = workspace.rows[0]?.is_demo === true;
+
   const res = await query<{ surface: string; actor_id: string }>(
     `SELECT surface, actor_id FROM surface_bindings
      WHERE workspace_id = $1
@@ -36,6 +42,7 @@ export async function resolveOwnerRecipients(workspaceId: string): Promise<Owner
     const row = res.rows.find((r) => r.surface === channel);
     if (row) return [{ channel, recipient: row.actor_id, recipientId: null }];
   }
+  if (isDemo) return [];
 
   const verified = await query<{ id: string; email: string }>(
     `SELECT id, email FROM owner_emails
@@ -52,8 +59,24 @@ export async function resolveOwnerRecipients(workspaceId: string): Promise<Owner
   }
 
   const emailBinding = res.rows.find((r) => r.surface === "email");
-  if (emailBinding) return [{ channel: "email", recipient: emailBinding.actor_id, recipientId: null }];
+  if (emailBinding && config.BIND_EMAIL_PROVIDER === undefined) {
+    return [{ channel: "email", recipient: emailBinding.actor_id, recipientId: null }];
+  }
   return [];
+}
+
+/**
+ * True when the address is a live (not removed) verified owner address of this workspace (ADR 0074). Used by the email send
+ * path as the last check before a message leaves the server.
+ */
+export async function isVerifiedOwnerAddress(workspaceId: string, address: string): Promise<boolean> {
+  const res = await query(
+    `SELECT 1 FROM owner_emails
+      WHERE workspace_id = $1 AND email = $2 AND verified_at IS NOT NULL AND removed_at IS NULL
+      LIMIT 1;`,
+    [workspaceId, address]
+  );
+  return res.rows.length > 0;
 }
 
 /**
