@@ -151,6 +151,7 @@ from the plan.
 | `accounting.three_way_match_failed` | a three-way match fails | `src/workflows/settlement.ts` |
 | `workflow.cancelled` | a workflow is cancelled | `src/workflows/cancel.ts` |
 | `notification.in_doubt`, `notification.failed`, `notification.skipped_no_recipient` | a notification is in doubt, fails or has no recipient | `src/notifications/dispatch.ts`, `src/agents/replenishmentTools.ts`, `src/workflows/fulfilment.ts` |
+| `notification.email_code_sent`, `notification.email_send_failed`, `notification.email_verified`, `notification.email_verify_failed`, `notification.email_removed` | an owner's email address gets a verification code, the code is sent or refused, the address is verified, a code is wrong, or the address is removed. The address appears masked only (ADR 0074) | `src/notifications/owner-emails.ts` |
 | `customer_order.accepted`, `customer_order.partially_available`, `customer_order.declined`, `customer_order.held` | a customer order is decided (`held` is `needs_owner`) | `src/workflows/fulfilment.ts` |
 | `customer_order.cancelled`, `customer_order.fulfilled` | a customer order is cancelled or fulfilled | `src/workflows/fulfilment.ts` |
 | `feedback.ingested` | customer feedback is recorded | `src/workflows/feedback.ts` |

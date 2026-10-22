@@ -2,18 +2,18 @@
   "version": 1,
   "source": "docs/openapi.json + docs/ecosystem/exposure.json + sdk/src/client.ts + mcp/src/tools.ts. Generated: do not edit by hand.",
   "counts": {
-    "operations": 85,
+    "operations": 89,
     "mcpTools": 17,
-    "exposure:public_api": 74,
+    "exposure:public_api": 78,
     "exposure:internal_service": 7,
     "exposure:protocol_primitive": 4,
     "effect:owner_decision": 10,
-    "effect:owner_configuration": 15,
+    "effect:owner_configuration": 18,
     "effect:commercial_commitment": 4,
     "effect:operational": 3,
     "effect:credential": 10,
     "effect:data_entry": 2,
-    "effect:read": 38,
+    "effect:read": 39,
     "effect:external_request": 3
   },
   "capabilities": [
@@ -651,6 +651,30 @@
         "api": true,
         "sdk": "convenience",
         "mcp": "needs_attention"
+      }
+    },
+    {
+      "id": "getNotificationChannels",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/notifications",
+      "summary": "Whether email notices are on for this server, and the workspace's owner addresses with their status. Never a code.",
+      "tag": "Notifications",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Owner email notices: whether email is on for this server and the workspace's addresses with their status. Never a code or a hash (ADR 0074).",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
       }
     },
     {
@@ -1631,6 +1655,30 @@
       }
     },
     {
+      "id": "removeOwnerEmail",
+      "method": "DELETE",
+      "route": "/api/workspaces/{id}/notifications/email/{emailId}",
+      "summary": "Remove an owner address. It stops receiving notices at once. The binding it created is removed with it.",
+      "tag": "Notifications",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "The address stops receiving owner notices at once (ADR 0074). Never agent-exposed.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
       "id": "replenish",
       "method": "POST",
       "route": "/api/workspaces/{id}/replenish",
@@ -1652,6 +1700,30 @@
         "api": true,
         "sdk": "convenience",
         "mcp": "request_replenishment"
+      }
+    },
+    {
+      "id": "requestOwnerEmailVerification",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/notifications/email",
+      "summary": "Send a six-digit code to an address, to be entered at /verify. The code goes only in the email.",
+      "tag": "Notifications",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Sends a six-digit code to an address, which the owner must then enter. Sends an email to the address typed (ADR 0074). Limited to three codes per address per hour. Never agent-exposed.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
       }
     },
     {
@@ -2090,6 +2162,30 @@
       "stability": "preview",
       "flags": [],
       "note": "No live verifier exists yet, so a connector is never reported verified.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "verifyOwnerEmail",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/notifications/email/verify",
+      "summary": "Check the six-digit code. On success the address receives owner notices.",
+      "tag": "Notifications",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Checks the code. On success the address receives owner notices (ADR 0074). Never agent-exposed.",
       "idempotency": {
         "clientKey": false,
         "natural": "not documented"

@@ -36,8 +36,20 @@ export async function sendOwnerNotification(input: {
   kind: OwnerNoticeKind;
   refId: string;
   payload: NotificationPayload;
+  /**
+   * The owner recipient's id when the owner has several verified email addresses (ADR 0074). Absent for the first
+   * recipient, whose key is the one used before there were several (ADR 0020, ADR 0027). Each additional recipient adds its
+   * id to the key, so each is told once.
+   */
+  recipientId?: string | null;
 }): Promise<{ sent: boolean; reason?: "in_doubt" }> {
-  const { workspaceId, workflowId, kind, refId, payload } = input;
+  const { workspaceId, workflowId, kind, refId, recipientId } = input;
+  // The notice kind travels in the payload metadata. The email content is chosen from it (ADR 0074), never from the text.
+  const payload: NotificationPayload = {
+    ...input.payload,
+    metadata: { ...(input.payload.metadata ?? {}), noticeKind: kind },
+  };
+  const recipientSuffix = recipientId ? `:${recipientId}` : "";
   try {
     await runEffect(
       {
@@ -46,7 +58,7 @@ export async function sendOwnerNotification(input: {
         effectClass: EffectClass.EXTERNAL_REQUEST,
         operation: OPERATION_FOR_KIND[kind],
         // The workspace id is part of the key, so a key cannot be probed or reused across tenants.
-        idempotencyKey: `${workspaceId}:notify:${kind}:${refId}`,
+        idempotencyKey: `${workspaceId}:notify:${kind}:${refId}${recipientSuffix}`,
         request: payload,
         externalDedupes: false,
       },
@@ -84,7 +96,8 @@ export async function sendApprovalNotification(input: {
   workflowId: string;
   approvalId: string;
   payload: NotificationPayload;
+  recipientId?: string | null;
 }): Promise<{ sent: boolean; reason?: "in_doubt" }> {
-  const { workspaceId, workflowId, approvalId, payload } = input;
-  return sendOwnerNotification({ workspaceId, workflowId, kind: "approval", refId: approvalId, payload });
+  const { workspaceId, workflowId, approvalId, payload, recipientId } = input;
+  return sendOwnerNotification({ workspaceId, workflowId, kind: "approval", refId: approvalId, payload, recipientId });
 }

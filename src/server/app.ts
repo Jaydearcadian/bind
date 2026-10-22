@@ -104,6 +104,8 @@ import { buildRateLimitScopes, rateLimitsEnabled, type RateLimitOptions } from "
 import { rateLimitGate } from "../security/rate-limit-middleware.js";
 import { checkReadiness } from "../observability/readiness.js";
 import { ROUTES } from "../api/registry.js";
+import { OwnerEmailError, listNotificationChannels, removeOwnerEmail, requestOwnerEmailVerification, verifyOwnerEmail } from "../notifications/owner-emails.js";
+import { OwnerEmailRequestBodySchema, OwnerEmailVerifyBodySchema } from "../api/schemas.js";
 import { API_VERSION, buildOpenApiDocument, serializeOpenApiDocument } from "../api/openapi.js";
 import {
   ApprovalDecisionBodySchema,
@@ -242,6 +244,17 @@ function decidedByOf(label: string): string {
 }
 
 /** Sends a token-operation failure with its status. */
+/** Sends an owner-email refusal with its status and code (ADR 0074). The message never carries a code, a key or a full address. */
+function sendOwnerEmailError(res: Response, err: unknown) {
+  if (err instanceof OwnerEmailError) {
+    if (err.retryAfterSeconds !== undefined) res.setHeader("Retry-After", String(err.retryAfterSeconds));
+    return res.status(err.status).json({ error: err.message, code: err.code });
+  }
+  // The log carries the error class only: a database or provider message could name an address.
+  log.error("owner_email.unexpected", { error: err instanceof Error ? err.name : "unknown" });
+  return res.status(500).json({ error: "Email notice operation failed" });
+}
+
 function sendAccountError(res: Response, err: unknown) {
   if (err instanceof AccountError) {
     const status =
@@ -1330,6 +1343,46 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       res.status(201).json(binding);
     } catch (err: any) {
       res.status(400).json({ error: publicErrorMessage(err) });
+    }
+  });
+
+  // Owner notices by email (ADR 0074). Owner only: a staff token is refused by the middleware, another workspace is 404.
+  app.get("/api/workspaces/:id/notifications", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      res.json(jsonSafe(await listNotificationChannels(req.params.id)));
+    } catch (err) {
+      sendOwnerEmailError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/notifications/email", ...workspaceOwner, async (req: Request, res: Response) => {
+    const parsed = OwnerEmailRequestBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "email must be a valid address of up to 120 characters.", code: "INVALID_INPUT" });
+    try {
+      const out = await requestOwnerEmailVerification(req.params.id, parsed.data.email, req.actor!.label);
+      res.setHeader("Cache-Control", "no-store");
+      res.status(out.status === "verified" ? 200 : 201).json(jsonSafe(out));
+    } catch (err) {
+      sendOwnerEmailError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/notifications/email/verify", ...workspaceOwner, async (req: Request, res: Response) => {
+    const parsed = OwnerEmailVerifyBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "id and a six-digit code are required.", code: "INVALID_INPUT" });
+    try {
+      res.setHeader("Cache-Control", "no-store");
+      res.json(jsonSafe(await verifyOwnerEmail(req.params.id, parsed.data.id, parsed.data.code, req.actor!.label)));
+    } catch (err) {
+      sendOwnerEmailError(res, err);
+    }
+  });
+
+  app.delete("/api/workspaces/:id/notifications/email/:emailId", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      res.json(jsonSafe(await removeOwnerEmail(req.params.id, req.params.emailId, req.actor!.label)));
+    } catch (err) {
+      sendOwnerEmailError(res, err);
     }
   });
 

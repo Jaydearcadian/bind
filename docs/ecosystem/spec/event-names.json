@@ -282,6 +282,41 @@
       "renamed": false
     },
     {
+      "type": "notification.email_code_sent",
+      "name": "notification.email_code_sent",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.email_send_failed",
+      "name": "notification.email_send_failed",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.email_verified",
+      "name": "notification.email_verified",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.email_verify_failed",
+      "name": "notification.email_verify_failed",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.email_removed",
+      "name": "notification.email_removed",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
       "type": "customer_order.accepted",
       "name": "customer_order.accepted",
       "object": "customer_order",

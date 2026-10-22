@@ -31,7 +31,7 @@ variable.
 | `NODE_ENV` | Set to `production` | `development` | Rate limits are off when it is `test` (ADR 0033). Never set `test` in a deployed environment. |
 | `PORT` | No | 3000 | |
 | `DATABASE_URL` | **Yes in production** | Development and test: a local URL with the password `bind_local_only`. Production: **startup is refused**, with an error that names the variable | The default is for local use only. `NODE_ENV=production` without `DATABASE_URL` (or with it empty) exits 1 (ADR 0033). A `.env.local` or `.env` file in the working directory counts as configuration. |
-| `APP_BASE_URL` | No | `http://127.0.0.1:3000` | Used to build the links in owner notifications (ADR 0025). |
+| `APP_BASE_URL` | No | `http://127.0.0.1:3000` | Used to build the links in owner notifications (ADR 0025) and the link in owner emails (ADR 0074). It is the one public base URL; there is no second one. With `BIND_EMAIL_PROVIDER` set it must be `https`, or `http` on 127.0.0.1 or localhost outside production. |
 | `BIND_MASTER_SECRET` | For webhook signing | Webhook routes and the owner's webhook-secret routes answer **503** and process nothing (fail closed) | At least 32 characters. Derives every workspace's signing secret (ADR 0022). |
 | `BIND_WEBHOOK_SECRET` | For standard webhooks | `POST /api/webhooks/incoming` (standard events) answers **503** | At least 32 characters. HMAC key for non-surface events (ADR 0022). |
 | `BIND_CREDENTIAL_KEY` | For connector credentials | The credential store is disabled; the connector routes answer **503** | Base64 of exactly 32 bytes. Never stored in the database (ADR 0024). |
@@ -44,6 +44,10 @@ variable.
 | `BIND_WORKER_ENABLED` | No | The worker runs | Only the exact value `false` disables it (ADR 0029). |
 | `BIND_RESTOCK_SWEEP` | No | **Off** | Only the exact value `true` enables it. It starts replenishments on its own, within policy (ADR 0030). Any other value is ignored. |
 | `BIND_TRUST_PROXY` | Behind a proxy | `0`: the socket address is the client | Number of proxy hops that append to `X-Forwarded-For`. Must be a non-negative integer (ADR 0033). |
+| `BIND_EMAIL_PROVIDER` | To send owner notices by email (ADR 0074) | Email is **simulated**: a notice is recorded in memory and labelled `simulated`, nothing is sent, and the owner email routes answer **503** `EMAIL_NOT_CONFIGURED` | Only `resend`. Startup is refused unless `BIND_EMAIL_API_KEY` and `BIND_EMAIL_FROM` are set and `APP_BASE_URL` is https (or local outside production). Live sending is `NOT_RUN` until tried against a real provider account. |
+| `BIND_EMAIL_API_KEY` | With `BIND_EMAIL_PROVIDER` | As above | The Resend API key, at least 8 characters, no spaces. It is never logged and never written to an error or an audit row, and text that carries it is redacted. Keep it in the host's secret store. |
+| `BIND_EMAIL_FROM` | With `BIND_EMAIL_PROVIDER` | As above | The sender, for example `Bind <notices@your-domain>`. The domain must be verified at the provider. |
+| `BIND_EMAIL_API_BASE` | No | `https://api.resend.com` | `https` only. Plain `http` is accepted only on 127.0.0.1 or localhost outside production; the tests use a local fake provider this way. |
 | `BIND_RATE_LIMITS` | No | Limits are on (off in `NODE_ENV=test`) | Only `off` is accepted. For **local development only** (ADR 0033). |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn` or `error` (ADR 0032). Any other value stops startup. |
 | `BIND_SETTLEMENT_ADDRESS` | For `arc-testnet` settlement | Arc settlement refuses, naming this variable | The settlement contract address (ADR 0013). |

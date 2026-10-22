@@ -7,7 +7,7 @@ import { EffectClass } from "../policy/effect-classifier.js";
 import { authorizeCommitment, describeCommitmentDecision } from "../policy/commitment-gate.js";
 import { WorkflowEngine } from "../workflows/engine.js";
 import { sendApprovalNotification } from "../notifications/dispatch.js";
-import { resolveOwnerRecipient } from "../notifications/recipients.js";
+import { resolveOwnerRecipients } from "../notifications/recipients.js";
 import { approvalLink } from "../notifications/links.js";
 import { boundedErrorMessage } from "../effects/ledger.js";
 import { newId } from "../utils/ids.js";
@@ -498,8 +498,8 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
         // The recipient is the owner's own surface binding, never a fixed number (docs/decisions/0025). With no
         // binding nothing is sent, and the skip is audited.
         try {
-          const owner = await resolveOwnerRecipient(workspaceId);
-          if (!owner) {
+          const owners = await resolveOwnerRecipients(workspaceId);
+          if (owners.length === 0) {
             await workflowEngine.recordAudit(
               workspaceId,
               targetWorkflowId,
@@ -510,21 +510,39 @@ export function createReplenishmentTools(ctx: ReplenishmentToolsContext) {
               PolicyDecision.ALLOW,
               { approvalId }
             );
-          } else {
-            await sendApprovalNotification({
-              workspaceId,
-              workflowId: targetWorkflowId,
-              approvalId,
-              payload: {
+          }
+          // Each owner is told once (ADR 0074). One owner's failure does not stop the others, and is audited the same way.
+          for (const owner of owners) {
+            try {
+              await sendApprovalNotification({
                 workspaceId,
-                channel: owner.channel,
-                recipient: owner.recipient,
-                title: "⚠️ Bind Alert: Ingredient Restock Approval Required",
-                message: `Low stock detected on ${displayItemName}. Best quote from ${proposal.supplierName} is $${(Number(amountCents) / 100).toFixed(2)} USDC.`,
-                // A plain page link. It carries no token and decides nothing (docs/decisions/0025).
-                actionUrl: approvalLink(approvalId),
-              },
-            });
+                workflowId: targetWorkflowId,
+                approvalId,
+                recipientId: owner.recipientId,
+                payload: {
+                  workspaceId,
+                  channel: owner.channel,
+                  recipient: owner.recipient,
+                  title: "⚠️ Bind Alert: Ingredient Restock Approval Required",
+                  message: `Low stock detected on ${displayItemName}. Best quote from ${proposal.supplierName} is $${(Number(amountCents) / 100).toFixed(2)} USDC.`,
+                  // A plain page link. It carries no token and decides nothing (docs/decisions/0025).
+                  actionUrl: approvalLink(approvalId),
+                  // Facts for the email body (ADR 0074). The supplier name is untrusted text and is sanitised there.
+                  metadata: { supplierName: proposal.supplierName, amountCents: Number(amountCents) },
+                },
+              });
+            } catch (err) {
+              await workflowEngine.recordAudit(
+                workspaceId,
+                targetWorkflowId,
+                "system",
+                "system:notifications",
+                EffectClass.EXTERNAL_REQUEST,
+                "notification.failed",
+                PolicyDecision.ALLOW,
+                { approvalId, error: boundedErrorMessage(err) }
+              );
+            }
           }
         } catch (err) {
           await workflowEngine.recordAudit(

@@ -36,6 +36,12 @@ import {
   AccountWorkspaceCreatedSchema,
   AccountWorkspaceSchema,
   ErrorBody,
+  NotificationChannelsSchema,
+  OwnerEmailRemovedSchema,
+  OwnerEmailRequestBodySchema,
+  OwnerEmailRequestedSchema,
+  OwnerEmailVerifiedSchema,
+  OwnerEmailVerifyBodySchema,
   InviteAcceptBodySchema,
   InviteCreateBodySchema,
   InviteIssuedSchema,
@@ -933,6 +939,73 @@ export const ROUTES: RouteSpec[] = [
     sampleBody: { surface: "email", actorId: "contract-sample@example.com", actorRole: "staff", integrationStatus: "simulated" },
     responses: { 201: ok("The stored binding.", SurfaceBindingSchema) },
     contractTested: true,
+  }),
+
+  // -------------------------------------------------------------------------------------------------------------------
+  // Owner notices by email (ADR 0074)
+  // -------------------------------------------------------------------------------------------------------------------
+  withGenericErrors({
+    operationId: "getNotificationChannels",
+    method: "get",
+    path: "/api/workspaces/:id/notifications",
+    access: "owner",
+    tags: ["Notifications"],
+    summary: "Whether email notices are on for this server, and the workspace's owner addresses with their status. Never a code.",
+    responses: { 200: ok("Channels.", NotificationChannelsSchema) },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "requestOwnerEmailVerification",
+    method: "post",
+    path: "/api/workspaces/:id/notifications/email",
+    access: "owner",
+    tags: ["Notifications"],
+    summary: "Send a six-digit code to an address, to be entered at /verify. The code goes only in the email.",
+    body: OwnerEmailRequestBodySchema,
+    responses: {
+      201: ok("A code was sent and the address is pending.", OwnerEmailRequestedSchema),
+      200: ok("The address is already verified for this workspace. Nothing was sent.", OwnerEmailRequestedSchema),
+      400: err("The address is not a valid email address (INVALID_INPUT)."),
+      429: err("Three codes were already sent to this address in the last hour (EMAIL_SEND_LIMITED). Retry-After is set."),
+      502: err("The email provider refused or did not answer (EMAIL_SEND_FAILED). Nothing was verified."),
+      503: err("Email notices are not set up on this server (EMAIL_NOT_CONFIGURED). Nothing was sent."),
+    },
+    contractTested: false,
+    notTestedReason:
+      "Needs a configured email provider to answer 2xx; the simulated server answers 503 by design. Covered by tests/integration/owner-email-routes.test.ts against a local fake provider.",
+  }),
+  withGenericErrors({
+    operationId: "verifyOwnerEmail",
+    method: "post",
+    path: "/api/workspaces/:id/notifications/email/verify",
+    access: "owner",
+    tags: ["Notifications"],
+    summary: "Check the six-digit code. On success the address receives owner notices.",
+    body: OwnerEmailVerifyBodySchema,
+    responses: {
+      200: ok("Verified (also when the address was verified before).", OwnerEmailVerifiedSchema),
+      400: err("The code is wrong (EMAIL_CODE_INVALID) or not six digits (INVALID_INPUT). The message says how many attempts are left."),
+      404: err("No such address on this workspace's list (EMAIL_NOT_FOUND)."),
+      409: err("The code expired (EMAIL_CODE_EXPIRED) or five wrong codes were entered (EMAIL_ATTEMPTS_EXCEEDED)."),
+      503: err("Email notices are not set up on this server (EMAIL_NOT_CONFIGURED)."),
+    },
+    contractTested: false,
+    notTestedReason:
+      "Needs a code that only the email carries, so a sample cannot reach 2xx. Covered by tests/integration/owner-email-routes.test.ts.",
+  }),
+  withGenericErrors({
+    operationId: "removeOwnerEmail",
+    method: "delete",
+    path: "/api/workspaces/:id/notifications/email/:emailId",
+    access: "owner",
+    tags: ["Notifications"],
+    summary: "Remove an owner address. It stops receiving notices at once. The binding it created is removed with it.",
+    responses: {
+      200: ok("Removed.", OwnerEmailRemovedSchema),
+      404: err("No such address on this workspace's list (EMAIL_NOT_FOUND)."),
+    },
+    contractTested: false,
+    notTestedReason: "Needs an address that exists first, which the contract sweep does not create. Covered by tests/integration/owner-email-routes.test.ts.",
   }),
 
   // -------------------------------------------------------------------------------------------------------------------

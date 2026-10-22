@@ -973,3 +973,37 @@ export const MemberRoleBodySchema = z.object({ role: Role });
 export const MemberRemovedSchema = z.object({ accountId: z.string(), removed: z.literal(true) }).passthrough();
 
 export const InviteRevokedSchema = z.object({ id: z.string(), revoked: z.literal(true) }).passthrough();
+
+// Owner email notices (ADR 0074). A code is never in any of these answers; only the address and its status are.
+export const OwnerEmailRequestBodySchema = z.object({ email: z.string().min(3).max(120) });
+
+export const OwnerEmailVerifyBodySchema = z.object({
+  id: z.string().min(1).max(64),
+  code: z.string().regex(/^\d{6}$/, "must be six digits"),
+});
+
+export const OwnerEmailSummarySchema = z
+  .object({
+    id: z.string(),
+    email: z.string(),
+    status: z.enum(["pending", "verified"]),
+    expiresAt: IsoDateTime.nullable(),
+    verifiedAt: IsoDateTime.nullable(),
+    attemptsRemaining: z.number().int().nullable(),
+    createdAt: IsoDateTime,
+  })
+  .passthrough();
+
+export const NotificationChannelsSchema = z
+  .object({ emailDelivery: z.enum(["on", "simulated"]), emails: z.array(OwnerEmailSummarySchema) })
+  .passthrough();
+
+export const OwnerEmailRequestedSchema = z
+  .object({ id: z.string(), email: z.string(), status: z.enum(["pending", "verified"]), expiresAt: IsoDateTime.nullable() })
+  .passthrough();
+
+export const OwnerEmailVerifiedSchema = z
+  .object({ id: z.string(), email: z.string(), status: z.literal("verified"), verifiedAt: IsoDateTime })
+  .passthrough();
+
+export const OwnerEmailRemovedSchema = z.object({ id: z.string(), removed: z.literal(true) }).passthrough();

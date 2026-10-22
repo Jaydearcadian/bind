@@ -110,6 +110,11 @@ const OWNER_ROUTES: Array<[string, string]> = [
   ["POST", "/api/workspaces/:id/suppliers"],
   ["POST", "/api/workspaces/:id/agents"],
   ["POST", "/api/workspaces/:id/surfaces"],
+  // Owner notices by email (ADR 0074): owner only. A staff token is refused, another workspace is 404.
+  ["GET", "/api/workspaces/:id/notifications"],
+  ["POST", "/api/workspaces/:id/notifications/email"],
+  ["POST", "/api/workspaces/:id/notifications/email/verify"],
+  ["DELETE", "/api/workspaces/:id/notifications/email/:emailId"],
   ["POST", "/api/workspaces/:id/documents/:docId/confirm"],
   ["POST", "/api/workspaces/:id/recover"],
   // Deletes a demo workspace and returns a fresh one. A workspace that is not a demo is refused (docs/decisions/0057).
