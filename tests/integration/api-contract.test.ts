@@ -453,7 +453,13 @@ describe("API contract: one registry, checked against the running server (ADR 00
 
     const appSet = new Set(appKeys);
     const specSet = new Set(specKeys);
-    expect(appKeys.filter((k) => !specSet.has(k)), "routes in createApp with no registry entry").toEqual([]);
+    // The one exception, named: the hosted MCP endpoint is not a REST operation, so it has no OpenAPI entry (docs/decisions/0075).
+    // Its access rules are checked in auth-tenancy.test.ts and hosted-mcp.test.ts.
+    const NOT_REST_OPERATIONS = new Set(["POST /mcp", "GET /mcp", "DELETE /mcp"]);
+    expect(
+      appKeys.filter((k) => !specSet.has(k) && !NOT_REST_OPERATIONS.has(k)),
+      "routes in createApp with no registry entry"
+    ).toEqual([]);
     expect(specKeys.filter((k) => !appSet.has(k)), "registry entries with no route in createApp").toEqual([]);
   });
 

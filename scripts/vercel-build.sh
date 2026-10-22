@@ -3,6 +3,8 @@
 # It lives in a script because Vercel rejects a buildCommand longer than 256 characters.
 set -euo pipefail
 npm run build:vercel
+# The hosted MCP module (docs/decisions/0075), loaded by api/_handler.js and listed in vercel.json includeFiles.
+npm run mcp:build
 npm run sdk:build
 npm run web:bundle
 rm -rf public

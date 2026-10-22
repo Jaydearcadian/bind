@@ -22,7 +22,7 @@ const UNAUTHENTICATED = { error: "Authentication required" };
 const WORKSPACE_NOT_FOUND = { error: "Workspace not found" };
 
 /** The token from `Authorization: Bearer <token>`, or null. The query string and cookies are never read. */
-function bearerToken(req: Request): string | null {
+export function bearerToken(req: Request): string | null {
   const header = req.headers.authorization;
   if (typeof header !== "string") return null;
   const match = /^Bearer (\S+)$/.exec(header);

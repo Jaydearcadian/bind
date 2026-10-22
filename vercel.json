@@ -4,7 +4,7 @@
   "outputDirectory": "public",
   "functions": {
     "api/index.js": {
-      "includeFiles": "dist/**",
+      "includeFiles": "{dist/**,mcp/dist/**,docs/openapi.json}",
       "memory": 1024,
       "maxDuration": 60
     }

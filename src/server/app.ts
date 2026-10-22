@@ -103,6 +103,7 @@ import { bindRequestId, requestContext } from "../observability/request-context.
 import { buildRateLimitScopes, rateLimitsEnabled, type RateLimitOptions } from "../security/rate-limit.js";
 import { rateLimitGate } from "../security/rate-limit-middleware.js";
 import { checkReadiness } from "../observability/readiness.js";
+import { mountHostedMcp, UNWIRED_HOSTED_MCP, type HostedMcpOptions } from "./mcp-route.js";
 import { ROUTES } from "../api/registry.js";
 import { API_VERSION, buildOpenApiDocument, serializeOpenApiDocument } from "../api/openapi.js";
 import {
@@ -317,6 +318,11 @@ async function createWithOwnerToken<T>(workspaceId: string, create: () => Promis
 export interface CreateAppOptions {
   /** Browser origins allowed to call the API. Defaults to BIND_CORS_ORIGINS. An empty list sends no CORS headers. */
   corsOrigins?: string[];
+  /**
+   * The hosted MCP endpoint at /mcp (docs/decisions/0075): how to load the built MCP module. Omitted, the route answers 503 (it
+   * is never a crash). The deployment entry points (api/_handler.js, src/index.ts) and the tests pass the loader.
+   */
+  hostedMcp?: HostedMcpOptions;
   /**
    * Overrides for the webhook secrets (ADR 0022). null means unset, which fails closed with 503. Omitted means the
    * value from the environment. Tests use this to run unconfigured.
@@ -561,6 +567,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
 
   // Metrics: aggregate only, behind BIND_METRICS_TOKEN (docs/decisions/0032). Disabled (404) when no token is configured.
   app.get("/metrics", metricsRoute);
+
+  // The hosted MCP endpoint (docs/decisions/0075): POST /mcp for a staff key; GET and DELETE answer 405. Mounted before the
+  // unknown-path fallbacks at the end of this function. Its loopback listener is closed by app.locals.closeHostedMcp.
+  const hostedMcp = mountHostedMcp(app, options.hostedMcp ?? UNWIRED_HOSTED_MCP);
+  app.locals.closeHostedMcp = hostedMcp.close;
 
   // Templates & Blueprints
   app.get("/api/templates", (_req: Request, res: Response) => {

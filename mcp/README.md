@@ -19,7 +19,30 @@ npm run mcp:build      # compiles mcp/src and the SDK it imports into mcp/dist
 
 The entry point is `mcp/dist/mcp/src/main.js`. `npm run mcp:start` runs it.
 
-## Configure a client
+## Hosted endpoint: connect by URL
+
+The API serves the same tools at `POST <your-bind-api-origin>/mcp`, so an agent connects by URL and runs nothing locally
+(docs/decisions/0075). It speaks MCP Streamable HTTP, stateless, with JSON answers. A client needs two things: the URL and the
+header.
+
+```sh
+curl -sS -X POST "https://<your-bind-api-host>/mcp" \
+  -H "Authorization: Bearer <staff-workspace-token>" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+```
+
+The same staff key rules apply: an owner key or an account session gets `403` ("Give agents a staff key; owner keys are for
+people"), a missing, bad or revoked key gets `401`. Every tool call is made through the API with that key, so roles, tenancy,
+idempotency and audit are the API's. `GET` and `DELETE` answer `405` with the endpoint's own address. Requests with an `Origin`
+header from another site are refused with `403`; agents send none. Set `BIND_PUBLIC_URL` to the https origin of the deployment so
+that the endpoint address and the Origin check use it, rather than the request's host.
+
+A client that takes a URL and a header (Claude Code, Cursor and other MCP clients with HTTP support) needs only the URL above and
+`Authorization: Bearer <staff-workspace-token>`. Live checks against those clients are not yet run (docs/decisions/0075).
+
+## Configure a client (stdio)
 
 The server reads two variables. It needs no workspace id: it asks the API which workspace the token belongs to, and it refuses
 to start unless the answer is exactly one workspace.
@@ -110,7 +133,9 @@ An error is a tool error with `status`, `code`, `message`, `requestId` and `reas
 
 ## Limits
 
-- Stdio only. A network transport is not provided: it would need its own authentication layer, which is a separate decision.
+- The stdio server is local and needs the repository. The hosted endpoint (above) is the network transport; it uses the API's own
+  staff keys and adds no authentication of its own (docs/decisions/0075).
+- No OAuth: a client that cannot send an `Authorization` header (for example a ChatGPT connector) cannot use the hosted endpoint.
 - No resources and no prompts; the tools are the whole surface.
 - No rate limits of its own: the API's per-token limit applies, and a limited call is a tool error with code `RATE_LIMITED`.
 - Requires the repository's dependencies and reads `docs/openapi.json` at start. Run it from a checkout.

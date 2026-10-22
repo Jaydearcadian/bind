@@ -91,6 +91,9 @@ const envSchema = z.object({
       z.string().regex(/^\d+$/, "BIND_TRUST_PROXY must be a non-negative integer (the number of proxy hops)").optional()
     )
     .transform((v) => (v === undefined ? 0 : Number(v))),
+  // The public origin of this deployment, for example https://bind.example (no path). Used for the hosted MCP endpoint's
+  // address and its Origin check (docs/decisions/0075). Unset: the request's own host. Validated where it is used.
+  BIND_PUBLIC_URL: z.preprocess((v) => (v === "" ? undefined : v), z.string().max(2048).optional()),
   // Demo workspaces (docs/decisions/0057). Unset: on outside production and off in production. "true" or "false" decides.
   BIND_DEMO_ENABLED: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["true", "false"]).optional()),
   // The most demo workspaces that may be active at once (not expired). Over it, creating a demo answers 503.
