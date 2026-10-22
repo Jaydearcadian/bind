@@ -86,6 +86,8 @@ before tx1 is mined, passes the pre-flight call and is broadcast too (tx2). Once
 Caveat (ADR 0019, the in-flight case). The lookup sees only mined transfers. If tx1 is still unmined when tx2's revert is
 read, the rule finds nothing and the order is held. A later reconcile call runs the same confirmation again and adopts tx1
 once it is mined. The worker does not reconcile `payment_hold` by itself, so that call has to be made.
+- A deploy block past the head makes the lookup's span empty: it returns "not found" with no read. That null is not proof that
+  nothing settled, so it is not a safe-to-resend answer. The live harness BLOCKs on it.
 
 Tests: `tests/integration/settlement-duplicate-reverted.test.ts` (in-flight sequence, the three hold cases, and the
 same-hash and unconfirmed cases). The in-flight test fails without this change.

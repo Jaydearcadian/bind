@@ -418,8 +418,12 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
   /**
    * The SettlementExecuted log of the settlement that paid this order id. The span from the deploy block to the head is
    * scanned in windows of at most ARC_LOG_CHUNK_BLOCKS, newest first, and the scan stops at the first window with a log.
-   * Undefined when no window has one. Any failure throws: the head read, a window, or a head behind the deploy block.
-   * None of them is ever read as "no settlement" (see log-scan.ts).
+   * Undefined when no window has one. Any failed read throws: the head read or a window. A failure is never read as
+   * "no settlement" (see log-scan.ts).
+   *
+   * Known limitation: when the deploy block is past the head, the span is empty. No window is read and the lookup returns
+   * undefined, which the caller reads as "not found". That is not evidence that nothing is in flight or settled, so a null
+   * there is not a safe-to-resend answer. The live harness refuses to continue on it.
    */
   async #findSettlement(
     contractAddress: Address,
