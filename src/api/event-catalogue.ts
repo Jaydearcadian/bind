@@ -41,6 +41,7 @@ export const EVENT_CATALOGUE: Readonly<Record<string, { name: string; object: st
   "settlement.recovered_to_hold": { name: "settlement.recovered_to_hold", object: "order" },
   "accounting.three_way_match_failed": { name: "accounting.three_way_match_failed", object: "order" },
   "workflow.cancelled": { name: "workflow.cancelled", object: "workflow" },
+  "agent.tool_called": { name: "agent.tool_called", object: "token" },
   "notification.in_doubt": { name: "notification.in_doubt", object: "notification" },
   "notification.failed": { name: "notification.failed", object: "notification" },
   "notification.skipped_no_recipient": { name: "notification.skipped_no_recipient", object: "notification" },

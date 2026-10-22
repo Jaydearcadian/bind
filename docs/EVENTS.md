@@ -155,6 +155,7 @@ from the plan.
 | `customer_order.accepted`, `customer_order.partially_available`, `customer_order.declined`, `customer_order.held` | a customer order is decided (`held` is `needs_owner`) | `src/workflows/fulfilment.ts` |
 | `customer_order.cancelled`, `customer_order.fulfilled` | a customer order is cancelled or fulfilled | `src/workflows/fulfilment.ts` |
 | `feedback.ingested` | customer feedback is recorded | `src/workflows/feedback.ts` |
+| `agent.tool_called` | a write tool of the hosted MCP endpoint has finished, through a staff key: the key's id is the object, and the evidence holds the tool, its outcome and the API status, never the arguments, the answer or the token (docs/decisions/0075) | `src/server/mcp-route.ts` |
 | `menu.proposed`, `menu.propose_refused`, `menu.approved`, `menu.rejected`, `menu.cancelled`, `menu.published`, `menu.publish_refused` | a menu change moves through its states | `src/workflows/menu.ts` |
 | `surface.bind_identity` | a social surface identity is bound | `src/adapters/socialSurface.ts` |
 | `document.extract_staged`, `document.confirm_quote` | a document is extracted or confirmed | `src/studio/documentsAndAccounting.ts` |

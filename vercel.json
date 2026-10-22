@@ -17,6 +17,10 @@
     {
       "source": "/health",
       "destination": "/api/index"
+    },
+    {
+      "source": "/mcp",
+      "destination": "/api/index"
     }
   ],
   "cleanUrls": true,

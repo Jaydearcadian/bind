@@ -3,6 +3,7 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { log } from "../observability/logger.js";
 import { rateLimited } from "../observability/metrics.js";
 import type { RateLimitScope, RateLimitScopes } from "./rate-limit.js";
+import { isLoopbackRequest } from "../server/loopback.js";
 
 /**
  * The HTTP side of the rate limits (docs/decisions/0033). `rateLimitGate` runs early in createApp, before body parsing.
@@ -52,6 +53,12 @@ function refuse(req: Request, res: Response, scope: RateLimitScope, retryAfterSe
 export function rateLimitGate(scopes: RateLimitScopes): RequestHandler {
   return (req, res, next) => {
     if ((req.method === "GET" || req.method === "HEAD") && MONITORING_PATH.test(req.path)) {
+      next();
+      return;
+    }
+    // A loopback call of the hosted MCP endpoint (docs/decisions/0075) passed the outer request's gate already. It is not counted
+    // against the loopback address, so no tenant's failures block another's. Its per-token limit still applies in the route.
+    if (isLoopbackRequest(req)) {
       next();
       return;
     }

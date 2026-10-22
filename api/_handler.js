@@ -32,7 +32,9 @@ export default async function handler(req, res) {
   } catch (err) {
     // The error is logged through the redacting logger: a driver message can carry a connection string (docs/decisions/0032).
     log.error("startup.initialization_failed", { error: err });
-    if (String(req.url || "").startsWith("/api/")) {
+    // /mcp gets the same clear 503 as /api/ when initialisation fails (docs/decisions/0075, point 1), never a request served
+    // against an unmigrated database.
+    if (/^\/(api\/|mcp(\?|$))/.test(String(req.url || ""))) {
       res.statusCode = 503;
       res.setHeader("Content-Type", "application/json");
       res.end(
