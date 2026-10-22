@@ -544,6 +544,32 @@ describe("per-workspace limits on codes (ADR 0074)", () => {
     expect(fake.received).toHaveLength(10);
   });
 
+  it("twenty parallel requests for distinct addresses: exactly five are sent, the rest are refused, with Retry-After", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => call("POST", requestPath(wsA), { token: ownerA.token, body: { email: freshAddress() } }))
+    );
+    expect(results.filter((r) => r.status === 201)).toHaveLength(5);
+    const refused = results.filter((r) => r.status === 429);
+    expect(refused).toHaveLength(15);
+    for (const r of refused) {
+      expect(r.body.code).toBe("EMAIL_SEND_LIMITED");
+      const seconds = Number(r.headers.get("retry-after"));
+      expect(seconds).toBeGreaterThan(0);
+      expect(seconds).toBeLessThanOrEqual(86_400);
+    }
+    expect(fake.received).toHaveLength(5);
+  });
+
+  it("thirty parallel requests over five addresses send exactly the daily total of ten", async () => {
+    const addresses = Array.from({ length: 5 }, () => freshAddress());
+    const results = await Promise.all(
+      Array.from({ length: 30 }, (_, i) => call("POST", requestPath(wsA), { token: ownerA.token, body: { email: addresses[i % 5] } }))
+    );
+    expect(results.filter((r) => r.status === 201)).toHaveLength(10);
+    expect(results.filter((r) => r.status === 429)).toHaveLength(20);
+    expect(fake.received).toHaveLength(10);
+  });
+
   it("concurrent requests for one new address send no more than the hourly limit", async () => {
     const address = freshAddress();
     const results = await Promise.all(
@@ -576,6 +602,7 @@ describe("wrong guesses per address survive re-sends (ADR 0074)", () => {
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("EMAIL_ATTEMPTS_EXCEEDED");
     expect(refused.body.error).toMatch(/Try again in a day/);
+    expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
     expect(fake.received.length).toBe(sentBefore);
 
     const right = await call("POST", verifyPath(wsA), { token: ownerA.token, body: { id: second.out.body.id, code: second.code } });

@@ -71,8 +71,10 @@ export async function resolveOwnerRecipients(workspaceId: string): Promise<Owner
  */
 export async function isVerifiedOwnerAddress(workspaceId: string, address: string): Promise<boolean> {
   const res = await query(
-    `SELECT 1 FROM owner_emails
-      WHERE workspace_id = $1 AND email = $2 AND verified_at IS NOT NULL AND removed_at IS NULL
+    `SELECT 1 FROM owner_emails oe
+       JOIN workspaces w ON w.id = oe.workspace_id
+      WHERE oe.workspace_id = $1 AND oe.email = $2 AND oe.verified_at IS NOT NULL AND oe.removed_at IS NULL
+        AND NOT w.is_demo
       LIMIT 1;`,
     [workspaceId, address]
   );
