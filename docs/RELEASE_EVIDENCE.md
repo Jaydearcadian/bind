@@ -559,3 +559,10 @@ Change: `scripts/verify-live-arc.ts` now gives the two revert gates a funded sen
 The earlier run (L14 above) stays as recorded: with no sender, its two revert gates did not pass. L12 and L13 were the same checks done by hand with a funded sender.
 
 Correction to row L2: the command was `cast wallet address --private-key "$ARC_SIGNER_PRIVATE_KEY"`, which expanded the key into that `cast` process's arguments for a moment inside the session container. Nothing was printed or stored, but the owner's rule was that the key not be a command-line argument. The fixed script derives the address in-process and never puts the key in any argument or child environment.
+
+## 0d. Production deploy of hosted MCP, Connect an agent and owner email UI (2026-10-22)
+
+- Deployed commit `ef620ab` to the `bind` Vercel project, target production (`dpl_2vyHPmvGXwXvGxxSPVBj6k88nMhS`, READY), aliased to bind-gilt.vercel.app.
+- Full local gate on a private database, run on the code before the last fix: 17 of 19 passed; the two failures (hosted MCP Origin and endpoint address, and the Connect an agent browser test) were one real bug (a loopback `APP_BASE_URL` from `.env.local` pinned the MCP origin). Fixed in `ef620ab` with a unit test; the affected unit, integration (35 tests) and browser (8 tests) suites pass after the fix. A complete gate rerun on `ef620ab` itself was NOT_RUN. Status: LOCAL_PASS for the affected suites, NOT_RUN for the full gate on the final commit.
+- Live, unauthenticated: `/health` 200, `/api/public-config` 200, `/app/connect-agent` 200, `POST /mcp` and `GET /mcp` answer 401 `UNAUTHENTICATED` (the Vercel rewrite reaches the endpoint) — LIVE_READ_PASS. CSP header allows only `https://auth.privy.io` beyond self.
+- NOT_RUN: `/mcp` with a real staff key and a real MCP client (Claude, Cursor); live email sending (email is off in production: no `BIND_EMAIL_*` variables set).
