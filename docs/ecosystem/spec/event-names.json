@@ -476,6 +476,13 @@
       "object": "workspace",
       "visibility": "member",
       "renamed": false
+    },
+    {
+      "type": "agent.tool_called",
+      "name": "agent.tool_called",
+      "object": "token",
+      "visibility": "member",
+      "renamed": false
     }
   ]
 }
