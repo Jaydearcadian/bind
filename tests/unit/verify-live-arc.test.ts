@@ -9,6 +9,7 @@ import {
   revertSelectorOf,
   runLiveArcVerification,
   RpcTransportError,
+  buildCastEnv,
   SELECTOR_DAILY_LIMIT_EXCEEDED,
   SELECTOR_VENDOR_NOT_WHITELISTED,
   type CastExec,
@@ -33,17 +34,26 @@ const TX = `0x${"ab".repeat(32)}`;
 
 const GOOD_CODE = `0x${"60".repeat(40)}`;
 const CHAIN_HEX = "0x4cef52"; // 5042002
+/** Test values only. SENDER is a well-formed address; KEY is a made-up 32-byte key, used to prove it never leaks. */
+const SENDER = "0x1A2b3C4d5E6f708192a3B4c5D6e7F8091a2B3c4D";
+const OTHER_SENDER = "0x9999999999999999999999999999999999999999";
+const KEY = `0x${"c0ffee".repeat(10)}beef`;
 
 function revertStderr(selector: string): string {
   return `Error: server returned an error response: error code 3: execution reverted, data: "${selector}${"0".repeat(64)}"`;
 }
 
-/** A cast runner that answers the three kinds of call the script makes. */
-function castWith(overrides: Partial<Record<"allowlist" | "vendorRevert" | "limitRevert", CastOutcome>> = {}): CastExec & { calls: CastRequest[] } {
+type CastOverrides = Partial<Record<"allowlist" | "vendorRevert" | "limitRevert" | "derive", CastOutcome>>;
+
+/** A cast runner that answers the kinds of call the script makes: the allowlist read, the two reverts and the derivation. */
+function castWith(overrides: CastOverrides = {}): CastExec & { calls: CastRequest[] } {
   const calls: CastRequest[] = [];
   const exec = (async (request: CastRequest) => {
     calls.push(request);
     const args = request.args.join(" ");
+    if (request.args[0] === "wallet") {
+      return overrides.derive ?? { kind: "completed", exitCode: 0, stdout: `${SENDER}\n`, stderr: "" };
+    }
     if (args.includes("whitelistedVendors")) {
       return overrides.allowlist ?? { kind: "completed", exitCode: 0, stdout: "true\n", stderr: "" };
     }
@@ -76,7 +86,7 @@ function deps(over: { exec?: CastExec; rpc?: RpcCall; env?: Record<string, strin
   return {
     exec: over.exec ?? castWith(),
     rpc: over.rpc ?? rpcWith(),
-    env: over.env ?? { ARC_RPC_URL: CONFIGURED_URL, LAST_LIVE_SETTLEMENT_TX: TX },
+    env: over.env ?? { ARC_RPC_URL: CONFIGURED_URL, LAST_LIVE_SETTLEMENT_TX: TX, ARC_SIGNER_ADDRESS: SENDER },
     now: () => new Date("2026-10-20T12:00:00.000Z"),
   };
 }
@@ -268,5 +278,159 @@ describe("live Arc check (scripts/verify-live-arc.ts), with injected cast and RP
     // A transaction hash (64 hex digits) and an address (40 hex digits) are not selectors.
     expect(revertSelectorOf(`tx ${TX} failed`)).toBeUndefined();
     expect(revertSelectorOf(`to 0xa8358AED200D6CB6C856F972D853C1be833006ea`)).toBeUndefined();
+  });
+
+  it("both revert calls carry --from the configured sender", async () => {
+    const exec = castWith();
+    await runLiveArcVerification(deps({ exec }));
+    const settle = exec.calls.filter((c) => c.args.includes("settleOrder(bytes32,address,bytes32)"));
+    expect(settle).toHaveLength(2);
+    for (const call of settle) {
+      const i = call.args.indexOf("--from");
+      expect(i, call.args.join(" ")).toBeGreaterThanOrEqual(0);
+      expect(call.args[i + 1]).toBe(SENDER);
+      expect(call.env, "no key is passed to a revert call").toBeUndefined();
+    }
+    // The allowlist read is not a revert call and keeps its arguments.
+    expect(exec.calls.find((c) => c.args.includes("whitelistedVendors(address)(bool)"))?.args).not.toContain("--from");
+  });
+
+  it("with no sender configured, both revert gates are BLOCKED and cast is not run for them", async () => {
+    const exec = castWith();
+    const env = { ARC_RPC_URL: CONFIGURED_URL, LAST_LIVE_SETTLEMENT_TX: TX };
+    const report = await runLiveArcVerification(deps({ exec, env }));
+    for (const fragment of ["VendorNotWhitelisted", "DailyLimitExceeded"]) {
+      const g = gateNamed(report, fragment);
+      expect(g.status, g.gate).toBe("BLOCKED");
+      expect(g.detail).toContain("no sender configured");
+    }
+    expect(exec.calls.filter((c) => c.args.includes("settleOrder(bytes32,address,bytes32)"))).toHaveLength(0);
+    expect(exec.calls.filter((c) => c.args[0] === "wallet"), "no key, so no derivation").toHaveLength(0);
+    // The allowlist read does not need a sender and still runs.
+    expect(gateNamed(report, "whitelistedVendors").status).toBe("LIVE_READ_PASS");
+    expect(report.exitCode).toBe(1);
+  });
+
+  it("an invalid ARC_SIGNER_ADDRESS blocks both revert gates, runs no revert call, and never echoes the value", async () => {
+    // A value that looks like a private key pasted into the address variable must not be printed.
+    for (const bad of ["0xnotanaddress", "0x1234", KEY, `${SENDER}00`]) {
+      const exec = castWith();
+      const report = await runLiveArcVerification(deps({ exec, env: { ARC_RPC_URL: CONFIGURED_URL, LAST_LIVE_SETTLEMENT_TX: TX, ARC_SIGNER_ADDRESS: bad } }));
+      for (const fragment of ["VendorNotWhitelisted", "DailyLimitExceeded"]) {
+        const g = gateNamed(report, fragment);
+        expect(g.status, g.gate).toBe("BLOCKED");
+        expect(g.detail).toContain("not a 0x-prefixed 40-hex address");
+      }
+      expect(exec.calls.filter((c) => c.args.includes("settleOrder(bytes32,address,bytes32)"))).toHaveLength(0);
+      // A key pasted into the address variable is not printed back.
+      expect([...report.lines, report.markdown].join("\n")).not.toContain(bad);
+    }
+
+    // An invalid address is never replaced by the key: no fallback, and no derivation.
+    const exec = castWith();
+    const withKey = await runLiveArcVerification(
+      deps({ exec, env: { ARC_RPC_URL: CONFIGURED_URL, LAST_LIVE_SETTLEMENT_TX: TX, ARC_SIGNER_ADDRESS: "0xbad", ARC_SIGNER_PRIVATE_KEY: KEY } })
+    );
+    expect(gateNamed(withKey, "VendorNotWhitelisted").status).toBe("BLOCKED");
+    expect(exec.calls.filter((c) => c.args[0] === "wallet")).toHaveLength(0);
+  });
+
+  it("a key that derives a different address than ARC_SIGNER_ADDRESS blocks both revert gates", async () => {
+    const exec = castWith({ derive: { kind: "completed", exitCode: 0, stdout: `${OTHER_SENDER}\n`, stderr: "" } });
+    const report = await runLiveArcVerification(deps({ exec, env: { ARC_RPC_URL: CONFIGURED_URL, LAST_LIVE_SETTLEMENT_TX: TX, ARC_SIGNER_ADDRESS: SENDER, ARC_SIGNER_PRIVATE_KEY: KEY } }));
+    for (const fragment of ["VendorNotWhitelisted", "DailyLimitExceeded"]) {
+      const g = gateNamed(report, fragment);
+      expect(g.status, g.gate).toBe("BLOCKED");
+      expect(g.detail).toContain("sender does not match key");
+    }
+    expect(exec.calls.filter((c) => c.args.includes("settleOrder(bytes32,address,bytes32)"))).toHaveLength(0);
+    expect(report.exitCode).toBe(1);
+  });
+
+  it("a matching key and address pass, and the key reaches only the derivation child environment", async () => {
+    // Address comparison ignores case: the derived checksum form matches the configured lower-case form.
+    const exec = castWith({ derive: { kind: "completed", exitCode: 0, stdout: `${SENDER.toLowerCase()}\n`, stderr: "" } });
+    const report = await runLiveArcVerification(deps({ exec, env: { ARC_RPC_URL: CONFIGURED_URL, LAST_LIVE_SETTLEMENT_TX: TX, ARC_SIGNER_ADDRESS: SENDER, ARC_SIGNER_PRIVATE_KEY: KEY } }));
+    expect(gateNamed(report, "VendorNotWhitelisted").status).toBe("LIVE_READ_PASS");
+    expect(gateNamed(report, "DailyLimitExceeded").status).toBe("LIVE_READ_PASS");
+
+    const derivation = exec.calls.filter((c) => c.args[0] === "wallet");
+    expect(derivation).toHaveLength(1);
+    expect(derivation[0].args).toEqual(["wallet", "address"]);
+    expect(derivation[0].env).toEqual({ ETH_PRIVATE_KEY: KEY });
+    for (const call of exec.calls) {
+      expect(call.args.join(" "), "key is never in argv").not.toContain(KEY.slice(2));
+      expect(call.args.join(" ")).not.toContain(KEY);
+    }
+    expect([...report.lines, report.markdown, ...report.gates.map((g) => g.detail)].join("\n")).not.toContain(KEY);
+  });
+
+  it("with only the key set, the sender is derived and the revert calls use it", async () => {
+    const exec = castWith();
+    const report = await runLiveArcVerification(deps({ exec, env: { ARC_RPC_URL: CONFIGURED_URL, LAST_LIVE_SETTLEMENT_TX: TX, ARC_SIGNER_PRIVATE_KEY: KEY } }));
+    expect(gateNamed(report, "VendorNotWhitelisted").status).toBe("LIVE_READ_PASS");
+    expect(gateNamed(report, "DailyLimitExceeded").status).toBe("LIVE_READ_PASS");
+    const settle = exec.calls.filter((c) => c.args.includes("settleOrder(bytes32,address,bytes32)"));
+    for (const call of settle) expect(call.args[call.args.indexOf("--from") + 1]).toBe(SENDER);
+  });
+
+  it("a failed or garbled derivation blocks both gates and leaks nothing, even when cast echoes the key", async () => {
+    const env = { ARC_RPC_URL: CONFIGURED_URL, LAST_LIVE_SETTLEMENT_TX: TX, ARC_SIGNER_PRIVATE_KEY: KEY };
+    const cases: CastOutcome[] = [
+      // cast fails and echoes the key on stderr and stdout
+      { kind: "completed", exitCode: 1, stdout: KEY, stderr: `Error: invalid private key ${KEY}` },
+      // cast succeeds but prints something that is not one address
+      { kind: "completed", exitCode: 0, stdout: `${KEY}\n`, stderr: "" },
+      // cast returns two lines, one of them an address: fail closed
+      { kind: "completed", exitCode: 0, stdout: `${SENDER}\n${KEY}\n`, stderr: "" },
+      { kind: "missing_binary" },
+      { kind: "timeout" },
+      { kind: "spawn_error", message: `spawn failed for ${KEY}` },
+    ];
+    for (const derive of cases) {
+      const exec = castWith({ derive });
+      const report = await runLiveArcVerification(deps({ exec, env }));
+      for (const fragment of ["VendorNotWhitelisted", "DailyLimitExceeded"]) {
+        const g = gateNamed(report, fragment);
+        expect(g.status, `${g.gate} for ${derive.kind}`).toBe("BLOCKED");
+        expect(g.detail).toContain("cannot derive the sender");
+      }
+      expect(exec.calls.filter((c) => c.args.includes("settleOrder(bytes32,address,bytes32)"))).toHaveLength(0);
+      const everything = [...report.lines, report.markdown, ...report.gates.map((g) => `${g.gate} ${g.detail}`)].join("\n");
+      expect(everything).not.toContain(KEY);
+      expect(everything).not.toContain(KEY.slice(2));
+      for (const call of exec.calls) expect(call.args.join(" ")).not.toContain(KEY.slice(2));
+    }
+  });
+
+  it("the key is removed from the inherited environment of every other cast run", () => {
+    const base = { PATH: "/usr/bin", ARC_SIGNER_PRIVATE_KEY: KEY, ETH_PRIVATE_KEY: KEY };
+    const ordinary = buildCastEnv(base, { rpcUrl: CONFIGURED_URL });
+    expect(ordinary.ETH_PRIVATE_KEY).toBeUndefined();
+    expect(ordinary.ARC_SIGNER_PRIVATE_KEY).toBeUndefined();
+    expect(ordinary.ETH_RPC_URL).toBe(CONFIGURED_URL);
+    const derive = buildCastEnv(base, { rpcUrl: CONFIGURED_URL, env: { ETH_PRIVATE_KEY: KEY } });
+    expect(derive.ETH_PRIVATE_KEY).toBe(KEY);
+    expect(derive.ARC_SIGNER_PRIVATE_KEY).toBeUndefined();
+  });
+
+  it("a generic Error(string) revert (0x08c379a0) is never a pass for a revert gate", async () => {
+    const generic = `Error: execution reverted, data: "0x08c379a0${"0".repeat(64)}"`;
+    const exec = castWith({
+      vendorRevert: { kind: "completed", exitCode: 1, stdout: "", stderr: generic },
+      limitRevert: { kind: "completed", exitCode: 1, stdout: "", stderr: generic },
+    });
+    const report = await runLiveArcVerification(deps({ exec }));
+    for (const fragment of ["VendorNotWhitelisted", "DailyLimitExceeded"]) {
+      const g = gateNamed(report, fragment);
+      expect(g.status, g.gate).toBe("FAILED");
+      expect(g.detail).toContain("0x08c379a0");
+    }
+    expect(report.exitCode).toBe(1);
+
+    // A revert with no selector at all is blocked, not passed.
+    const bare = castWith({ vendorRevert: { kind: "completed", exitCode: 1, stdout: "", stderr: "execution reverted" } });
+    const second = await runLiveArcVerification(deps({ exec: bare }));
+    expect(gateNamed(second, "VendorNotWhitelisted").status).toBe("BLOCKED");
   });
 });

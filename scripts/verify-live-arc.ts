@@ -9,6 +9,14 @@
  * - A missing `cast` binary, a spawn error, a timeout, an RPC HTTP error, a network error, an unconfigured RPC URL or a
  *   failure that does not match a revert is BLOCKED, with the reason. Those are never passes.
  * - A successful call whose output does not match is FAILED.
+ * - The two revert gates (4 and 5) call `cast call --from <sender>`. Without a funded sender the node reverts with a generic
+ *   Error(string) before the contract's own checks, so a sender is required. The sender rule:
+ *   - ARC_SIGNER_ADDRESS, when set, must match ^0x[0-9a-fA-F]{40}$. An invalid value blocks both gates (it is never echoed).
+ *   - Otherwise ARC_SIGNER_PRIVATE_KEY, when set, is used only to derive the address: `cast wallet address` runs with the key
+ *     in the child environment as ETH_PRIVATE_KEY. The key is never in argv, output or an error message. A derivation that
+ *     fails, or returns anything other than a valid address, blocks both gates.
+ *   - When both are set and the derived address differs from ARC_SIGNER_ADDRESS, both gates are BLOCKED ("sender does not match key").
+ *   - With neither set, both gates are BLOCKED ("no sender configured") and cast is not run for them.
  * - Every call here is a read or an eth_call. Nothing is signed or sent, so no gate can produce VERIFIED_REMOTE.
  * - The script writes nothing unless `--write-evidence <path>` is given, and then only to a NEW file at that path. It
  *   never appends to docs/RELEASE_EVIDENCE.md.
@@ -63,6 +71,8 @@ export interface CastRequest {
   args: string[];
   rpcUrl: string;
   timeoutMs: number;
+  /** Extra environment for this child only. Used to hand the signer key to `cast wallet address`, never to argv. */
+  env?: Record<string, string>;
 }
 
 export type CastExec = (request: CastRequest) => Promise<CastOutcome>;
@@ -153,6 +163,42 @@ function isHex(value: unknown): value is string {
 
 function gate(name: string, status: LiveGateStatus, detail: string): GateResult {
   return { gate: name, status, detail };
+}
+
+const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+
+/** The sender for the revert calls, or the reason there is none. The reason never contains the key or any cast output. */
+export type SenderResolution = { ok: true; address: string } | { ok: false; reason: string };
+
+/**
+ * Resolves the sender by the rule in the header. ARC_SIGNER_ADDRESS wins when it is valid and matches a key if one is set.
+ * With no address, the key is used only to derive one, in the child environment. Any failure is a reason, never a fallback.
+ */
+export async function resolveSender(input: { env: LiveArcDeps["env"]; exec: CastExec; rpcUrl: string }): Promise<SenderResolution> {
+  const configured = (input.env.ARC_SIGNER_ADDRESS ?? "").trim();
+  const key = (input.env.ARC_SIGNER_PRIVATE_KEY ?? "").trim();
+  if (configured.length > 0 && !ADDRESS_PATTERN.test(configured)) {
+    return { ok: false, reason: "ARC_SIGNER_ADDRESS is not a 0x-prefixed 40-hex address (value not shown)" };
+  }
+  if (configured.length === 0 && key.length === 0) {
+    return { ok: false, reason: "no sender configured (set ARC_SIGNER_ADDRESS or ARC_SIGNER_PRIVATE_KEY)" };
+  }
+  if (key.length === 0) return { ok: true, address: configured };
+
+  const outcome = await input
+    .exec({ args: ["wallet", "address"], rpcUrl: input.rpcUrl, timeoutMs: CAST_TIMEOUT_MS, env: { ETH_PRIVATE_KEY: key } })
+    .catch((): CastOutcome => ({ kind: "spawn_error", message: "exec failed" }));
+  const cannotDerive = "cannot derive the sender from ARC_SIGNER_PRIVATE_KEY";
+  if (outcome.kind === "missing_binary") return { ok: false, reason: `${cannotDerive} (cast binary not found on PATH)` };
+  if (outcome.kind === "spawn_error") return { ok: false, reason: `${cannotDerive} (cannot start cast)` };
+  if (outcome.kind === "timeout") return { ok: false, reason: `${cannotDerive} (cast timed out)` };
+  if (outcome.exitCode !== 0) return { ok: false, reason: `${cannotDerive} (cast exited ${outcome.exitCode}; output not shown)` };
+  const derived = outcome.stdout.trim();
+  if (!ADDRESS_PATTERN.test(derived)) return { ok: false, reason: `${cannotDerive} (cast did not return one address; output not shown)` };
+  if (configured.length > 0 && configured.toLowerCase() !== derived.toLowerCase()) {
+    return { ok: false, reason: "sender does not match key (ARC_SIGNER_ADDRESS differs from the address of ARC_SIGNER_PRIVATE_KEY)" };
+  }
+  return { ok: true, address: configured.length > 0 ? configured : derived };
 }
 
 const GATE_NAMES = {
@@ -278,6 +324,7 @@ async function evaluateGates(input: { deps: LiveArcDeps; rpcUrl: string; scrub: 
     }
   };
   const cast = (args: string[]) => deps.exec({ args, rpcUrl, timeoutMs: CAST_TIMEOUT_MS }).catch((): CastOutcome => ({ kind: "spawn_error", message: "exec failed" }));
+  const senderBlock = (name: string, reason: string) => gate(name, "BLOCKED", `${reason}; the revert was not checked and cast was not run for it`);
 
   const results: GateResult[] = [];
 
@@ -315,8 +362,13 @@ async function evaluateGates(input: { deps: LiveArcDeps; rpcUrl: string; scrub: 
     else results.push(gate(GATE_NAMES.allowlist, "FAILED", `whitelistedVendors(${WHITELISTED_SUPPLIER}) = ${scrub(read.stdout)}, expected true`));
   }
 
+  // The revert calls need a funded sender (see the header). Resolved once; cast is not run for gates 4 and 5 without one.
+  const sender = await resolveSender({ env: deps.env, exec: deps.exec, rpcUrl });
+
   // 4. Unapproved supplier must revert with VendorNotWhitelisted.
-  {
+  if (!sender.ok) {
+    results.push(senderBlock(GATE_NAMES.vendorRevert, sender.reason));
+  } else {
     const out = await cast([
       "call",
       BIND_SETTLEMENT_CONTRACT,
@@ -326,12 +378,16 @@ async function evaluateGates(input: { deps: LiveArcDeps; rpcUrl: string; scrub: 
       "0x2222222222222222222222222222222222222222222222222222222222222222",
       "--value",
       "1000000000000000",
+      "--from",
+      sender.address,
     ]);
     results.push(castRevertGate(GATE_NAMES.vendorRevert, SELECTOR_VENDOR_NOT_WHITELISTED, out, scrub, "0.001 USDC to an unapproved supplier"));
   }
 
   // 5. A 2.0 USDC settlement must revert with DailyLimitExceeded.
-  {
+  if (!sender.ok) {
+    results.push(senderBlock(GATE_NAMES.limitRevert, sender.reason));
+  } else {
     const out = await cast([
       "call",
       BIND_SETTLEMENT_CONTRACT,
@@ -341,6 +397,8 @@ async function evaluateGates(input: { deps: LiveArcDeps; rpcUrl: string; scrub: 
       "0x4444444444444444444444444444444444444444444444444444444444444444",
       "--value",
       "2000000000000000000",
+      "--from",
+      sender.address,
     ]);
     results.push(castRevertGate(GATE_NAMES.limitRevert, SELECTOR_DAILY_LIMIT_EXCEEDED, out, scrub, "2.0 USDC against the daily limit"));
   }
@@ -367,13 +425,24 @@ async function evaluateGates(input: { deps: LiveArcDeps; rpcUrl: string; scrub: 
   return results;
 }
 
+/**
+ * The child environment for one cast run. The RPC URL goes in as ETH_RPC_URL. The signer key is removed from the inherited
+ * environment, so it reaches only a call that asked for it (`request.env`, used by the address derivation).
+ */
+export function buildCastEnv(base: NodeJS.ProcessEnv, request: Pick<CastRequest, "rpcUrl" | "env">): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, ETH_RPC_URL: request.rpcUrl };
+  delete env.ARC_SIGNER_PRIVATE_KEY;
+  delete env.ETH_PRIVATE_KEY;
+  return { ...env, ...request.env };
+}
+
 /** The real cast runner. Passes the RPC URL to cast in the environment, not on the command line. */
 export const execCast: CastExec = (request) =>
   new Promise<CastOutcome>((resolve) => {
     execFile(
       "cast",
       request.args,
-      { timeout: request.timeoutMs, env: { ...process.env, ETH_RPC_URL: request.rpcUrl }, maxBuffer: 4 * 1024 * 1024 },
+      { timeout: request.timeoutMs, env: buildCastEnv(process.env, request), maxBuffer: 4 * 1024 * 1024 },
       (error, stdout, stderr) => {
         if (!error) {
           resolve({ kind: "completed", exitCode: 0, stdout: String(stdout), stderr: String(stderr) });
