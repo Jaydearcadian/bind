@@ -56,6 +56,14 @@ Local check of the committed artifact: `LOCAL_PASS (npx vitest run tests/unit/co
    - Reference contract on Arc Testnet: `0x0747EEf0706327138c69792bF28Cd525089e4583`. `LIVE_READ_PASS` (reproduced 2026-10-22: address has code; behaviour not checked; see docs/RELEASE_EVIDENCE.md, live run).
    - The adapter declares an `ERC8183_ABI`, but `depositEscrow` and `releaseEscrow` throw `SettlementNotSupportedError` (`docs/decisions/0013-arc-settlement-truthful-states.md`). No code calls that reference contract.
 
+### Amount units: whole cents only
+
+- Bind settles whole USDC cents only. `TransferRequest.amountCents` is a bigint count of cents, and the minimum payable amount is 1 cent (0.01 USDC). Nothing is paid below 0.01 USDC (owner decision).
+- A zero, negative, fractional or otherwise non-bigint amount is refused with `SettlementRejectedError` code `SUB_CENT_AMOUNT_NOT_SUPPORTED`. The message reads: "amounts below one cent (0.01 USDC) are not supported yet, only whole cents are paid". The Arc adapter checks this first in `transferUSDC`, before any settings check, chain read or RPC call, so nothing is sent. The local simulator applies the same check in `transferUSDC` and `depositEscrow`.
+- The order is held in `payment_hold` with `SETTLEMENT_REJECTED`, and the code is written to the audit evidence.
+- Sub-cent payments (for example agent-to-agent payments below 0.01 USDC) need an owner decision before they are supported. Until then this refusal stands.
+- Unit coverage: `tests/unit/sub-cent-amount.test.ts`. This is `LOCAL_PASS` for the guard and the wei conversion (1 cent = 1e16 wei). It does not exercise the workflow's database path.
+
 ## 4. Foundry Verification Gates
 
 **Update 2026-10-20 (`f776d34`):** Foundry 1.5.1, Anvil 1.5.1 and Slither 0.11.6 were installed in this container and the gates were run. Results are in `docs/RELEASE_EVIDENCE.md` section 3: Forge format and build exit 0; 24 of 24 Forge tests passed (10 unit or fuzz, 8 reentrancy, 6 invariants at 256 runs, depth 15); contract coverage is lines 100% (68/68), statements 93.02%, branches 72.73%, functions 100%; Anvil suite 10 of 10; Slither found nothing medium or high. The lines below are the earlier session's claims, kept for history. The 10-test count and the 100% line and function figures are now reproduced. "No invariant tests" and "No reentrancy test exists" are superseded (Task 13b added them). Everything remains local: nothing ran in CI or against Arc.

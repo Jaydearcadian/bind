@@ -42,11 +42,41 @@ export class SettlementRejectedError extends Error {
   readonly code: string;
   readonly args?: unknown[];
 
-  constructor(code: string, args?: unknown[]) {
-    super(`Settlement rejected: ${code}`);
+  constructor(code: string, args?: unknown[], detail?: string) {
+    super(
+      detail
+        ? `Settlement rejected: ${code}: ${detail}`
+        : `Settlement rejected: ${code}`,
+    );
     this.name = "SettlementRejectedError";
     this.code = code;
     this.args = args;
+  }
+}
+
+/**
+ * Request code for an amount that is zero, negative, a JS number, or any other non-bigint value. Bind settles whole
+ * cents only (owner decision): nothing is paid below 0.01 USDC. Sub-cent payments need an owner decision first.
+ * See docs/CONTRACT_SCOPE.md, "Amount units".
+ */
+export const SUB_CENT_AMOUNT_NOT_SUPPORTED = "SUB_CENT_AMOUNT_NOT_SUPPORTED";
+
+const SUB_CENT_DETAIL =
+  "amounts below one cent (0.01 USDC) are not supported yet, only whole cents are paid";
+
+/**
+ * Refuses an amount that is not a positive whole number of cents. It is synchronous and makes no network call, so an
+ * adapter runs it before any RPC or chain read. The message never includes the amount.
+ */
+export function assertPayableCentAmount(
+  amountCents: unknown,
+): asserts amountCents is bigint {
+  if (typeof amountCents !== "bigint" || amountCents <= 0n) {
+    throw new SettlementRejectedError(
+      SUB_CENT_AMOUNT_NOT_SUPPORTED,
+      undefined,
+      SUB_CENT_DETAIL,
+    );
   }
 }
 
