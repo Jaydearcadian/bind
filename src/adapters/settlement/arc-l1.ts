@@ -34,6 +34,7 @@ import {
 } from "./errors.js";
 import { BIND_SETTLEMENT_ABI } from "./bind-settlement.abi.js";
 import { config } from "../../config/env.js";
+import { ARC_LOG_CHUNK_BLOCKS, findNewestLog, rangeLimitOfError } from "./log-scan.js";
 
 // Native USDC Precompile / ERC-20 ABI on Arc L1
 export const USDC_ABI = [
@@ -130,6 +131,8 @@ export interface ArcL1SettlementOptions {
   confirmWaitMs?: number;
   /** First block to scan for an earlier settlement of the same order id. Defaults to config, else 0. */
   deployBlock?: bigint;
+  /** Window size of the log scan (tests only). Defaults to ARC_LOG_CHUNK_BLOCKS, below the RPC's 100000-block limit. */
+  logChunkBlocks?: number;
 }
 
 /** Revert data is the hex string an RPC error carries for a custom error. Walks the cause chain for it. */
@@ -173,6 +176,7 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
   #keySetting: string | undefined;
   readonly #confirmWaitMs: number;
   readonly #deployBlock: bigint;
+  readonly #logChunkBlocks: number;
   readonly #publicClient: PublicClient;
   #signer: PrivateKeyAccount | undefined;
   #walletClient: WalletClient<Transport, Chain, PrivateKeyAccount> | undefined;
@@ -185,6 +189,7 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
     this.#keySetting = "signerPrivateKey" in opts ? opts.signerPrivateKey : config.ARC_SIGNER_PRIVATE_KEY;
     this.#deployBlock = "deployBlock" in opts ? (opts.deployBlock ?? 0n) : deployBlockFromConfig();
     this.#confirmWaitMs = opts.confirmWaitMs ?? DEFAULT_CONFIRM_WAIT_MS;
+    this.#logChunkBlocks = opts.logChunkBlocks ?? ARC_LOG_CHUNK_BLOCKS;
     this.#rpcUrl = opts.rpcUrl ?? config.ARC_RPC_URL ?? config.RPC_URL;
     this.#chain = defineChain({
       id: this.#chainId,
@@ -411,25 +416,36 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
   }
 
   /**
-   * The SettlementExecuted log of the settlement that paid this order id, scanned from the deploy block to the
-   * latest block. Undefined when there is none. An RPC failure throws, so it is never read as "no settlement".
+   * The SettlementExecuted log of the settlement that paid this order id. The span from the deploy block to the head is
+   * scanned in windows of at most ARC_LOG_CHUNK_BLOCKS, newest first, and the scan stops at the first window with a log.
+   * Undefined when no window has one. Any failure throws: the head read, a window, or a head behind the deploy block.
+   * None of them is ever read as "no settlement" (see log-scan.ts).
    */
   async #findSettlement(
     contractAddress: Address,
     orderId32: Hex
   ): Promise<{ transactionHash: Hex | null; blockNumber: bigint | null } | undefined> {
-    let logs: Awaited<ReturnType<PublicClient["getLogs"]>>;
+    const event = this.#settlementEvent();
+    let log: Awaited<ReturnType<PublicClient["getLogs"]>>[number] | undefined;
     try {
-      logs = await this.#publicClient.getLogs({
-        address: contractAddress,
-        event: this.#settlementEvent(),
-        args: { orderId: orderId32 },
-        fromBlock: this.#deployBlock,
+      const latest = await this.#publicClient.getBlockNumber();
+      log = await findNewestLog({
+        latest,
+        deployBlock: this.#deployBlock,
+        chunkBlocks: this.#logChunkBlocks,
+        rangeLimitOf: rangeLimitOfError,
+        fetchRange: (from, to) =>
+          this.#publicClient.getLogs({
+            address: contractAddress,
+            event,
+            args: { orderId: orderId32 },
+            fromBlock: from,
+            toBlock: to,
+          }),
       });
     } catch (error) {
       throw transportErrorFrom("settlement lookup", error, this.#secrets());
     }
-    const log = logs[0];
     if (!log) return undefined;
     return { transactionHash: log.transactionHash, blockNumber: log.blockNumber };
   }
