@@ -1,10 +1,12 @@
 # ADR 0076: One BindSettlement contract per business, or a redesigned shared one
 
 ## Status
-Proposed (2026-10-22). Not accepted. Nothing in this ADR has been deployed, changed or reconfigured, and no contract source was
-touched. It needs the owner's decision. Builds on ADR 0060 (Arc as the payment rail), ADR 0061 and ADR 0019 (settlement through
-the ledger). Evidence: docs/RELEASE_EVIDENCE.md, sections "Live Arc Testnet read-only run" and "Live Arc Testnet settlement"
-(2026-10-22).
+Accepted (2026-10-22), on the owner's instruction: **Option A, one contract per business, for the pilot.** A redesign (Option B) comes
+later, once a second business actually needs it. This ADR was Proposed earlier the same day; the options and reasoning below are unchanged.
+Accepting it does not authorize any deployment: deploying or configuring a contract for a business, mainnet use, or larger amounts still
+needs the owner's explicit approval of that business's payment account and of who holds its funds. No contract was deployed, changed or
+reconfigured. Builds on ADR 0060 (Arc as the payment rail), ADR 0061 and ADR 0019 (settlement through the ledger). Evidence:
+docs/RELEASE_EVIDENCE.md, sections "Live Arc Testnet read-only run" and "Live Arc Testnet settlement" (2026-10-22).
 
 ## Context
 The deployed `BindSettlement` (`0x16E1…aA29`, Arc testnet) has, by construction:
@@ -58,7 +60,7 @@ contract address (a per-workspace contract address, deploy block and signer refe
 
 Do not start either until the owner says yes. Deploying or reconfiguring a contract is a separate explicit authorization each time.
 
-## Also recorded: the adapter handles whole cents only
+## Also recorded: the adapter handles whole cents only (decided in ADR 0078)
 `ArcL1SettlementAdapter.transferUSDC` takes `amountCents` and sends `amountCents * 10^16` wei. One cent is 0.01 USDC, so the
 smallest payment the adapter can send is 0.01 USDC. The contract itself accepts any non-zero amount (the earlier 0.001 USDC
 settlement was sent outside the adapter). Ledger, order and match types are cents too.
