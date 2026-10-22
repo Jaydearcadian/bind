@@ -387,7 +387,19 @@ export class OrderSettlementService {
     }
     // A demo settles locally whatever the row says (docs/decisions/0057).
     const adapter = this.settlementFor(effectiveSettlementMode(workspace));
-    const outcome = await this.confirmOnce(adapter, order.tx_hash);
+    let outcome = await this.confirmOnce(adapter, order.tx_hash);
+    // The hash that paid the order. It is the stored one unless a duplicate was adopted below.
+    let settledHash: string = order.tx_hash;
+
+    if (outcome.kind === "failed" && outcome.failureCode === "REVERTED") {
+      // A second broadcast of the same order can revert with OrderAlreadySettled while the first transfer, which
+      // did move the money, is still in flight. See adoptConfirmedDuplicate.
+      const adopted = await this.adoptConfirmedDuplicate(order, adapter);
+      if (adopted) {
+        settledHash = adopted.txHash;
+        outcome = { kind: "confirmed", timestamp: adopted.timestamp, blockNumber: adopted.blockNumber };
+      }
+    }
 
     if (outcome.kind === "failed") {
       await this.holdClaim(order, "settlement.failed", {
@@ -415,14 +427,62 @@ export class OrderSettlementService {
       );
     }
     await this.finaliseConfirmedPayment(order, {
-      txHash: order.tx_hash,
+      txHash: settledHash,
       settledAt: outcome.timestamp,
       blockNumber: outcome.blockNumber,
       receivedQuantity: Number(receiptRes.rows[0].received_quantity),
       payableAmountCents: BigInt(order.settled_amount_cents),
       mode: adapter.mode,
     });
-    return { status: await this.matchStatusOf(order.id), reconciled: true, txHash: order.tx_hash };
+    return { status: await this.matchStatusOf(order.id), reconciled: true, txHash: settledHash };
+  }
+
+  /**
+   * A confirmation reported REVERTED for the stored hash. That can be the second of two broadcasts for one order: the
+   * first transfer paid it, and the second reverted with OrderAlreadySettled (the in-flight case of ADR 0019). The
+   * adapter's findTransfer is asked for the settlement of the order. The other hash is adopted only when findTransfer
+   * reports it CONFIRMED (from a SettlementExecuted log, so money moved once) and it differs from the stored hash.
+   * In one transaction, guarded on status = 'settling' and the stored hash, the order's tx_hash and the ledger row's
+   * external_ref move to the adopted hash, and a settlement.reverted_duplicate_adopted audit row records both hashes.
+   *
+   * Anything else returns null and the caller keeps the SETTLEMENT_FAILED hold: a failed lookup, no lookup, a null
+   * answer, an unconfirmed answer, or the same hash (a genuinely reverted payment is never adopted). This never sends.
+   */
+  private async adoptConfirmedDuplicate(order: any, adapter: SettlementAdapter): Promise<TransferResult | null> {
+    if (!adapter.findTransfer) return null;
+    let found: TransferResult | null;
+    try {
+      found = await adapter.findTransfer({ orderId: order.id });
+    } catch (err) {
+      // The lookup error can carry transport detail, so only its type is logged.
+      log.warn("settlement.duplicate_lookup_failed", { orderId: order.id, errorName: err instanceof Error ? err.name : "unknown" });
+      return null;
+    }
+    if (found === null || found.status !== "confirmed") return null;
+    const confirmed = found;
+    if (confirmed.txHash.toLowerCase() === String(order.tx_hash).toLowerCase()) return null;
+
+    const adopted = await withTransaction(async (client) => {
+      const upd = await client.query(
+        `UPDATE orders SET tx_hash = $2, updated_at = NOW() WHERE id = $1 AND status = 'settling' AND tx_hash = $3;`,
+        [order.id, confirmed.txHash, order.tx_hash]
+      );
+      if (upd.rowCount !== 1) return false;
+      await client.query(`UPDATE effects SET external_ref = $2, updated_at = NOW() WHERE idempotency_key = $1;`, [
+        `${order.workspace_id}:settle:${order.id}`,
+        confirmed.txHash,
+      ]);
+      await insertSettlementAudit(
+        client,
+        order.workspace_id,
+        "settlement.reverted_duplicate_adopted",
+        PolicyDecision.ALLOW,
+        { orderId: order.id, revertedTxHash: order.tx_hash, adoptedTxHash: confirmed.txHash },
+        confirmed.txHash
+      );
+      return true;
+    });
+    return adopted ? confirmed : null;
   }
 
   private async matchStatusOf(orderId: string): Promise<MatchStatus> {

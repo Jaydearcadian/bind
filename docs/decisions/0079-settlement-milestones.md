@@ -62,6 +62,34 @@ only the worker's stuck-claim step (ADR 0029) recovered it.
 - `settlement.submitted` is written only with the transaction that stores the hash, so a missing submitted row means
   the hash was never stored.
 
+## Duplicate reverted send: adoption rule (added 2026-10-22)
+
+A timeout after a broadcast can leave two transfers for one order. The first (tx1) moves the money. The retry, sent
+before tx1 is mined, passes the pre-flight call and is broadcast too (tx2). Once tx1 is mined, tx2 reverts with
+`OrderAlreadySettled`. Before this rule, confirm() reported tx2 as `failed` with `REVERTED`, and the order was held
+`SETTLEMENT_FAILED` although tx1 had paid it and nothing adopted tx1.
+
+- `confirmClaimedOrder` asks the adapter for the outcome of the stored hash, as before. Only a `failed` outcome with
+  `failureCode` `REVERTED` leads to the rule below.
+- `adoptConfirmedDuplicate` calls the adapter's `findTransfer({ orderId })`. The other hash is adopted only when that
+  answer is `confirmed` (for the arc adapter, that means a `SettlementExecuted` log, so the money moved once) and its hash
+  differs from the stored one. Then, in one transaction guarded on `status = 'settling'` and the stored hash, the order's
+  `tx_hash` and the ledger row's `external_ref` move to the adopted hash, and a `settlement.reverted_duplicate_adopted`
+  audit row (ALLOW) records `{ orderId, revertedTxHash, adoptedTxHash }` with the adopted hash in `tx_hash`. The order is
+  then finished from the adopted transfer: `settlement_confirmed_at` and `settlement_confirmed_block` come from it, and the
+  `settlement.confirmed` audit names it.
+- A null answer, an unconfirmed answer, the same hash as the stored one, or a lookup that throws keeps today's hold
+  (`SETTLEMENT_FAILED`). A genuinely reverted payment is never adopted. Nothing here calls `transferUSDC`.
+- The `effects.result` JSON still holds the reverted hash. Only `external_ref` moves. A later settle on the order replays
+  that result, but a reconciled order is never settled again, so the stale JSON is not read as a payment.
+
+Caveat (ADR 0019, the in-flight case). The lookup sees only mined transfers. If tx1 is still unmined when tx2's revert is
+read, the rule finds nothing and the order is held. A later reconcile call runs the same confirmation again and adopts tx1
+once it is mined. The worker does not reconcile `payment_hold` by itself, so that call has to be made.
+
+Tests: `tests/integration/settlement-duplicate-reverted.test.ts` (in-flight sequence, the three hold cases, and the
+same-hash and unconfirmed cases). The in-flight test fails without this change.
+
 ## Test changes (recorded, per AGENTS.md)
 - Added: `tests/integration/settlement-milestones.test.ts` (9 tests). The spy's `confirm()` reads the database and the tests
   assert on what it saw, because `confirmOnce` catches every error thrown by `confirm()`.
