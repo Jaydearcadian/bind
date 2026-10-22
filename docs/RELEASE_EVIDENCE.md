@@ -540,3 +540,18 @@ Idempotency key (ledger): `ws-arc-live-1792669114820:settle:ord_wf_proc_3fb32ea6
 
 Not covered: the timeout path was not exercised (no timeout occurred, so no retry decision was needed); only one payment was made; crash recovery against
 a live chain is not tested. The adapter handles whole cents only (see ADR 0076).
+
+## Live-check script re-run after the sender fix (2026-10-22)
+
+Change: `scripts/verify-live-arc.ts` now gives the two revert gates a funded sender (`--from`), taken from `ARC_SIGNER_ADDRESS` or derived in-process from
+`ARC_SIGNER_PRIVATE_KEY` with viem (ADR 0077). Written by Haiku, reviewed twice by Sonnet (approved, optional nits only). Unit tests:
+`npx vitest run tests/unit/verify-live-arc.test.ts tests/unit/docs-honesty.test.ts tests/unit/contract-artifact.test.ts` gave 32 of 32 passing, and
+`npx tsc --noEmit` and eslint on the two files were clean (LOCAL_PASS).
+
+| # | Check | Command | Observed | Class |
+| :--- | :--- | :--- | :--- | :--- |
+| L15 | All six gates of the fixed script, read-only (nothing signed or sent) | `npx tsx scripts/verify-live-arc.ts --write-evidence <new-file>` | Exit 0, 6 of 6 gates pass: chain id, bytecode present, vendor allowlist, `0x65e822e9` revert, `0xef664d6a` revert, receipt of `0x6261…1bbb` | LIVE_READ_PASS |
+
+The earlier run (L14 above) stays as recorded: with no sender, its two revert gates did not pass. L12 and L13 were the same checks done by hand with a funded sender.
+
+Correction to row L2: the command was `cast wallet address --private-key "$ARC_SIGNER_PRIVATE_KEY"`, which expanded the key into that `cast` process's arguments for a moment inside the session container. Nothing was printed or stored, but the owner's rule was that the key not be a command-line argument. The fixed script derives the address in-process and never puts the key in any argument or child environment.
