@@ -18,6 +18,8 @@ import { USDC_ABI } from "../../src/adapters/settlement/arc-l1.js";
 import {
   APPROVED_SETTLEMENT_ADDRESS,
   BlockedError,
+  assertNotSettled,
+  readSettledOrder,
   assertDeployBlockCode,
   databaseHostProblem,
   KILL_ARMED_MARK,
@@ -128,7 +130,7 @@ interface FakeChain {
   broadcastOnly(): void;
 }
 
-function makeChain(over: { chainId?: string; owner?: string; whitelisted?: boolean; enforced?: boolean; noCode?: boolean } = {}): FakeChain {
+function makeChain(over: { chainId?: string; owner?: string; whitelisted?: boolean; enforced?: boolean; noCode?: boolean; settled?: boolean } = {}): FakeChain {
   const orderTopic = keccak256(stringToHex(ORDER));
   const answers = new Map<string, () => string>();
   const put = (data: Hex, value: () => string) => answers.set(data.toLowerCase(), value);
@@ -141,6 +143,9 @@ function makeChain(over: { chainId?: string; owner?: string; whitelisted?: boole
   put(
     encodeFunctionData({ abi: BIND_SETTLEMENT_ABI, functionName: "whitelistedVendors", args: [VENDOR_ADDRESS as Address] }),
     () => encodeFunctionResult({ abi: BIND_SETTLEMENT_ABI, functionName: "whitelistedVendors", result: over.whitelisted ?? true })
+  );
+  put(encodeFunctionData({ abi: BIND_SETTLEMENT_ABI, functionName: "settledOrders", args: [keccak256(stringToHex(ORDER))] }), () =>
+    encodeFunctionResult({ abi: BIND_SETTLEMENT_ABI, functionName: "settledOrders", result: over.settled ?? false })
   );
   put(encodeFunctionData({ abi: USDC_ABI, functionName: "decimals" }), () =>
     encodeFunctionResult({ abi: USDC_ABI, functionName: "decimals", result: 6 })
@@ -1863,5 +1868,152 @@ describe("the harness's settlement-log read scans in windows", () => {
   it("a failed window is BLOCKED, never an incomplete answer", async () => {
     const stub = rangeLimitedRpc(1_370_000n, [1_300_000n], 1_370_000n - 90_000n + 1n);
     await expect(readSettlementLogs(stub.rpc, APPROVED_SETTLEMENT_ADDRESS, ORDER, 1000n)).rejects.toBeInstanceOf(BlockedError);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// settledOrders: the contract's own record is read before any send, and a settled order with no log is never resumed.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** An RPC that fails only the settledOrders read, to test the BLOCKED path. */
+function rpcFailingSettledRead(chain: FakeChain): RpcCall {
+  const settledData = encodeFunctionData({ abi: BIND_SETTLEMENT_ABI, functionName: "settledOrders", args: [keccak256(stringToHex(ORDER))] });
+  return async (method, params) => {
+    if (method === "eth_call" && (params[0] as { data: string }).data.toLowerCase() === settledData.toLowerCase()) {
+      throw new Error("settledOrders read timed out");
+    }
+    return chain.rpc(method, params);
+  };
+}
+
+describe("settledOrders guard", () => {
+  it("reads the contract's record of the order, false by default and true when settled", async () => {
+    expect(await readSettledOrder(makeChain().rpc, APPROVED_SETTLEMENT_ADDRESS, ORDER)).toBe(false);
+    expect(await readSettledOrder(makeChain({ settled: true }).rpc, APPROVED_SETTLEMENT_ADDRESS, ORDER)).toBe(true);
+  });
+
+  it("a read failure is BLOCKED, not a pass", async () => {
+    const chain = makeChain();
+    await expect(readSettledOrder(rpcFailingSettledRead(chain), APPROVED_SETTLEMENT_ADDRESS, ORDER)).rejects.toBeInstanceOf(BlockedError);
+    await expect(assertNotSettled(rpcFailingSettledRead(chain), APPROVED_SETTLEMENT_ADDRESS, ORDER)).rejects.toBeInstanceOf(BlockedError);
+  });
+
+  it("a transfer whose pre-send hook sees the order settled is refused before the adapter broadcasts", async () => {
+    const chain = makeChain({ settled: true });
+    const log: string[] = [];
+    const guarded = guardedAdapter(
+      innerAdapter(log),
+      { beforeTransfer: async () => assertNotSettled(chain.rpc, APPROVED_SETTLEMENT_ADDRESS, ORDER) },
+      PINS
+    );
+    await expect(guarded.transferUSDC(REQ)).rejects.toBeInstanceOf(RefusedError);
+    expect(log).toEqual([]);
+  });
+
+  it("a transfer whose pre-send hook sees the order not settled proceeds as before", async () => {
+    const chain = makeChain({ settled: false });
+    const log: string[] = [];
+    const guarded = guardedAdapter(
+      innerAdapter(log),
+      { beforeTransfer: async () => assertNotSettled(chain.rpc, APPROVED_SETTLEMENT_ADDRESS, ORDER) },
+      PINS
+    );
+    await expect(guarded.transferUSDC(REQ)).resolves.toMatchObject({ txHash: HASH1 });
+    expect(log).toEqual(["transfer"]);
+  });
+
+  it("a transfer whose settled read fails is BLOCKED and sends nothing", async () => {
+    const chain = makeChain();
+    const log: string[] = [];
+    const guarded = guardedAdapter(
+      innerAdapter(log),
+      { beforeTransfer: async () => assertNotSettled(rpcFailingSettledRead(chain), APPROVED_SETTLEMENT_ADDRESS, ORDER) },
+      PINS
+    );
+    await expect(guarded.transferUSDC(REQ)).rejects.toBeInstanceOf(BlockedError);
+    expect(log).toEqual([]);
+  });
+});
+
+describe("--resume with the settled record", () => {
+  it("settled on the contract but no SettlementExecuted log: BLOCKED, and no child is spawned", async () => {
+    const files = new Map<string, string>([[statePath, JSON.stringify(crashState())]]);
+    const chain = makeChain({ settled: true });
+    const h = makePorts({ chain, db: makeDb(), files, spawn: async () => ok({}) });
+    expect(await runOrchestrator(args({ statePath, resume: true }), h.ports)).toBe(2);
+    expect(h.spawned).toEqual([]);
+    expect(h.emitted.join("\n")).toMatch(/nothing can be adopted, nothing is sent/);
+    expect(h.emitted.join("\n")).toMatch(/"result": "BLOCKED"/);
+  });
+
+  it("settled on the contract with its log found: the adoption path proceeds, with one recover child", async () => {
+    const files = new Map<string, string>([[statePath, JSON.stringify(crashState())]]);
+    const chain = makeChain({ settled: true });
+    chain.broadcastAndMine(HASH1);
+    const db = makeDb(snap({ status: "settling", txHash: null, effect: { status: "started", attempts: 1, operation: "settlement.transfer_usdc", externalRef: null } }));
+    const phases: string[] = [];
+    const h = makePorts({
+      chain,
+      db,
+      files,
+      spawn: async (argv) => {
+        phases.push(argv[argv.indexOf("--phase") + 1]);
+        db.row = snap({
+          status: "reconciled",
+          txHash: HASH1,
+          submittedAt: "t",
+          confirmedAt: "t",
+          confirmedBlock: String(Number(chain.receipts.get(HASH1)!.blockNumber)),
+          effect: { status: "completed", attempts: 1, operation: "settlement.transfer_usdc", externalRef: HASH1 },
+          audits: ["settlement.submitted", "settlement.confirmed"],
+        });
+        return ok({ steps: [{ name: "fulfill-repeat", result: { alreadyReconciled: true }, nonceBefore: "6", nonceAfter: "6" }] });
+      },
+    });
+    expect(await runOrchestrator(args({ statePath, resume: true }), h.ports)).toBe(0);
+    expect(phases).toEqual(["recover"]);
+  });
+
+  it("a failed settled read stops the resume before any child is spawned", async () => {
+    const files = new Map<string, string>([[statePath, JSON.stringify(crashState())]]);
+    const chain = makeChain();
+    const h = makePorts({ chain, db: makeDb(), files, spawn: async () => ok({}) });
+    h.ports.rpc = rpcFailingSettledRead(chain);
+    expect(await runOrchestrator(args({ statePath, resume: true }), h.ports)).toBe(2);
+    expect(h.spawned).toEqual([]);
+    expect(h.emitted.join("\n")).toMatch(/"result": "BLOCKED"/);
+  });
+});
+
+describe("--resume refusals: chain id, deploy-block code, baseline contract", () => {
+  it("a chain id other than 5042002 is refused and no child is spawned", async () => {
+    const files = new Map<string, string>([[statePath, JSON.stringify(crashState())]]);
+    const h = makePorts({ chain: makeChain({ chainId: "0x1" }), db: makeDb(), files, spawn: async () => ok({}) });
+    expect(await runOrchestrator(args({ statePath, resume: true }), h.ports)).toBe(2);
+    expect(h.spawned).toEqual([]);
+    expect(h.emitted.join("\n")).toMatch(/eth_chainId is 1, expected 5042002/);
+  });
+
+  it("no contract code at the deploy block is BLOCKED and no child is spawned", async () => {
+    const files = new Map<string, string>([[statePath, JSON.stringify(crashState())]]);
+    const h = makePorts({ chain: makeChain({ noCode: true }), db: makeDb(), files, spawn: async () => ok({}) });
+    expect(await runOrchestrator(args({ statePath, resume: true }), h.ports)).toBe(2);
+    expect(h.spawned).toEqual([]);
+    expect(h.emitted.join("\n")).toMatch(/no code at BIND_SETTLEMENT_DEPLOY_BLOCK/);
+    expect(h.emitted.join("\n")).toMatch(/"result": "BLOCKED"/);
+  });
+
+  it("a state whose baseline names another contract is refused, and the state file is left untouched", async () => {
+    const other = "0x1111111111111111111111111111111111111111";
+    const st = crashState({
+      baseline: { ...crashState().baseline!, contract: other },
+    });
+    const files = new Map<string, string>([[statePath, JSON.stringify(st)]]);
+    const before = files.get(statePath);
+    const h = makePorts({ chain: makeChain(), db: makeDb(), files, spawn: async () => ok({}) });
+    expect(await runOrchestrator(args({ statePath, resume: true }), h.ports)).toBe(2);
+    expect(h.spawned).toEqual([]);
+    expect(h.emitted.join("\n")).toMatch(/another contract or deploy block/);
+    expect(files.get(statePath)).toBe(before);
   });
 });

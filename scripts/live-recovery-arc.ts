@@ -442,6 +442,29 @@ export async function assertContractGuards(
  * The contract must have code at its deploy block, and that block must already exist on the chain. Otherwise the scan
  * from the deploy block would prove nothing. Any other answer is BLOCKED, and nothing is sent.
  */
+/**
+ * The contract's settledOrders(bytes32) for this order id: true once a settlement for it has been paid. It is read fresh
+ * before any send, so a duplicate broadcast is refused even when the log lookup finds nothing. A failed read is BLOCKED.
+ */
+export async function readSettledOrder(rpc: RpcCall, contract: string, orderId: string): Promise<boolean> {
+  return blockedOn("the settledOrders read", async () => {
+    const orderId32 = keccak256(stringToHex(orderId));
+    const data = await ethCall(
+      rpc,
+      contract,
+      encodeFunctionData({ abi: BIND_SETTLEMENT_ABI, functionName: "settledOrders", args: [orderId32] })
+    );
+    return decodeFunctionResult({ abi: BIND_SETTLEMENT_ABI, functionName: "settledOrders", data }) as boolean;
+  });
+}
+
+/** Refuses (RefusedError) when the contract already settled this order. Runs before every transfer, so nothing is broadcast. */
+export async function assertNotSettled(rpc: RpcCall, contract: string, orderId: string): Promise<void> {
+  if (await readSettledOrder(rpc, contract, orderId)) {
+    throw new RefusedError(["the contract already settled this order; nothing is broadcast"]);
+  }
+}
+
 export async function assertDeployBlockCode(rpc: RpcCall, contract: string, deployBlock: bigint): Promise<void> {
   const head = await blockedOn("the block number read", async () =>
     hexQuantity(await rpc("eth_blockNumber", []), "eth_blockNumber")
@@ -1337,6 +1360,16 @@ async function runResume(args: CliArgs, ports: HarnessPorts, report: ReportBuild
   if (args.adapter === "arc") {
     if (!ports.rpc) return report.end("BLOCKED", ["no RPC client"]);
     const rpc = ports.rpc;
+    // The contract says this order is settled. Then the log must be found, or nothing can be adopted: stop before any child.
+    if (await readSettledOrder(rpc, contract, state.orderId)) {
+      const logsNow = await readSettlementLogs(rpc, contract, state.orderId, BigInt(state.baseline!.deployBlock));
+      report.step("settled-check", { settledOrders: true, logsFound: logsNow.length });
+      if (logsNow.length === 0) {
+        return report.end("BLOCKED", [
+          "the contract reports this order settled, but no SettlementExecuted log was found: nothing can be adopted, nothing is sent",
+        ]);
+      }
+    }
     const startNonce = BigInt(state.baseline!.startNonce);
     const mined = await waitUntil(
       async () => {
@@ -1761,7 +1794,10 @@ export async function runChildPhase(args: CliArgs, env: Env, emit: (text: string
       adapter,
       {
         beforeTransfer: async () => {
-          if (rpc) await assertContractGuards(rpc, guardCfg);
+          if (rpc) {
+            await assertContractGuards(rpc, guardCfg);
+            await assertNotSettled(rpc, contract, state.orderId);
+          }
         },
         afterTransfer:
           phase === "send" && args.scenario === "crash-before-record"
