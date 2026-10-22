@@ -44,7 +44,8 @@ async function main() {
     log.warn("demo.not_provisioned", { error: err });
   }
 
-  const app = createApp();
+  // The hosted MCP module (docs/decisions/0075) is built by `npm run mcp:build`. Without it, /mcp answers 503.
+  const app = createApp({ hostedMcp: { load: () => import(new URL("../mcp/dist/mcp/src/hosted.js", import.meta.url).href) } });
   const port = config.PORT;
 
   let worker: Worker | null = null;

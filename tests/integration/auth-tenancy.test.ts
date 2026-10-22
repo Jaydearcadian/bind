@@ -145,7 +145,17 @@ const OWNER_ROUTES: Array<[string, string]> = [
   ["POST", "/api/orders/:id/confirm-settlement"],
 ];
 
-const PROTECTED_ROUTES = [...ANY_ROLE_ROUTES, ...OWNER_ROUTES];
+/**
+ * The hosted MCP endpoint (docs/decisions/0075). A staff workspace key only: an owner key or an account session gets 403, and
+ * no token gets 401 on all three methods. GET and DELETE answer 405 once authenticated. Its own tests are in hosted-mcp.test.ts.
+ */
+const STAFF_KEY_ROUTES: Array<[string, string]> = [
+  ["POST", "/mcp"],
+  ["GET", "/mcp"],
+  ["DELETE", "/mcp"],
+];
+
+const PROTECTED_ROUTES = [...ANY_ROLE_ROUTES, ...OWNER_ROUTES, ...STAFF_KEY_ROUTES];
 
 /** Substitutes a path template with a value that is not a real record. */
 function fillPath(template: string): string {

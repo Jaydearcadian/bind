@@ -37,7 +37,7 @@ Bind is a deployment and governance layer. A business sets its operating prefere
 - **Credentials.** Connector secrets are encrypted at rest with one environment key and are never returned to a caller. No credential is shown as verified, because no live verifier exists.
 - **Customer orders and feedback.** A customer order is promised only when reserved stock and kitchen capacity cover it. Feedback is counted; a menu change needs owner approval and an owner publish.
 - **Operations.** Request ids, redacted structured logs, `/health`, `/ready`, `/metrics`, rate limits on failed authentication, graceful shutdown.
-- **API first.** A route registry, a generated OpenAPI document, a replayable event stream (SSE with a poll fallback), a typed TypeScript SDK, and an MCP tool server. The MCP server has no approval, payment or credential tools.
+- **API first.** A route registry, a generated OpenAPI document, a replayable event stream (SSE with a poll fallback), a typed TypeScript SDK, and an MCP tool server, both local (stdio) and hosted at `POST /mcp` with a staff key (docs/decisions/0075). The MCP server has no approval, payment or credential tools.
 - **Decision records.** Each template decision carries a canonical SHA-256 `decisionHash` and writes `STATE_ANCHOR.md` and `DECISION_EVIDENCE.md` (tests in `tests/unit/bindTemplateAgent.test.ts`).
 - **Honest labels.** Simulated suppliers are labelled `SIMULATED_SUPPLIER_ADAPTER`. Market checks are `LIVE_WEB_BENCHMARK` only when a search key is set, and `OFFLINE_DETERMINISTIC_FALLBACK` otherwise.
 

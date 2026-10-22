@@ -44,6 +44,7 @@ variable.
 | `BIND_WORKER_ENABLED` | No | The worker runs | Only the exact value `false` disables it (ADR 0029). |
 | `BIND_RESTOCK_SWEEP` | No | **Off** | Only the exact value `true` enables it. It starts replenishments on its own, within policy (ADR 0030). Any other value is ignored. |
 | `BIND_TRUST_PROXY` | Behind a proxy | `0`: the socket address is the client | Number of proxy hops that append to `X-Forwarded-For`. Must be a non-negative integer (ADR 0033). |
+| `BIND_PUBLIC_URL` | Recommended in production | The request's own host | The https origin of the deployment, for example `https://bind.example` (no path). It is the address `/mcp` reports to clients and the only origin its Origin check accepts. `http` is allowed for `127.0.0.1` and `localhost` only. An invalid value stops startup (ADR 0075). |
 | `BIND_RATE_LIMITS` | No | Limits are on (off in `NODE_ENV=test`) | Only `off` is accepted. For **local development only** (ADR 0033). |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn` or `error` (ADR 0032). Any other value stops startup. |
 | `BIND_SETTLEMENT_ADDRESS` | For `arc-testnet` settlement | Arc settlement refuses, naming this variable | The settlement contract address (ADR 0013). |
@@ -448,6 +449,20 @@ Revocation answers `404 TOKEN_NOT_FOUND` for another workspace's token, an unkno
 is still valid. (Verified: create 201, revoke 200, old token 401, last owner 409, bad role 400.)
 
 A staff token cannot call owner routes (403), so it cannot issue, rotate or revoke tokens.
+
+### 10.3 Connect an agent by URL (hosted MCP, ADR 0075)
+
+Issue a **staff** token for the agent (`POST /api/workspaces/:id/tokens` with `"role": "staff"`), then give the agent the URL
+`https://<your-bind-api-host>/mcp` and the header `Authorization: Bearer <that token>`. To stop an agent, revoke its token
+(`DELETE /api/workspaces/:id/tokens/:tokenId`); its next call is `401`. An owner key or an account session at `/mcp` is `403`.
+
+The endpoint is stateless, so there is nothing to clean up on the server when an agent disconnects. Its calls appear in the
+audit log like the REST calls they are. Each tool call costs two of the token's per-token rate-limit hits (the MCP request and
+the API call it makes), so a busy agent reaches the limit at half the call rate (ADR 0033, 0075).
+
+Check the endpoint is up: an authenticated `GET /mcp` answers `405` with its own address; an unauthenticated one answers `401`.
+If `POST /mcp` answers `503` with "The MCP endpoint is not available", the deployment is missing the built MCP module
+(`npm run mcp:build`, which `scripts/vercel-build.sh` runs) and the rest of the API is unaffected.
 
 ## 11. Webhook secrets
 

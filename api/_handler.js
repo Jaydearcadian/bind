@@ -3,7 +3,9 @@ import { runMigrations } from "../dist/db/migrate.js";
 import { provisionDemoWorkspace } from "../dist/server/demo.js";
 import { log } from "../dist/observability/logger.js";
 
-const app = createApp();
+// The hosted MCP module is built by `npm run mcp:build` (docs/decisions/0075). The import is literal, so the bundler traces it;
+// if it is missing, /mcp answers 503 and the rest of the API is unaffected.
+const app = createApp({ hostedMcp: { load: () => import("../mcp/dist/mcp/src/hosted.js") } });
 
 let initPromise = null;
 
