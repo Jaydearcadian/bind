@@ -11,6 +11,9 @@ import { sendApprovalNotification, sendOwnerNotification } from "../../src/notif
 import { requestOwnerEmailVerification, verifyOwnerEmail } from "../../src/notifications/owner-emails.js";
 import { EmailRecipientNotVerifiedError, sendOwnerNoticeEmail } from "../../src/notifications/email.js";
 import { upsertSurfaceBinding } from "../../src/adapters/socialSurface.js";
+import { isVerifiedOwnerAddress, resolveOwnerRecipients } from "../../src/notifications/recipients.js";
+import { requestHash } from "../../src/effects/serialize.js";
+import { createHash } from "node:crypto";
 import { setLogSink } from "../../src/observability/logger.js";
 import { startFakeResend, codeIn, type FakeResend } from "../helpers/fake-resend.js";
 
@@ -350,6 +353,29 @@ describe("an address is mailed only once it is verified (ADR 0074)", () => {
     expect(audit.rows[0].evidence).not.toContain("never.verified@kitchen.example");
   });
 
+  it("a demo gets no email recipient from resolveOwnerRecipients, even with a verified row and a binding, and is never verified", async () => {
+    const demo = await freshWorkspace();
+    const real = await freshWorkspace();
+    await query(`INSERT INTO owner_emails (id, workspace_id, added_by, email, verified_at) VALUES ($1, $2, 'test', $3, NOW());`, [
+      `oem_demo_${run}_${counter}`,
+      demo,
+      "direct.demo@kitchen.example",
+    ]);
+    await query(`INSERT INTO owner_emails (id, workspace_id, added_by, email, verified_at) VALUES ($1, $2, 'test', $3, NOW());`, [
+      `oem_real_${run}_${counter}`,
+      real,
+      "direct.real@kitchen.example",
+    ]);
+    await upsertSurfaceBinding(demo, { surface: "email", actorId: "binding.demo@kitchen.example", actorRole: "owner" }, { type: "owner", id: "test" });
+    await query(`UPDATE workspaces SET is_demo = true, demo_expires_at = NOW() + INTERVAL '1 day' WHERE id = $1;`, [demo]);
+
+    expect(await resolveOwnerRecipients(demo)).toEqual([]);
+    expect(await isVerifiedOwnerAddress(demo, "direct.demo@kitchen.example")).toBe(false);
+    // The same kind of row in a real workspace is verified and is a recipient.
+    expect(await isVerifiedOwnerAddress(real, "direct.real@kitchen.example")).toBe(true);
+    expect((await resolveOwnerRecipients(real)).map((r) => r.recipient)).toEqual(["direct.real@kitchen.example"]);
+  });
+
   it("the send function itself refuses an unverified address (defence in depth)", async () => {
     const wsId = await freshWorkspace();
     await expect(
@@ -380,24 +406,25 @@ describe("an address is mailed only once it is verified (ADR 0074)", () => {
     expect(fake.received).toHaveLength(0);
   });
 
-  it("the ledger keeps no address: the stored effect row holds a hash, not the recipient", async () => {
+  it("the stored request hash is over the request with a digest of the address, so it is not the hash of the address", async () => {
     const wsId = await freshWorkspace();
     const address = "ledger.check@kitchen.example";
     await verifiedOwner(wsId, address);
     fake.received.length = 0;
+    const refId = `ord_ledger_${run}`;
     await sendOwnerNotification({
       workspaceId: wsId,
       kind: "order_held",
-      refId: `ord_ledger_${run}`,
+      refId,
       payload: { workspaceId: wsId, channel: "email", recipient: address, title: "Bind", message: "x" },
     });
     expect(fake.received).toHaveLength(1);
-    const rows = await query(`SELECT row_to_json(e)::text AS row FROM effects e WHERE workspace_id = $1 AND idempotency_key LIKE $2;`, [
-      wsId,
-      `${wsId}:notify:order_held:ord_ledger_${run}%`,
-    ]);
-    expect(rows.rows).toHaveLength(1);
-    expect(rows.rows[0].row).not.toContain(address);
+    const row = await query(`SELECT request_hash FROM effects WHERE idempotency_key = $1;`, [`${wsId}:notify:order_held:${refId}`]);
+    // The request dispatch builds: the payload with the notice kind in its metadata and the address replaced by its digest.
+    const digest = createHash("sha256").update(address).digest("hex");
+    const digestRequest = { workspaceId: wsId, channel: "email", recipient: digest, title: "Bind", message: "x", metadata: { noticeKind: "order_held" } };
+    expect(row.rows[0].request_hash).toBe(requestHash(digestRequest));
+    expect(row.rows[0].request_hash).not.toBe(requestHash({ ...digestRequest, recipient: address }));
   });
 });
 

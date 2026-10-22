@@ -110,6 +110,22 @@ async function refuseDemo(client: PoolClient, workspaceId: string): Promise<void
 }
 
 /**
+ * The wrong guesses for one address in the last day, and the seconds until the oldest of them ages out (ADR 0074). Runs in the
+ * caller's transaction, under the row lock taken for the address.
+ */
+async function failureWindow(client: PoolClient, workspaceId: string, email: string): Promise<{ n: number; retryAfter: number }> {
+  const row = (
+    await client.query<{ n: number; retry_after: number | null }>(
+      `SELECT COUNT(*)::int AS n,
+              CEIL(EXTRACT(EPOCH FROM (MIN(failed_at) + INTERVAL '1 day' - NOW())))::int AS retry_after
+         FROM owner_email_failures WHERE workspace_id = $1 AND email = $2 AND failed_at > NOW() - INTERVAL '1 day';`,
+      [workspaceId, email]
+    )
+  ).rows[0];
+  return { n: row.n, retryAfter: Math.max(1, row.retry_after ?? 3600) };
+}
+
+/**
  * The channels view: whether email is on for this server, and the workspace's email addresses (never a code or a hash).
  */
 export async function listNotificationChannels(workspaceId: string): Promise<{
@@ -177,15 +193,9 @@ export async function requestOwnerEmailVerification(
       return { kind: "verified" as const, row };
     }
 
-    const guesses = (
-      await client.query<{ n: number }>(
-        `SELECT COUNT(*)::int AS n FROM owner_email_failures
-          WHERE workspace_id = $1 AND email = $2 AND failed_at > NOW() - INTERVAL '1 day';`,
-        [workspaceId, email]
-      )
-    ).rows[0];
+    const guesses = await failureWindow(client, workspaceId, email);
     if (guesses.n >= MAX_FAILED_GUESSES_PER_DAY) {
-      throw new OwnerEmailError("EMAIL_ATTEMPTS_EXCEEDED", 409, GUESSES_REFUSED_MESSAGE);
+      throw new OwnerEmailError("EMAIL_ATTEMPTS_EXCEEDED", 409, GUESSES_REFUSED_MESSAGE, guesses.retryAfter);
     }
 
     // The workspace's sends in the last 24 hours: the total, the distinct addresses, and when the oldest one ages out.
@@ -199,16 +209,29 @@ export async function requestOwnerEmailVerification(
         [workspaceId, email]
       )
     ).rows[0];
-    const dayRetry = Math.max(1, day.retry_after ?? 3600);
     if (day.total >= MAX_SENDS_PER_DAY) {
-      throw new OwnerEmailError("EMAIL_SEND_LIMITED", 429, "This workspace has sent its verification codes for today. Try again later.", dayRetry);
+      throw new OwnerEmailError(
+        "EMAIL_SEND_LIMITED",
+        429,
+        "This workspace has sent its verification codes for today. Try again later.",
+        Math.max(1, day.retry_after ?? 3600)
+      );
     }
     if (day.for_address === 0 && day.distinct_n >= MAX_DISTINCT_ADDRESSES_PER_DAY) {
+      // An address leaves the day's set when its latest send is a day old, so the next new address is allowed then.
+      const freed = (
+        await client.query<{ retry_after: number | null }>(
+          `SELECT CEIL(EXTRACT(EPOCH FROM (MIN(latest) + INTERVAL '1 day' - NOW())))::int AS retry_after
+             FROM (SELECT email, MAX(sent_at) AS latest FROM owner_email_sends
+                    WHERE workspace_id = $1 AND sent_at > NOW() - INTERVAL '1 day' GROUP BY email) per_address;`,
+          [workspaceId]
+        )
+      ).rows[0];
       throw new OwnerEmailError(
         "EMAIL_SEND_LIMITED",
         429,
         `This workspace has asked for codes for ${MAX_DISTINCT_ADDRESSES_PER_DAY} addresses today. Try again later.`,
-        dayRetry
+        Math.max(1, freed.retry_after ?? 3600)
       );
     }
 
@@ -296,7 +319,7 @@ export async function verifyOwnerEmail(
   type Outcome =
     | { kind: "not_found" }
     | { kind: "already_verified"; row: OwnerEmailRow }
-    | { kind: "guesses_refused"; row: OwnerEmailRow }
+    | { kind: "guesses_refused"; row: OwnerEmailRow; retryAfter: number }
     | { kind: "attempts_exceeded"; row: OwnerEmailRow }
     | { kind: "expired"; row: OwnerEmailRow }
     | { kind: "wrong"; row: OwnerEmailRow; attempts: number }
@@ -315,14 +338,8 @@ export async function verifyOwnerEmail(
     if (!row) return { kind: "not_found" };
     if (row.verified_at) return { kind: "already_verified", row };
 
-    const guesses = (
-      await client.query<{ n: number }>(
-        `SELECT COUNT(*)::int AS n FROM owner_email_failures
-          WHERE workspace_id = $1 AND email = $2 AND failed_at > NOW() - INTERVAL '1 day';`,
-        [workspaceId, row.email]
-      )
-    ).rows[0];
-    if (guesses.n >= MAX_FAILED_GUESSES_PER_DAY) return { kind: "guesses_refused", row };
+    const guesses = await failureWindow(client, workspaceId, row.email);
+    if (guesses.n >= MAX_FAILED_GUESSES_PER_DAY) return { kind: "guesses_refused", row, retryAfter: guesses.retryAfter };
     if (row.attempts >= MAX_ATTEMPTS) return { kind: "attempts_exceeded", row };
     if (!row.code_hash || !row.code_salt || !row.code_live) return { kind: "expired", row };
 
@@ -379,7 +396,7 @@ export async function verifyOwnerEmail(
     case "already_verified":
       return { id: outcome.row.id, email: outcome.row.email, status: "verified", verifiedAt: outcome.row.verified_at!.toISOString() };
     case "guesses_refused":
-      throw new OwnerEmailError("EMAIL_ATTEMPTS_EXCEEDED", 409, GUESSES_REFUSED_MESSAGE);
+      throw new OwnerEmailError("EMAIL_ATTEMPTS_EXCEEDED", 409, GUESSES_REFUSED_MESSAGE, outcome.retryAfter);
     case "attempts_exceeded":
       throw new OwnerEmailError("EMAIL_ATTEMPTS_EXCEEDED", 409, "Too many wrong codes. Ask for a new one.");
     case "expired":

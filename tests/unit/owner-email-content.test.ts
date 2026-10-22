@@ -106,6 +106,22 @@ describe("buildOwnerNoticeEmail", () => {
     }
   });
 
+  it("keeps to the allowlist: a Cyrillic domain, full-width and zero-width tricks, and a phone number are left out", () => {
+    const cyrillicDomain = `evil.${String.fromCodePoint(0x0440, 0x0444)}`; // evil.рф
+    const fullWidthDot = `evil${String.fromCodePoint(0xff0e)}com`; // evil．com
+    const zeroWidthSpace = `evil.${String.fromCharCode(0x200b)}com`; // evil.<zero width space>com
+    for (const supplierName of [cyrillicDomain, "555 123 4567", fullWidthDot, zeroWidthSpace]) {
+      const out = buildOwnerNoticeEmail({ kind: "approval", metadata: { supplierName, amountCents: 500 }, baseUrl: BASE });
+      expect(out.text.split("\n")[0], supplierName).toBe("A purchase is waiting for your approval.");
+    }
+  });
+
+  it("keeps an ordinary supplier name with an apostrophe and an ampersand", () => {
+    const name = `O${String.fromCharCode(0x2019)}Brien & Sons`;
+    const out = buildOwnerNoticeEmail({ kind: "approval", metadata: { supplierName: name, amountCents: 500 }, baseUrl: BASE });
+    expect(out.text.split("\n")[0]).toBe(`A purchase from ${name} for $5.00 USDC is waiting for your approval.`);
+  });
+
   it("leaves the amount out when it is not a whole number of cents", () => {
     for (const amountCents of [-1, 1.5, Number.NaN, "300" as unknown as number]) {
       const out = buildOwnerNoticeEmail({ kind: "approval", metadata: { supplierName: "Acme", amountCents }, baseUrl: BASE });

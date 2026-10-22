@@ -30,8 +30,10 @@ local fake server.
 - No retry is made inside the adapter. A send is a `runEffect` (ADR 0017) with `externalDedupes: false`, so a send that fails
   or has an unknown outcome leaves its row `failed` or `started`. The owner is not sent it again. A timeout after the provider
   accepted the message is therefore in doubt, and is reported as `notification.in_doubt`, never resent.
-- The ledger keeps only a hash of the request (ADR 0017). For email, the request is hashed over a SHA-256 digest of the
-  recipient, so the address is not in the stored row. The send itself uses the real payload.
+- The ledger keeps only a hash of the request (ADR 0017). For email, the request is the payload with the recipient replaced
+  by the SHA-256 hex digest of the lowercased address, and the stored `request_hash` is `requestHash` of that request. The
+  address is therefore never an input to the stored hash. The send itself uses the real payload. The test
+  `the stored request hash is over the request with a digest of the address` checks the stored hash against both forms.
 - `status: "sent"` is returned only for a 2xx answer that carries a non-empty id of at most 200 characters. Every other answer,
   including a 2xx without a usable id, is an `EmailTransportError` with a reason (`timeout`, `network`, `http`,
   `malformed_response`). The error message names the reason and, for an HTTP answer, the status. It never carries the key, the
@@ -44,8 +46,10 @@ local fake server.
   to look at it and decide. Nothing happens until you do.`
 - The sentence names what the notice is about and nothing else: for an approval, the supplier and the amount in USD. The
   supplier name is untrusted text. Control characters, line breaks and bidi controls become spaces, and the text is cut to 80
-  characters. A name that could carry a link or a contact is left out, and the generic sentence is used instead. That is a
-  name containing `@`, `://`, `www.`, anything shaped like a domain (`\w\.[a-z]{2,}`), or a run of six or more digits. For an
+  characters. The name is first folded to NFKC and format characters (`\p{Cf}`, such as zero-width spaces) are removed, so a
+  lookalike cannot hide a domain. Then an allowlist applies: letters, digits, spaces, `&`, apostrophes (straight and curly),
+  full stops and hyphens (`^[\p{L}\p{N} &'’.-]+$`). A name outside it is left out, and so is one that is shaped like a domain
+  in any script, that contains `www.`, or that holds six or more digits in all. Those names give the generic sentence. For an
   order the sentence is fixed and holds no order detail. The builder reads the notice kind from the payload metadata, never
   from the message text, so a customer's note or reference cannot reach an email.
 - No approve or reject link, no token, no query string. The link opens the app's front page; opening it decides nothing (ADR
@@ -72,8 +76,12 @@ local fake server.
     address does not reset it.
   - Five distinct addresses per workspace per 24 hours. An address already asked for in that day is not a new one.
   - Ten codes per workspace per 24 hours, in total.
-  - The workspace-level caps answer 429 `EMAIL_SEND_LIMITED` with `Retry-After`, the time until the oldest send in the day
-    ages out.
+  - `Retry-After` on the limits: for the daily total, the time until the oldest send in the day ages out. For the distinct
+    addresses, the time until the earliest of the day's addresses drops out of the day's set, that is the minimum over
+    addresses of (its latest send + one day). For the wrong-guess cap (409), the time until the oldest counted wrong guess
+    ages out. Each answers 429 `EMAIL_SEND_LIMITED`, or 409 `EMAIL_ATTEMPTS_EXCEEDED` with `Retry-After` for the guess cap.
+  - Concurrency is handled by one transaction-level advisory lock per workspace (`pg_advisory_xact_lock`), taken before the
+    counts are read. Without it, parallel requests all see the same counts and exceed the caps. Two tests fail without it.
 - **Demo workspaces send and verify no email.** A demo (ADR 0057) answers 403 `EMAIL_DEMO_REFUSED` ("Demo workspaces do not send
   email. Use a real workspace to get owner notices by email.") on both the send and the verify route. Nothing is recorded.
 - **Binding creation on verification.** It is `INSERT ... ON CONFLICT (workspace_id, surface, actor_id) DO NOTHING RETURNING
@@ -110,7 +118,8 @@ local fake server.
   an anonymous call gets 401.
 - Refusals use the error catalogue: `EMAIL_NOT_CONFIGURED` (503), `EMAIL_DEMO_REFUSED` (403), `EMAIL_NOT_FOUND` (404),
   `EMAIL_SEND_LIMITED` (429, with `Retry-After`), `EMAIL_SEND_FAILED` (502), `EMAIL_CODE_INVALID` (400),
-  `EMAIL_CODE_EXPIRED` and `EMAIL_ATTEMPTS_EXCEEDED` (409). Malformed input is `INVALID_INPUT` (400).
+  `EMAIL_CODE_EXPIRED` and `EMAIL_ATTEMPTS_EXCEEDED` (409, with `Retry-After` when it is the wrong-guess cap). Malformed input is
+  `INVALID_INPUT` (400).
 - Audit rows, all by the owner token's label: `notification.email_code_sent`, `notification.email_send_failed`,
   `notification.email_verified`, `notification.email_verify_failed` and `notification.email_removed`. Evidence holds ids and the
   masked address (for example `o***@k***.com`), never the full address or a code. A skipped unverified send is
@@ -140,9 +149,11 @@ local fake server.
 - **A send can be refused after the ledger row has started.** The dispatcher checks the address first, so this only happens if
   an address is removed between that check and the send. The row is then failed, and a retry is in doubt, so the notice is not
   sent. The owner sees the approval or order in the app.
-- **The ledger request shape for email changed in this ADR.** Before it, a stored email request held the address in its hash
-  input. Only an effect started under the earlier shape could conflict, and only if the same key were replayed after the
-  change. No such row exists in a released deployment, because email was not sent before this ADR.
+- **The ledger request hash for email changed in this ADR** (see section 2). Before it, a stored email request's hash was taken
+  over the address. Only an effect started under the earlier hash could conflict, and only if the same key were replayed after
+  the change. No such row exists in a released deployment, because email was not sent before this ADR.
+- **The address pattern is letters, digits and `._+-` in the local part.** A `%` is not accepted (a deliberate narrowing;
+  such addresses are rare and are refused, not guessed at).
 
 ## What is NOT done
 - No per-IP limit on the send route. The per-workspace and per-address caps above are the limits. A per-IP scope in the existing

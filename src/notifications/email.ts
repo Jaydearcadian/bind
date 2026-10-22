@@ -48,7 +48,10 @@ function isUnsafeCodePoint(code: number): boolean {
  */
 export function sanitizeUntrustedText(value: unknown, max = MAX_EMAIL_FIELD_LENGTH): string | null {
   if (typeof value !== "string") return null;
-  const spaced = Array.from(value, (ch) => (isUnsafeCodePoint(ch.codePointAt(0) ?? 0) ? " " : ch)).join("");
+  // Compatibility forms are folded first (full-width dots and letters become ASCII), then format characters (zero-width
+  // spaces and the like) are removed, so a lookalike cannot hide a domain from the checks below.
+  const folded = value.normalize("NFKC").replace(/\p{Cf}/gu, "");
+  const spaced = Array.from(folded, (ch) => (isUnsafeCodePoint(ch.codePointAt(0) ?? 0) ? " " : ch)).join("");
   const cleaned = spaced.replace(/\s+/g, " ").trim();
   if (cleaned.length === 0) return null;
   if (cleaned.length <= max) return cleaned;
@@ -70,10 +73,26 @@ export function maskEmailAddress(address: string): string {
  * An address: the local part may not start with a dot, contain two dots in a row, or end with one. Each domain label starts
  * and ends with a letter or digit. The top-level domain is letters only.
  */
-const ADDRESS = /^(?!\.)(?!.*\.\.)[a-z0-9._%+-]{1,64}(?<!\.)@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/;
+const ADDRESS = /^(?!\.)(?!.*\.\.)[a-z0-9._+-]{1,64}(?<!\.)@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/;
 
-/** Text that could be a link, an address, a domain, or a phone-like number (ADR 0074). Such a supplier name is not shown. */
-const LOOKS_LIKE_LINK_OR_CONTACT = /@|:\/\/|www\.|\w\.[a-z]{2,}|\d{6,}/i;
+/**
+ * A supplier name may use letters, digits, spaces and a few punctuation marks: `&`, apostrophes (straight and curly), full stops
+ * and hyphens. Anything else (a slash, a colon, an at sign) is not shown (ADR 0074). Built from code points so the source
+ * holds no escapes that a tool could mangle.
+ */
+const APOSTROPHE = String.fromCharCode(0x2019);
+const SUPPLIER_ALLOWED = new RegExp(`^[\\p{L}\\p{N} &'${APOSTROPHE}.-]+$`, "u");
+/** A letter or digit, a full stop, then two or more letters: shaped like a domain, in any script. */
+const DOMAIN_SHAPED = /[\p{L}\p{N}-]\.\p{L}{2,}/u;
+/** Six or more digits in all, however they are spaced: a phone number or an account number. */
+const PHONE_SHAPED_MIN_DIGITS = 6;
+
+/** Whether a cleaned supplier name may be shown. An allowlist: anything outside it is left out, and so is anything that reads as a link or a number. */
+export function supplierNameIsShowable(text: string): boolean {
+  if (!SUPPLIER_ALLOWED.test(text)) return false;
+  if (DOMAIN_SHAPED.test(text) || /www\./i.test(text)) return false;
+  return text.replace(/\D/g, "").length < PHONE_SHAPED_MIN_DIGITS;
+}
 
 /** The longest owner address accepted. It is the surface binding's actor-id limit, so a binding can always be stored. */
 export const MAX_OWNER_EMAIL_LENGTH = 120;
@@ -124,7 +143,7 @@ function noticeSentence(kind: OwnerNoticeKind, metadata: Record<string, unknown>
       // A supplier name that could carry a link, an address, a domain or a long number is left out: a notice must not hand
       // a phisher a place to send people. The generic sentence is used instead.
       const named = sanitizeUntrustedText(metadata.supplierName);
-      const supplier = named && !LOOKS_LIKE_LINK_OR_CONTACT.test(named) ? named : null;
+      const supplier = named && supplierNameIsShowable(named) ? named : null;
       const amount = amountText(metadata.amountCents);
       if (supplier && amount) return `A purchase from ${supplier} for $${amount} USDC is waiting for your approval.`;
       if (supplier) return `A purchase from ${supplier} is waiting for your approval.`;
