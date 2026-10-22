@@ -455,3 +455,30 @@ Method (run in this task, no secret was printed):
 So the repository's history does not show a literal token. Commit `0b69b2e` says there was one. Either the value was never committed, or
 it was committed in a form this search does not match. Rotation is advised either way, because the value may have been used
 outside the repository.
+
+## Live Arc Testnet read-only run (2026-10-22)
+
+Run by the owner's request, step 1 of the Arc plan. Read-only: nothing was signed or sent. The RPC URL and signer key came from the session
+environment (mapped inside the commands from `Arc_RPC` and `Arc_Private_Key`); no secret was printed or written. `cast` 1.7.1 was installed from
+the npm registry package `@foundry-rs/cast` into a scratch directory outside the repository (the Foundry installer was blocked by a 403 from GitHub).
+
+| # | Check | Command | Observed | Class |
+| :--- | :--- | :--- | :--- | :--- |
+| L1 | Chain id | `cast chain-id --rpc-url "$ARC_RPC_URL"` | `5042002` | LIVE_READ_PASS |
+| L2 | Signer address derived from the key (address only printed) | `cast wallet address --private-key "$ARC_SIGNER_PRIVATE_KEY"` | `0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2` | LIVE_READ_PASS |
+| L3 | Signer native balance | `cast balance <signer>` | 4857129833337643373 wei (about 4.857 USDC, 18 decimals) | LIVE_READ_PASS |
+| L4 | `owner()` of `0x16E1…aA29` | `cast call … "owner()(address)"` | `0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2`, so the signer IS the owner | LIVE_READ_PASS |
+| L5 | `dailySpendLimit`, `dailySpent`, `lastDayReset`, `enforceVendorWhitelist` | `cast call …` | 1e18 (1.0 USDC), 1e15 (0.001 USDC), 1791978785, `true` | LIVE_READ_PASS |
+| L6 | `whitelistedVendors(0xa835…06ea)` | `cast call …` | `true` | LIVE_READ_PASS |
+| L7 | Deployed code vs `contracts/artifacts/BindSettlement.json` | `cast code` compared with the artifact's creation bytecode | The live runtime code (14716 hex chars) is contained in the artifact's creation code once the trailing 53-byte compiler metadata is excluded. The metadata tail itself differs, so it is not a byte-for-byte match. | LIVE_READ_PASS (code body only; metadata hash not reproduced) |
+| L8 | Settlement `0x6261…1bbb` | `cast tx`, `cast receipt` | From the owner to the contract, value 1e15, block 67155117, status success, gas used 90012, one log from the system emitter `0xffff…fffe` | LIVE_READ_PASS |
+| L9 | Deployment and configuration receipts (`0xe152…`, `0x3881…`, `0x4c8f…`, `0x20f0…`) | `cast receipt` | Each succeeded, from the owner; the deployment created `0x16E1…aA29` (block 67155017); the other three were calls to the contract (blocks 67155039, 67155064, 67155084) | LIVE_READ_PASS |
+| L10 | Transfer `0x03f3…5e01` | `cast receipt` | Success at block 67153050, sent to the `0x3600…` precompile | LIVE_READ_PASS |
+| L11 | Other addresses | `cast code`, `cast call … "decimals()" "symbol()"` | `0x3600…` has code, decimals 6, symbol USDC. `0x0747…4583` has code. Previous deployment `0x6cb7…` has code. `0xffff…fffe` has no code (a system address that appears as a log emitter in L8). | LIVE_READ_PASS (presence only; behaviour of `0x0747…` not checked) |
+| L12 | Negative path, unapproved supplier, with the funded owner as sender | `cast call … settleOrder … --from <signer> --value 1000000000000000` to `0x…dEaD` | Reverts with `0x65e822e9` (VendorNotWhitelisted) | LIVE_READ_PASS |
+| L13 | Negative path, 2.0 USDC, same sender | `cast call … settleOrder … --value 2000000000000000000` to the whitelisted vendor | Reverts with `0xef664d6a` (DailyLimitExceeded), arguments 2.0 USDC and 1.0 USDC limit | LIVE_READ_PASS |
+| L14 | `scripts/verify-live-arc.ts` (writes its own evidence file, not appended here) | `npx tsx scripts/verify-live-arc.ts --write-evidence <new-file>` | 4 of 6 gates pass (chain id, bytecode present, vendor allowlist, receipt). Gates 4 and 5 (the two revert checks) did not pass: they ran `eth_call` with no sender, so the caller was the zero address with no balance and the node reverted with a generic `Error(string)` before the contract's own checks. Exit code 1. The script was not changed. | BLOCKED (the script's check as written; L12 and L13 are the same checks with a funded sender) |
+
+Not reproduced: the claim that the previous deployment `0x6cb7…` lacked an on-chain policy, the behaviour of the ERC-8183 reference contract, and the
+RPC provider name. Contract state is unchanged by this run: the owner's balance and the contract were only read.
+No settlement has been sent in this session.
