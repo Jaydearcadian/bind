@@ -740,6 +740,46 @@
    "note": "Binds a messaging actor to a role. Changes who may approve from a surface."
   },
   {
+   "operationId": "getNotificationChannels",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Owner email notices: whether email is on for this server and the workspace's addresses with their status. Never a code or a hash (ADR 0074)."
+  },
+  {
+   "operationId": "requestOwnerEmailVerification",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Sends a six-digit code to an address, which the owner must then enter. Sends an email to the address typed (ADR 0074). Limited to three codes per address per hour. Never agent-exposed."
+  },
+  {
+   "operationId": "verifyOwnerEmail",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Checks the code. On success the address receives owner notices (ADR 0074). Never agent-exposed."
+  },
+  {
+   "operationId": "removeOwnerEmail",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "The address stops receiving owner notices at once (ADR 0074). Never agent-exposed."
+  },
+  {
    "operationId": "verifyConnector",
    "exposure": "public_api",
    "effect": "credential",

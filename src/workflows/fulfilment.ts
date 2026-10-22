@@ -9,7 +9,7 @@ import { acquireAdvisoryLock, type AdvisoryLock } from "../db/advisory-lock.js";
 import { boundedErrorMessage } from "../effects/ledger.js";
 import { sendOwnerNotification, type OwnerNoticeKind } from "../notifications/dispatch.js";
 import { customerOrderLink } from "../notifications/links.js";
-import { resolveOwnerRecipient } from "../notifications/recipients.js";
+import { resolveOwnerRecipients } from "../notifications/recipients.js";
 import { WorkflowEngine } from "../workflows/engine.js";
 import { AgentsPausedError, ProcurementWorkflowRunner } from "./procurement.js";
 import {
@@ -618,8 +618,8 @@ async function notifyOwnerOfDecision(
   const kind = NOTICE_KIND_BY_STATUS[status];
   if (!kind) return;
   try {
-    const owner = await resolveOwnerRecipient(workspaceId);
-    if (!owner) {
+    const owners = await resolveOwnerRecipients(workspaceId);
+    if (owners.length === 0) {
       await recordSystemAudit(
         workspaceId,
         "system:notifications",
@@ -630,19 +630,34 @@ async function notifyOwnerOfDecision(
       );
       return;
     }
-    await sendOwnerNotification({
-      workspaceId,
-      kind,
-      refId: orderId,
-      payload: {
-        workspaceId,
-        channel: owner.channel,
-        recipient: owner.recipient,
-        title: NOTICE_TITLE[kind],
-        message: noticeMessage(orderId, status, reasons),
-        actionUrl: customerOrderLink(orderId),
-      },
-    });
+    // Each verified owner is told once (ADR 0074). One owner's failure does not stop the others.
+    for (const owner of owners) {
+      try {
+        await sendOwnerNotification({
+          workspaceId,
+          kind,
+          refId: orderId,
+          recipientId: owner.recipientId,
+          payload: {
+            workspaceId,
+            channel: owner.channel,
+            recipient: owner.recipient,
+            title: NOTICE_TITLE[kind],
+            message: noticeMessage(orderId, status, reasons),
+            actionUrl: customerOrderLink(orderId),
+          },
+        });
+      } catch (err) {
+        await recordSystemAudit(
+          workspaceId,
+          "system:notifications",
+          "notification.failed",
+          EffectClass.EXTERNAL_REQUEST,
+          PolicyDecision.ALLOW,
+          { orderId, error: boundedErrorMessage(err) }
+        );
+      }
+    }
   } catch (err) {
     await recordSystemAudit(
       workspaceId,

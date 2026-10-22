@@ -798,7 +798,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
 });
 
 /** The number of routes with `contractTested: false`. Raise it only with a recorded reason in the ADR. */
-const MAX_NOT_CONTRACT_TESTED = 10; // 2 earlier, plus 8 People routes that need a Privy token or a seeded id (ADR 0052)
+const MAX_NOT_CONTRACT_TESTED = 13; // 2 earlier, plus 8 People routes that need a Privy token or a seeded id (ADR 0052), plus 3 owner email routes that need a configured provider or a code only the email carries (ADR 0074)
 
 /** The first key of an object schema, or of the first option of a union. Used to build a wrong-typed body. */
 function firstField(schema: z.ZodTypeAny): string {

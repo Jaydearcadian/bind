@@ -75,6 +75,62 @@
       "note": "Another demo create or reset holds the lock. Answered with Retry-After. docs/decisions/0057."
     },
     {
+      "code": "EMAIL_NOT_CONFIGURED",
+      "httpStatus": 503,
+      "category": "unavailable",
+      "retryable": false,
+      "existing": true,
+      "note": "Owner email is not set up on this server (ADR 0074). Nothing is sent."
+    },
+    {
+      "code": "EMAIL_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "The address is not on this workspace's list (ADR 0074)."
+    },
+    {
+      "code": "EMAIL_SEND_LIMITED",
+      "httpStatus": 429,
+      "category": "rate_limited",
+      "retryable": true,
+      "existing": true,
+      "note": "Three verification codes per address per hour (ADR 0074). Retry-After is set."
+    },
+    {
+      "code": "EMAIL_SEND_FAILED",
+      "httpStatus": 502,
+      "category": "upstream",
+      "retryable": true,
+      "existing": true,
+      "note": "The email provider refused or did not answer the verification mail (ADR 0074)."
+    },
+    {
+      "code": "EMAIL_CODE_INVALID",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": "A wrong code. The message says how many attempts are left (ADR 0074)."
+    },
+    {
+      "code": "EMAIL_CODE_EXPIRED",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "The code is older than ten minutes. Ask for a new one (ADR 0074)."
+    },
+    {
+      "code": "EMAIL_ATTEMPTS_EXCEEDED",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "Five wrong codes end the code. Ask for a new one (ADR 0074)."
+    },
+    {
       "code": "DEMO_CAPACITY_REACHED",
       "httpStatus": 503,
       "category": "unavailable",

@@ -38,6 +38,7 @@ export const OPERATIONS: { readonly [K in OperationId]: OperationRoute } = {
   "getMe": { method: "GET", path: "/api/me" },
   "getMetrics": { method: "GET", path: "/metrics" },
   "getNeedsAttention": { method: "GET", path: "/api/workspaces/{id}/needs-attention" },
+  "getNotificationChannels": { method: "GET", path: "/api/workspaces/{id}/notifications" },
   "getOpenApi": { method: "GET", path: "/api/openapi.json" },
   "getOrder": { method: "GET", path: "/api/workspaces/{id}/orders/{orderId}" },
   "getPublicConfig": { method: "GET", path: "/api/public-config" },
@@ -78,7 +79,9 @@ export const OPERATIONS: { readonly [K in OperationId]: OperationRoute } = {
   "rejectApproval": { method: "POST", path: "/api/approvals/{id}/reject" },
   "rejectMenuProposal": { method: "POST", path: "/api/workspaces/{id}/menu-proposals/{proposalId}/reject" },
   "removeMember": { method: "DELETE", path: "/api/workspaces/{id}/members/{accountId}" },
+  "removeOwnerEmail": { method: "DELETE", path: "/api/workspaces/{id}/notifications/email/{emailId}" },
   "replenish": { method: "POST", path: "/api/workspaces/{id}/replenish" },
+  "requestOwnerEmailVerification": { method: "POST", path: "/api/workspaces/{id}/notifications/email" },
   "resetDemo": { method: "POST", path: "/api/workspaces/{id}/demo/reset" },
   "revokeApproval": { method: "POST", path: "/api/approvals/{id}/revoke" },
   "revokeConnector": { method: "DELETE", path: "/api/workspaces/{id}/connectors/{connectorId}" },
@@ -97,4 +100,5 @@ export const OPERATIONS: { readonly [K in OperationId]: OperationRoute } = {
   "upsertSupplier": { method: "POST", path: "/api/workspaces/{id}/suppliers" },
   "upsertSurfaceBinding": { method: "POST", path: "/api/workspaces/{id}/surfaces" },
   "verifyConnector": { method: "POST", path: "/api/workspaces/{id}/connectors/{connectorId}/verify" },
+  "verifyOwnerEmail": { method: "POST", path: "/api/workspaces/{id}/notifications/email/verify" },
 };

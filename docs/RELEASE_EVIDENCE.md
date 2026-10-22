@@ -400,6 +400,35 @@ live read, remote or hosted check was made, so none is claimed. The GitHub Actio
 BLOCKED for this change. The first full run failed `map drift`, because the code map had been generated before the last test files
 were added; the map was regenerated from the final test set and the second full run passed.
 
+## 11. Change evidence: owner notices by email (ADR 0074)
+
+This section records one change. Branch `worktree-agent-acd2c81ecb86759f4`, fast-forwarded to `claude/capabilities-overview-c6elxr`
+first. The record is `docs/decisions/0074-owner-email-notices.md`.
+
+Commands, run from the worktree, with `DATABASE_URL` pointing at a database of its own on the local cluster (`bind_acd2c81e`):
+
+| Command | Result | Class |
+|---|---|---|
+| `npm ci` | exit 0 | LOCAL_PASS |
+| `npm run lint` | no problems | LOCAL_PASS |
+| `npm run typecheck` (root, sdk, mcp) | no errors | LOCAL_PASS |
+| `npm run test:unit` | 60 files, 638 tests passed | LOCAL_PASS |
+| `npm run test:integration` (full, sequential) | 73 files passed, 1 skipped (the skip predates this change); 667 tests passed, 10 skipped | LOCAL_PASS |
+| `npm run build`, `npm run mcp:build` | exit 0 | LOCAL_PASS |
+| `npm run api:spec`, `sdk:generate`, `capabilities:generate` run twice | every generated file unchanged by the second run | LOCAL_PASS |
+| `npm run map:functions` | **not run.** This worktree has no `.ua/knowledge-graph.json`. The committed map was generated with it, and without it the layer section is rewritten. The map was left unchanged | BLOCKED: the `map drift` gate fails until the map is regenerated where the graph exists |
+| `npm run test:e2e` (website browser suite) | not run. No web or `src/ui` file changed | NOT_RUN |
+| `npm audit --audit-level=high`, forge, anvil, slither | not run. No dependency or contract changed | NOT_RUN |
+| Live email to a real address or provider | **not run.** Every provider call in the tests goes to a local fake server on 127.0.0.1 | NOT_RUN |
+
+Notes on the run:
+
+- The local database is shared by sessions on this machine. A concurrent full integration run from another worktree caused
+  deadlocks in the migration step and in provisioning, which were not in this change. The gate runs here used a database of
+  their own, and the full suite passed on it.
+- The contract sweep's cap on routes that are not contract tested rose from 10 to 13 (three owner email routes, each with a
+  recorded reason in `src/api/registry.ts`). The routes are tested in `tests/integration/owner-email-routes.test.ts`.
+
 ## Appendix: Claims from earlier sessions (not reproduced; do not rely on them)
 
 Everything in this appendix was written by an earlier session. Task 14 did not reproduce any of it: this environment cannot reach

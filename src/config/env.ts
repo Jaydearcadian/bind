@@ -34,7 +34,29 @@ function optionalCredentialKey(name: string) {
   );
 }
 
-const envSchema = z.object({
+/**
+ * A base URL that may carry a secret or a message: the email provider's API base and the app link base (ADR 0074). It must
+ * be https. The one exception is 127.0.0.1 or localhost outside production, which tests use for a local fake provider.
+ * Userinfo is refused. Never throws, and never reports the value.
+ */
+export function emailBaseUrlAllowed(raw: string, nodeEnv: string | undefined): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.username || url.password) return false;
+  if (url.protocol === "https:") return true;
+  return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost") && nodeEnv !== "production";
+}
+
+/** An optional text setting for email: unset or empty is undefined. */
+function optionalEmailText(max: number) {
+  return z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(max).optional());
+}
+
+const envShape = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(3000),
   APP_BASE_URL: z.string().default("http://127.0.0.1:3000"),
@@ -109,6 +131,62 @@ const envSchema = z.object({
   NEBIUS_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   LANGSMITH_API_KEY: z.string().optional(),
+  // Owner email (ADR 0074). Unset: email notices stay simulated and labelled so, and the owner email routes answer
+  // EMAIL_NOT_CONFIGURED. "resend" is the only provider. The link in an email is APP_BASE_URL (ADR 0025), so there is no
+  // second public URL. The API base may be overridden for a local fake provider (https, or localhost outside production).
+  BIND_EMAIL_PROVIDER: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["resend"]).optional()),
+  BIND_EMAIL_API_KEY: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z
+      .string()
+      .min(8)
+      .max(512)
+      .regex(/^\S+$/, "must not contain spaces or line breaks")
+      .optional()
+  ),
+  BIND_EMAIL_FROM: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z
+      .string()
+      .min(3)
+      .max(200)
+      .refine(
+        (v) => v.includes("@") && !Array.from(v).some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f),
+        "must be an address such as Bind <notices@example.com>, without control characters"
+      )
+      .optional()
+  ),
+  BIND_EMAIL_API_BASE: optionalEmailText(300),
+});
+
+/**
+ * The environment rules that span variables (ADR 0074). A provider needs its key, its sender address, and an app link base
+ * that is https (or local, outside production). A set API base must pass the same URL rule. Messages name a variable and
+ * never a value.
+ */
+const envSchema = envShape.superRefine((env, ctx) => {
+  if (env.BIND_EMAIL_API_BASE !== undefined && !emailBaseUrlAllowed(env.BIND_EMAIL_API_BASE, env.NODE_ENV)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["BIND_EMAIL_API_BASE"],
+      message: "BIND_EMAIL_API_BASE must be https, or http on 127.0.0.1 or localhost outside production",
+    });
+  }
+  if (env.BIND_EMAIL_PROVIDER !== undefined) {
+    if (env.BIND_EMAIL_API_KEY === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["BIND_EMAIL_API_KEY"], message: "BIND_EMAIL_API_KEY is required when BIND_EMAIL_PROVIDER is set" });
+    }
+    if (env.BIND_EMAIL_FROM === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["BIND_EMAIL_FROM"], message: "BIND_EMAIL_FROM is required when BIND_EMAIL_PROVIDER is set" });
+    }
+    if (!emailBaseUrlAllowed(env.APP_BASE_URL, env.NODE_ENV)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["APP_BASE_URL"],
+        message: "APP_BASE_URL must be https (or http on 127.0.0.1 or localhost outside production) when BIND_EMAIL_PROVIDER is set",
+      });
+    }
+  }
 });
 
 /**
@@ -125,4 +203,5 @@ export function databaseUrlRule(input: { nodeEnv: string | undefined; databaseUr
 export type EnvConfig = z.infer<typeof envSchema>;
 
 databaseUrlRule({ nodeEnv: process.env.NODE_ENV, databaseUrl: process.env.DATABASE_URL });
+export { envSchema };
 export const config: EnvConfig = envSchema.parse(process.env);

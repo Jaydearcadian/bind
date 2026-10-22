@@ -544,3 +544,33 @@ BEGIN
   END IF;
 END
 $$;
+
+-- Owner email for notices (src/notifications/owner-emails.ts, ADR 0074). One live row per workspace and address. The code is
+-- stored only as a salted SHA-256; it is in the email and nowhere else. A verified row is the proof that the owner received
+-- the code at this address. A removed row keeps its id and loses no evidence it was ever verified.
+CREATE TABLE IF NOT EXISTS owner_emails (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  added_by TEXT NOT NULL,
+  email TEXT NOT NULL CHECK (char_length(email) BETWEEN 3 AND 254 AND email = lower(email)),
+  code_salt TEXT,
+  code_hash TEXT,
+  code_expires_at TIMESTAMPTZ,
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  verified_at TIMESTAMPTZ,
+  -- The surface binding this row created, if it created one. Removing the row removes only that binding.
+  binding_id VARCHAR(64),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  removed_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_owner_emails_live ON owner_emails(workspace_id, email) WHERE removed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_owner_emails_verified ON owner_emails(workspace_id, verified_at) WHERE verified_at IS NOT NULL AND removed_at IS NULL;
+
+-- Each verification mail sent, so the limit of sends per address per hour survives a removal and a re-add.
+CREATE TABLE IF NOT EXISTS owner_email_sends (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_owner_email_sends_addr ON owner_email_sends(workspace_id, email, sent_at);

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { query } from "../db/client.js";
 import { newId } from "../utils/ids.js";
@@ -141,15 +142,27 @@ export interface SurfaceBindingActor {
   id: string;
 }
 
+/**
+ * The integration status a binding is stored with. 'verified' is never stored unless the provider verification flag is set
+ * in the environment (ADR 0022). Shared by upsertSurfaceBinding and the owner email verification (ADR 0074).
+ */
+export function effectiveIntegrationStatus(requested: "simulated" | "configured_unverified" | "verified"): "simulated" | "configured_unverified" | "verified" {
+  return requested === "verified" && !process.env.SURFACE_PROVIDER_VERIFIED ? "configured_unverified" : requested;
+}
+
+/**
+ * The primary key of a binding: a hash of the whole actor id (ADR 0074). The old id dropped punctuation, so `jo.smith@x` and
+ * `josmith@x` got one primary key and the second insert failed. The unique key (workspace, surface, actor) decides which row
+ * an upsert updates.
+ */
+export function surfaceBindingId(workspaceId: string, surface: string, actorId: string): string {
+  return `surf_${createHash("sha256").update(JSON.stringify([workspaceId, surface, actorId])).digest("hex").slice(0, 40)}`;
+}
+
 export async function upsertSurfaceBinding(workspaceId: string, rawInput: unknown, actor: SurfaceBindingActor) {
   const input = SurfaceBindingUpsertSchema.parse(rawInput);
-  // Never allow claiming 'verified' status unless provider verification secret is configured in env
-  const safeStatus =
-    input.integrationStatus === "verified" && !process.env.SURFACE_PROVIDER_VERIFIED
-      ? "configured_unverified"
-      : input.integrationStatus;
-
-  const bindingId = `surf_${workspaceId}_${input.surface}_${input.actorId.replace(/[^a-zA-Z0-9]/g, "")}`;
+  const safeStatus = effectiveIntegrationStatus(input.integrationStatus);
+  const bindingId = surfaceBindingId(workspaceId, input.surface, input.actorId);
   const res = await query(
     `INSERT INTO surface_bindings (id, workspace_id, surface, actor_id, actor_label, actor_role, integration_status, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
