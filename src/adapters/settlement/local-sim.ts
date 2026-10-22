@@ -1,5 +1,5 @@
 import { SettlementAdapter, TransferRequest, TransferResult } from "./types.js";
-import { SettlementRejectedError } from "./errors.js";
+import { SettlementRejectedError, assertPayableCentAmount } from "./errors.js";
 import crypto from "crypto";
 
 const HASH_RE = /^0x[0-9a-fA-F]{64}$/;
@@ -31,7 +31,9 @@ export class LocalSettlementSimulator implements SettlementAdapter {
   }
 
   async transferUSDC(req: TransferRequest): Promise<TransferResult> {
-    const replay = this.transfersByKey.get(req.idempotencyKey) ?? this.transfersByOrder.get(req.orderId);
+    // Parity with the Arc adapter: refused before the replay lookup and before any balance change.
+    assertPayableCentAmount(req.amountCents);
+    const replay =this.transfersByKey.get(req.idempotencyKey) ?? this.transfersByOrder.get(req.orderId);
     if (replay) {
       this.transfersByKey.set(req.idempotencyKey, replay);
       return replay;
@@ -66,6 +68,7 @@ export class LocalSettlementSimulator implements SettlementAdapter {
   }
 
   async depositEscrow(req: TransferRequest, milestoneId: string): Promise<TransferResult> {
+    assertPayableCentAmount(req.amountCents);
     const from = req.fromAddress.toLowerCase();
     const currentFrom = await this.getBalance(from);
     if (currentFrom < req.amountCents) {

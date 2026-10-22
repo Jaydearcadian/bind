@@ -29,6 +29,7 @@ import {
   SettlementPayerMismatchError,
   SettlementRejectedError,
   SettlementTransportError,
+  assertPayableCentAmount,
   transportErrorFrom,
 } from "./errors.js";
 import { BIND_SETTLEMENT_ABI } from "./bind-settlement.abi.js";
@@ -216,13 +217,15 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
    * transaction, or with the hash of the earlier settlement when the order was already paid.
    */
   async transferUSDC(req: TransferRequest): Promise<TransferResult> {
+    // First: a sub-cent or non-bigint amount is refused before any settings check, chain read or RPC call.
+    assertPayableCentAmount(req.amountCents);
     const { contractAddress, signer, walletClient } = this.#requireSettings();
     await this.#assertChain();
 
     if (!isAddress(req.fromAddress) || getAddress(req.fromAddress) !== signer.address) {
       throw new SettlementPayerMismatchError();
     }
-    if (!isAddress(req.toAddress) || req.amountCents <= 0n || !req.orderId || !HASH_RE.test(req.matchHash ?? "")) {
+    if (!isAddress(req.toAddress) || !req.orderId || !HASH_RE.test(req.matchHash ?? "")) {
       throw new SettlementRejectedError("INVALID_REQUEST");
     }
 
