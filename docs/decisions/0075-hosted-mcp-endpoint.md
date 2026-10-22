@@ -169,3 +169,5 @@ side. Until now the MCP server spoke stdio only, so each agent needed the reposi
 - **Live checks against Claude, Cursor or other clients: NOT_RUN.**
 - **A Vercel deployment: NOT_RUN.** The rewrite, the include set and the handler are verified locally; the live request is the
   coordinator's check. A real cold start with the loopback listener under the platform is not verified.
+
+Amendment: an APP_BASE_URL that is a loopback http address (the .env.local default) is ignored for the MCP origin, because it names a dev link base, not the port this server is on; the request's own host is used. Only an https APP_BASE_URL is honoured.

@@ -31,6 +31,10 @@ describe("the hosted endpoint's public origin", () => {
     });
   });
 
+  it("a loopback APP_BASE_URL (the .env.local default) does not pin the endpoint to a port this server may not be on", () => {
+    expect(resolvePublicOrigin({ publicUrl: null, explicitAppBaseUrl: "http://127.0.0.1:3000", nodeEnv: "development" })).toEqual({ origin: null, warning: null });
+  });
+
   it("an APP_BASE_URL that is not an https origin is not used, and the warning names APP_BASE_URL and BIND_PUBLIC_URL", () => {
     const result = resolvePublicOrigin({ publicUrl: null, explicitAppBaseUrl: "http://app.example", nodeEnv: "production" });
     expect(result.origin).toBeNull();

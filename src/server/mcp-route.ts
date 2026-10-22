@@ -118,7 +118,9 @@ export function resolvePublicOrigin(input: PublicOriginInput): PublicOriginResul
   }
   if (input.explicitAppBaseUrl !== null) {
     const origin = parsePublicOrigin(input.explicitAppBaseUrl);
-    if (origin !== null) return { origin, warning: null };
+    if (origin !== null && origin.startsWith("https://")) return { origin, warning: null };
+    // A loopback address (the .env.local default) names a dev machine's link base, not a port this server is on: use the request's own host.
+    if (origin !== null) return { origin: null, warning: null };
     return {
       origin: null,
       warning: "APP_BASE_URL is set but is not an https origin, so it is not used for the MCP endpoint address. Set BIND_PUBLIC_URL.",
