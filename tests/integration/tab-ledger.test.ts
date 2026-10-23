@@ -661,7 +661,7 @@ describe("tab ledger: the daily budget is one decision per workspace, on the UTC
     // four read zero before any of them writes, so all four pass. The barrier releases after four arrivals, or after 800 ms
     // so a serialised reserve (which can only arrive alone) still completes.
     let arrivals = 0;
-    let waiting: Array<() => void> = [];
+    const waiting: Array<() => void> = [];
     const release = () => {
       const pending = waiting.splice(0);
       for (const resolve of pending) resolve();
