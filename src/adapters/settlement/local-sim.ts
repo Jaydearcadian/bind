@@ -27,7 +27,7 @@ export class LocalSettlementSimulator implements SettlementAdapter {
   }
 
   async getBalance(address: string): Promise<bigint> {
-    return this.balances.get(address.toLowerCase()) || 500000n; // Default $5,000.00
+    return this.balances.get(address.toLowerCase()) ?? 500000n; // Default $5,000.00
   }
 
   async transferUSDC(req: TransferRequest): Promise<TransferResult> {
