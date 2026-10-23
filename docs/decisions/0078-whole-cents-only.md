@@ -15,7 +15,9 @@ all use whole cents. Agent-to-agent payments are often fractions of a cent, so t
   like any `SettlementRejectedError`: the order is held as `payment_hold` with `SETTLEMENT_REJECTED` and the code is in the audit evidence.
 - Other invalid requests (bad address, missing order id, bad match hash) keep the generic `INVALID_REQUEST`.
 
-## Open decision (owner), before agent-to-agent payments
+## Resolved by ADR 0081 (2026-10-23): amounts below one cent are accrued and settled in whole cents
+
+Original open decision, kept for the record:
 How to pay amounts below one cent: a smaller base unit in order and ledger types (a migration), a separate micro-payment path, or batching small
 amounts into whole cents. This ADR does not choose.
 
