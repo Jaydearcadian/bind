@@ -40,6 +40,10 @@ describe("tab units (ADR 0081)", () => {
     expect(() => settleableCents(-1n)).toThrow(/inconsistent/);
   });
 
+  it("the largest single charge is 25 USDC: one tenth of the default approval threshold, so no charge is large in one step", () => {
+    expect(MAX_CHARGE_MICRO).toBe(25_000_000n);
+  });
+
   it("parses a charge amount only as a decimal string of whole micro-USDC", () => {
     expect(parseChargeAmountMicro("1")).toBe(1n);
     expect(parseChargeAmountMicro("3000")).toBe(3000n);

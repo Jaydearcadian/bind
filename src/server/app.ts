@@ -472,6 +472,8 @@ function settleResultJson(result: SettleResult) {
       return { outcome: result.outcome, amountCents: result.amountCents.toString(), thresholdCents: result.thresholdCents.toString() };
     case "refused":
       return { outcome: result.outcome, reason: result.reason, balanceMicro: result.balanceMicro.toString() };
+    case "already_attempted":
+      return { outcome: result.outcome, utcDay: result.utcDay };
     case "settlement":
       return {
         outcome: result.outcome,

@@ -345,3 +345,82 @@ describe("tab settlements never reverse a payment that may have been sent (regre
     expect(await auditCount(w, "tab.settlement_cancelled")).toBe(0);
   });
 });
+
+describe("the end-of-day batch and threshold mode, race-free and starvation-free (regression)", () => {
+  beforeAll(async () => {
+    await runMigrations();
+  });
+
+  afterEach(async () => {
+    setEffectFault(null);
+    await removeWorkspaces(created.splice(0));
+  });
+
+  it("two end-of-day batches racing on one tab settle it once a UTC day, not once per batch", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    // The threshold is 2 cents, so one chunk leaves 3 cents on the tab. A second batch on the same day would settle another chunk.
+    const w = await ws("eod-race", { thresholdCents: 2 });
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: 50_000n, idempotencyKey: "race-1", description: "Dish" });
+
+    const [a, b] = await Promise.all([
+      runTabSettlementStep(due(ledger, { endOfDay: true })),
+      runTabSettlementStep(due(ledger, { endOfDay: true })),
+    ]);
+
+    expect(a.endOfDay + b.endOfDay).toBe(1);
+    expect(spy.calls).toHaveLength(1);
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(30_000n);
+  });
+
+  it("the batch stays on the same day after a crash between the attempt and the settle: the tab is resumed, not settled again", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    const w = await ws("eod-crash");
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: 50_000n, idempotencyKey: "ec-1", description: "Dish" });
+    // The attempt committed its settlement and the claim, then the process died before the send.
+    await ledger.reserveSettlement({ workspaceId: w, counterpartyId: cp, endOfDay: { utcDay: new Date().toISOString().slice(0, 10) } });
+
+    const first = await runTabSettlementStep(due(ledger, { endOfDay: true }));
+    const second = await runTabSettlementStep(due(ledger, { endOfDay: true }));
+
+    expect(first).toMatchObject({ resumed: 1, failed: 0 });
+    expect(second).toMatchObject({ endOfDay: 0 });
+    expect(spy.calls).toHaveLength(1);
+  });
+
+  it("in threshold mode a tab whose settle keeps being refused does not starve the others", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    // The budget fits 3 cents. The first tab (smaller id, so first in an id order) needs 5 cents and is refused every time.
+    const w = await ws("starve", { budgetCents: 3 });
+    const blocked = await newCounterparty(w);
+    const fits = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: blocked, amountMicro: 50_000n, idempotencyKey: "st-1", description: "Dish" });
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: fits, amountMicro: 10_000n, idempotencyKey: "st-2", description: "Dish" });
+
+    // One tab per tick (batchSize 1). Two ticks: the refused tab is visited, then the other one.
+    await runTabSettlementStep({ ...due(ledger, { settleOnThreshold: true }), batchSize: 1 });
+    await runTabSettlementStep({ ...due(ledger, { settleOnThreshold: true }), batchSize: 1 });
+
+    expect((await ledger.tabBalance(w, fits)).balanceMicro).toBe(0n);
+    expect(spy.calls.map((c) => c.amountCents)).toEqual([1n]);
+  });
+
+  it("a refusal is audited once per counterparty per day, however often the batch visits it", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    const w = await ws("refuse-once", { budgetCents: 1 });
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: 50_000n, idempotencyKey: "ro-1", description: "Dish" });
+
+    for (let i = 0; i < 3; i += 1) {
+      await runTabSettlementStep({ ...due(ledger, { settleOnThreshold: true }), batchSize: 5 });
+    }
+
+    expect(await auditCount(w, "tab.settlement_refused")).toBe(1);
+    expect(spy.calls).toHaveLength(0);
+  });
+});

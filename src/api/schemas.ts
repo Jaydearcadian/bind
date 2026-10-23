@@ -1074,8 +1074,9 @@ export const TabDetailSchema = z.object({
  * its status now.
  */
 export const TabSettleResultSchema = z.object({
-  outcome: z.enum(["below_threshold", "needs_approval", "refused", "settlement"]),
+  outcome: z.enum(["below_threshold", "needs_approval", "refused", "settlement", "already_attempted"]),
   balanceMicro: z.string().optional(),
+  utcDay: z.string().optional(),
   reason: z.string().optional(),
   amountCents: z.string().optional(),
   thresholdCents: z.string().optional(),

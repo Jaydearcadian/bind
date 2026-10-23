@@ -129,13 +129,13 @@ describe("tab routes over HTTP (ADR 0081)", () => {
   });
 
   it("amounts that are not a positive whole number of micro-USDC within the limit are 400 INVALID_CHARGE_AMOUNT", async () => {
-    const bad: unknown[] = [3000, 1.5, "0", "-1", "1.5", "1e6", " 5", "100000001", "99999999999999999999999"];
+    const bad: unknown[] = [3000, 1.5, "0", "-1", "1.5", "1e6", " 5", "25000001", "99999999999999999999999"];
     for (const amount of bad) {
       const res = await call("POST", `/api/workspaces/${WS_A}/tabs/charges`, ownerA.token, charge(SUPPLIER_A, amount, `bad-${String(amount)}`));
       expect(res.status, JSON.stringify(amount)).toBe(400);
       expect(res.body.code, JSON.stringify(amount)).toBe("INVALID_CHARGE_AMOUNT");
     }
-    const limit = await call("POST", `/api/workspaces/${WS_A}/tabs/charges`, ownerA.token, charge(SUPPLIER_A, "100000000", "api-limit"));
+    const limit = await call("POST", `/api/workspaces/${WS_A}/tabs/charges`, ownerA.token, charge(SUPPLIER_A, "25000000", "api-limit"));
     expect(limit.status).toBe(201);
   });
 
@@ -197,13 +197,13 @@ describe("tab routes over HTTP (ADR 0081)", () => {
     const list = await call("GET", `/api/workspaces/${WS_A}/tabs`, ownerA.token);
     expect(list.status).toBe(200);
     const row = list.body.find((r: any) => r.counterpartyId === SUPPLIER_A);
-    // api-1 (3000), api-staff (5000) and the 100 USDC limit charge (100000000): three entries, 100008000 micro-USDC.
-    expect(row).toMatchObject({ entryCount: 3, balanceMicro: "100008000", settleableCents: "10000" });
+    // api-1 (3000), api-staff (5000) and the 25 USDC limit charge (25000000): three entries, 25008000 micro-USDC.
+    expect(row).toMatchObject({ entryCount: 3, balanceMicro: "25008000", settleableCents: "2500" });
     expect(list.body.every((r: any) => r.counterpartyId.startsWith(WS_A))).toBe(true);
 
     const tab = await call("GET", `/api/workspaces/${WS_A}/tabs/${SUPPLIER_A}`, ownerA.token);
     expect(tab.status).toBe(200);
-    expect(tab.body.balanceMicro).toBe("100008000");
+    expect(tab.body.balanceMicro).toBe("25008000");
     expect(tab.body.entries.length).toBe(3);
     expect(tab.body.entries.every((e: any) => typeof e.amountMicro === "string")).toBe(true);
 
@@ -215,12 +215,12 @@ describe("tab routes over HTTP (ADR 0081)", () => {
   it("the owner settles the whole cents: a settlement is answered with its status, and the balance keeps the remainder", async () => {
     const res = await call("POST", `/api/workspaces/${WS_A}/tabs/${SUPPLIER_A}/settle`, ownerA.token);
     expect(res.status).toBe(200);
-    // 100008000 micro-USDC is 10000 whole cents and 8000 micro that carry over.
-    expect(res.body).toMatchObject({ outcome: "settlement", status: "confirmed", amountCents: "10000" });
+    // 25008000 micro-USDC is 2500 whole cents and 8000 micro that carry over.
+    expect(res.body).toMatchObject({ outcome: "settlement", status: "confirmed", amountCents: "2500" });
     expect(res.body.txHash).toMatch(/^0x[0-9a-f]{64}$/);
     const tab = await call("GET", `/api/workspaces/${WS_A}/tabs/${SUPPLIER_A}`, ownerA.token);
     expect(tab.body.balanceMicro).toBe("8000");
-    expect(tab.body.settlements[0]).toMatchObject({ status: "confirmed", amountCents: "10000" });
+    expect(tab.body.settlements[0]).toMatchObject({ status: "confirmed", amountCents: "2500" });
   });
 
   it("a tab under one cent is answered below_threshold, and a paused workspace is refused with nothing moved", async () => {

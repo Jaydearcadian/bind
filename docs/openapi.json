@@ -17270,7 +17270,7 @@
                 }
               }
             },
-            "description": "The amount is not a positive whole number of micro-USDC within the 100 USDC limit (INVALID_CHARGE_AMOUNT), or a field is invalid (INVALID_CHARGE)."
+            "description": "The amount is not a positive whole number of micro-USDC within the 25 USDC limit (INVALID_CHARGE_AMOUNT), or a field is invalid (INVALID_CHARGE)."
           },
           "401": {
             "content": {
@@ -17782,7 +17782,8 @@
                         "below_threshold",
                         "needs_approval",
                         "refused",
-                        "settlement"
+                        "settlement",
+                        "already_attempted"
                       ],
                       "type": "string"
                     },
@@ -17807,6 +17808,9 @@
                     },
                     "txHash": {
                       "nullable": true,
+                      "type": "string"
+                    },
+                    "utcDay": {
                       "type": "string"
                     }
                   },

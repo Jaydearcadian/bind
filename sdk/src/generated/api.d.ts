@@ -10919,7 +10919,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description The amount is not a positive whole number of micro-USDC within the 100 USDC limit (INVALID_CHARGE_AMOUNT), or a field is invalid (INVALID_CHARGE). */
+            /** @description The amount is not a positive whole number of micro-USDC within the 25 USDC limit (INVALID_CHARGE_AMOUNT), or a field is invalid (INVALID_CHARGE). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -11179,13 +11179,14 @@ export interface operations {
                         balanceMicro?: string;
                         holdReason?: string | null;
                         /** @enum {string} */
-                        outcome: "below_threshold" | "needs_approval" | "refused" | "settlement";
+                        outcome: "below_threshold" | "needs_approval" | "refused" | "settlement" | "already_attempted";
                         reason?: string;
                         settlementId?: string;
                         /** @enum {string} */
                         status?: "pending" | "submitted" | "confirmed" | "held" | "cancelled";
                         thresholdCents?: string;
                         txHash?: string | null;
+                        utcDay?: string;
                     } & {
                         [key: string]: unknown;
                     };

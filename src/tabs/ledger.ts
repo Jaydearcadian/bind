@@ -9,7 +9,7 @@ import type { SettlementAdapter, TransferRequest, TransferResult } from "../adap
 import { effectiveSettlementMode } from "../demo/policy.js";
 import { spendStatusesSql } from "../orders/statuses.js";
 import { spendLockKey } from "../orders/reservation.js";
-import { UTC_DAY_START_SQL } from "../utils/utc-day.js";
+import { UTC_DAY_START_SQL, utcDayStart } from "../utils/utc-day.js";
 import { newId } from "../utils/ids.js";
 import { log } from "../observability/logger.js";
 import { currentRequestId } from "../observability/request-context.js";
@@ -115,6 +115,11 @@ export interface SettleInput {
   workspaceId: string;
   counterpartyId: string;
   actor?: TabActor;
+  /**
+   * Set by the end-of-day batch: the UTC day it is claiming. The claim is taken in the reserve transaction, so one tab is
+   * attempted at most once per UTC day, and a crash leaves no claim behind without a settlement.
+   */
+  endOfDay?: { utcDay: string };
 }
 
 /** What a settle call did. Amounts are bigint; the API turns them into strings. */
@@ -122,6 +127,7 @@ export type SettleResult =
   | { outcome: "below_threshold"; balanceMicro: bigint }
   | { outcome: "needs_approval"; amountCents: bigint; thresholdCents: bigint }
   | { outcome: "refused"; reason: "AGENTS_PAUSED" | "DAILY_LIMIT_EXCEEDED"; balanceMicro: bigint }
+  | { outcome: "already_attempted"; utcDay: string }
   | {
       outcome: "settlement";
       settlementId: string;
@@ -306,6 +312,41 @@ export const PRE_SEND_REJECTION_CODES: ReadonlySet<string> = new Set([
   "PAYER_MISMATCH",
 ]);
 
+/**
+ * Writes an audit row at most once per counterparty per UTC day, in the same transaction. A batch that visits a refused tab
+ * again on the same day writes nothing more: the first row says what happened, and the day's state is in the ledger.
+ */
+async function auditOncePerDay(
+  db: Db,
+  workspaceId: string,
+  actor: TabActor,
+  action: string,
+  decision: PolicyDecision,
+  evidence: { counterpartyId: string } & Record<string, unknown>,
+  dayStart: Date
+): Promise<void> {
+  await db.query(
+    `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at, request_id)
+     SELECT $1::varchar, $2::varchar, NULL, $3::text, $4::text, $5::text, $6::text, $7::text, $8::jsonb, NULL, NOW(), $9::text
+     WHERE NOT EXISTS (
+       SELECT 1 FROM audit_logs WHERE workspace_id = $2::varchar AND action = $6::text AND evidence->>'counterpartyId' = $10::text AND created_at >= $11::timestamptz
+     );`,
+    [
+      newId("audit"),
+      workspaceId,
+      actor.type,
+      actor.id,
+      EffectClass.COMMERCIAL_COMMITMENT,
+      action,
+      decision,
+      JSON.stringify(evidence),
+      currentRequestId(),
+      evidence.counterpartyId,
+      dayStart,
+    ]
+  );
+}
+
 /** The rejection code of an adapter refusal, or null for any other error. */
 function rejectionCodeOf(err: unknown): string | null {
   if (err instanceof SettlementRejectedError) return err.code;
@@ -482,6 +523,7 @@ export class TabLedger {
     const actor = input.actor ?? SYSTEM_ACTOR;
     const ws = input.workspaceId;
     const cpId = input.counterpartyId;
+    const dayStart = utcDayStart(new Date());
 
     return withTransaction(async (client) => {
       const workspace = (
@@ -503,14 +545,38 @@ export class TabLedger {
       const cents = settleableCents(balanceMicro);
       if (cents === 0n) return { kind: "final" as const, result: { outcome: "below_threshold" as const, balanceMicro } };
 
-      // The owner's pause switch (ADR 0023): nothing is cleared or sent while paused.
+      // The owner's pause switch (ADR 0023): nothing is cleared or sent while paused. A paused attempt uses no end-of-day claim.
       if (workspace.agents_paused === true) {
-        await writeAudit(client, ws, actor, "tab.settlement_paused_hold", PolicyDecision.DENY, {
+        await auditOncePerDay(client, ws, actor, "tab.settlement_paused_hold", PolicyDecision.DENY, {
           counterpartyId: cpId,
           hold: "AGENTS_PAUSED",
           amountCents: cents.toString(),
-        }, null);
+        }, dayStart);
         return { kind: "final" as const, result: { outcome: "refused" as const, reason: "AGENTS_PAUSED" as const, balanceMicro } };
+      }
+
+      // The attempt is recorded in this transaction. An end-of-day attempt also claims its UTC day: one conditional upsert,
+      // so a second batch on the same day finds the day claimed and returns, and a crash rolls the claim back with the rest.
+      if (input.endOfDay) {
+        const claimed = await client.query(
+          `INSERT INTO tab_attempts (workspace_id, counterparty_id, last_attempt_at, last_utc_day)
+           VALUES ($1, $2, NOW(), $3::date)
+           ON CONFLICT (workspace_id, counterparty_id) DO UPDATE
+             SET last_attempt_at = NOW(), last_utc_day = EXCLUDED.last_utc_day
+             WHERE tab_attempts.last_utc_day IS NULL OR tab_attempts.last_utc_day < EXCLUDED.last_utc_day
+           RETURNING 1;`,
+          [ws, cpId, input.endOfDay.utcDay]
+        );
+        if (claimed.rowCount === 0) {
+          return { kind: "final" as const, result: { outcome: "already_attempted" as const, utcDay: input.endOfDay.utcDay } };
+        }
+      } else {
+        await client.query(
+          `INSERT INTO tab_attempts (workspace_id, counterparty_id, last_attempt_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (workspace_id, counterparty_id) DO UPDATE SET last_attempt_at = NOW();`,
+          [ws, cpId]
+        );
       }
 
       // Gates that name a hold. The settlement row records the refusal, and it owns no balance (no clear entry).
@@ -522,46 +588,51 @@ export class TabLedger {
             : !workspace.settlement_address
               ? "WORKSPACE_SETTLEMENT_ADDRESS_MISSING"
               : null;
+
+      // One chunk: at most the approval threshold. A balance above it settles chunk by chunk, each chunk its own settlement
+      // through every gate and the budget. The rest carries over to the next attempt.
+      const thresholdCents = BigInt(workspace.approval_threshold_cents);
+      if (!hold && thresholdCents < 1n) {
+        await auditOncePerDay(client, ws, actor, "tab.settlement_needs_approval", PolicyDecision.REQUIRE_APPROVAL, {
+          counterpartyId: cpId,
+          amountCents: cents.toString(),
+          thresholdCents: thresholdCents.toString(),
+        }, dayStart);
+        return { kind: "final" as const, result: { outcome: "needs_approval" as const, amountCents: cents, thresholdCents } };
+      }
+      const chunk = cents > thresholdCents ? thresholdCents : cents;
+
       if (hold) {
         const settlementId = newId("tabset");
         await client.query(
           `INSERT INTO tab_settlements (id, workspace_id, counterparty_id, amount_cents, status, hold_reason, created_at, updated_at)
            VALUES ($1, $2, $3, $4, 'held', $5, NOW(), NOW());`,
-          [settlementId, ws, cpId, cents.toString(), hold]
+          [settlementId, ws, cpId, chunk.toString(), hold]
         );
         await writeAudit(client, ws, actor, "tab.settlement_held", PolicyDecision.DENY, {
           settlementId,
           counterpartyId: cpId,
           hold,
-          amountCents: cents.toString(),
+          amountCents: chunk.toString(),
         }, null);
         return {
           kind: "final" as const,
-          result: { outcome: "settlement" as const, settlementId, status: "held" as const, amountCents: cents, txHash: null, holdReason: hold },
+          result: { outcome: "settlement" as const, settlementId, status: "held" as const, amountCents: chunk, txHash: null, holdReason: hold },
         };
       }
 
-      const thresholdCents = BigInt(workspace.approval_threshold_cents);
-      if (cents > thresholdCents) {
-        await writeAudit(client, ws, actor, "tab.settlement_needs_approval", PolicyDecision.REQUIRE_APPROVAL, {
-          counterpartyId: cpId,
-          amountCents: cents.toString(),
-          thresholdCents: thresholdCents.toString(),
-        }, null);
-        return { kind: "final" as const, result: { outcome: "needs_approval" as const, amountCents: cents, thresholdCents } };
-      }
-
+      // One lock covers the budget check and the write: the spend lock is held by the caller (reserveSettlement).
       const spent = await committedSpendTodayCents(client, ws);
       if (this.afterBudgetRead) await this.afterBudgetRead();
       const dailyLimitCents = BigInt(workspace.budget_daily_limit_cents);
-      if (spent + cents > dailyLimitCents) {
-        await writeAudit(client, ws, actor, "tab.settlement_refused", PolicyDecision.DENY, {
+      if (spent + chunk > dailyLimitCents) {
+        await auditOncePerDay(client, ws, actor, "tab.settlement_refused", PolicyDecision.DENY, {
           counterpartyId: cpId,
           reason: "DAILY_LIMIT_EXCEEDED",
-          amountCents: cents.toString(),
+          amountCents: chunk.toString(),
           dailySpentCents: spent.toString(),
           dailyLimitCents: dailyLimitCents.toString(),
-        }, null);
+        }, dayStart);
         return { kind: "final" as const, result: { outcome: "refused" as const, reason: "DAILY_LIMIT_EXCEEDED" as const, balanceMicro } };
       }
 
@@ -569,7 +640,7 @@ export class TabLedger {
       await client.query(
         `INSERT INTO tab_settlements (id, workspace_id, counterparty_id, amount_cents, status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, 'pending', NOW(), NOW());`,
-        [settlementId, ws, cpId, cents.toString()]
+        [settlementId, ws, cpId, chunk.toString()]
       );
       // The clear and the settlement row commit together: from this commit the settlement owns the cleared amount.
       await client.query(
@@ -579,7 +650,7 @@ export class TabLedger {
           newId("tabent"),
           ws,
           cpId,
-          centsToMicro(cents).toString(),
+          centsToMicro(chunk).toString(),
           ledgerKeys.clear(settlementId),
           settlementId,
           `Settlement ${settlementId}`,
@@ -588,11 +659,11 @@ export class TabLedger {
       await writeAudit(client, ws, actor, "tab.settlement_reserved", PolicyDecision.ALLOW, {
         settlementId,
         counterpartyId: cpId,
-        amountCents: cents.toString(),
+        amountCents: chunk.toString(),
       }, null);
       return {
         kind: "reserved" as const,
-        settlement: { settlementId, workspaceId: ws, counterpartyId: cpId, amountCents: cents },
+        settlement: { settlementId, workspaceId: ws, counterpartyId: cpId, amountCents: chunk },
       };
     });
   }

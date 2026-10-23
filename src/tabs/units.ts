@@ -12,8 +12,12 @@ import { TabError } from "./errors.js";
 /** Micro-USDC in one cent: 1 USDC = 1_000_000 micro, 1 cent = 0.01 USDC. */
 export const MICRO_PER_CENT = 10_000n;
 
-/** The largest single charge: 100 USDC. A larger obligation is recorded as several charges, each reviewable. */
-export const MAX_CHARGE_MICRO = 100_000_000n;
+/**
+ * The largest single charge: 25 USDC. One tenth of the default approval threshold (250 USDC), so one charge is never large in
+ * one step; a larger obligation is recorded as several charges, each within the limit. A named constant on purpose: it is a
+ * product choice and the tests and the docs refer to it.
+ */
+export const MAX_CHARGE_MICRO = 25_000_000n;
 
 /** The longest description a charge or a ledger entry may carry. */
 export const DESCRIPTION_MAX_LENGTH = 200;
@@ -38,7 +42,7 @@ export function parseChargeAmountMicro(value: unknown): bigint {
   }
   const amount = BigInt(value);
   if (amount <= 0n) throw invalidAmount("amountMicro must be greater than zero");
-  if (amount > MAX_CHARGE_MICRO) throw invalidAmount("amountMicro is above the 100 USDC limit for one charge");
+  if (amount > MAX_CHARGE_MICRO) throw invalidAmount("amountMicro is above the 25 USDC limit for one charge");
   return amount;
 }
 
@@ -46,7 +50,7 @@ export function parseChargeAmountMicro(value: unknown): bigint {
 export function assertChargeAmountMicro(value: unknown): asserts value is bigint {
   if (typeof value !== "bigint") throw invalidAmount("amountMicro must be a bigint of whole micro-USDC");
   if (value <= 0n) throw invalidAmount("amountMicro must be greater than zero");
-  if (value > MAX_CHARGE_MICRO) throw invalidAmount("amountMicro is above the 100 USDC limit for one charge");
+  if (value > MAX_CHARGE_MICRO) throw invalidAmount("amountMicro is above the 25 USDC limit for one charge");
 }
 
 function invalidAmount(message: string): TabError {

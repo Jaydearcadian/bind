@@ -897,7 +897,7 @@ export const ROUTES: RouteSpec[] = [
     responses: {
       201: ok("The charge was recorded.", TabChargeResultSchema),
       200: ok("The same key with the same data was already recorded. Nothing was added.", TabChargeResultSchema),
-      400: err("The amount is not a positive whole number of micro-USDC within the 100 USDC limit (INVALID_CHARGE_AMOUNT), or a field is invalid (INVALID_CHARGE)."),
+      400: err("The amount is not a positive whole number of micro-USDC within the 25 USDC limit (INVALID_CHARGE_AMOUNT), or a field is invalid (INVALID_CHARGE)."),
       404: err("The counterparty is not found in your workspace (COUNTERPARTY_NOT_FOUND)."),
       409: err("The counterparty is not verified (COUNTERPARTY_NOT_VERIFIED), or the key was used for a different charge (IDEMPOTENCY_CONFLICT)."),
     },

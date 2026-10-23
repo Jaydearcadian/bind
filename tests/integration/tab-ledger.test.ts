@@ -378,19 +378,48 @@ describe("tab ledger: settlement clears whole cents, and gates leave the balance
     expect((await ledger.tabBalance(noPayer, cpOk)).balanceMicro).toBe(20_000n);
   });
 
-  it("an amount above the approval threshold needs approval: not paid, balance untouched", async () => {
+  it("an amount above the approval threshold settles in chunks: one chunk of the threshold, the rest carries over", async () => {
     const spy = new TabSpy();
     const ledger = ledgerWith(spy);
-    const w = await ws("threshold", { thresholdCents: 500 });
+    const w = await ws("chunks", { thresholdCents: 5 });
     const cp = await newCounterparty(w);
-    await charge(ledger, w, cp, 501n * 10_000n, "t-1");
+    await charge(ledger, w, cp, 12n * 10_000n, "ch-1");
+
+    const first = await ledger.settleTab({ workspaceId: w, counterpartyId: cp });
+    expect(first).toMatchObject({ outcome: "settlement", status: "confirmed", amountCents: 5n });
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(70_000n);
+
+    const second = await ledger.settleTab({ workspaceId: w, counterpartyId: cp });
+    expect(second).toMatchObject({ outcome: "settlement", status: "confirmed", amountCents: 5n });
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(20_000n);
+    expect(spy.calls.map((c) => c.amountCents)).toEqual([5n, 5n]);
+  });
+
+  it("a threshold below one cent cannot chunk anything: the amount needs approval, and the balance is untouched", async () => {
+    const spy = new TabSpy();
+    const ledger = ledgerWith(spy);
+    const w = await ws("threshold-zero", { thresholdCents: 0 });
+    const cp = await newCounterparty(w);
+    await charge(ledger, w, cp, 20_000n, "tz-1");
 
     const result = await ledger.settleTab({ workspaceId: w, counterpartyId: cp });
 
-    expect(result).toEqual({ outcome: "needs_approval", amountCents: 501n, thresholdCents: 500n });
+    expect(result).toMatchObject({ outcome: "needs_approval" });
     expect(spy.calls).toHaveLength(0);
-    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(501n * 10_000n);
-    expect(await auditCount(w, "tab.settlement_needs_approval")).toBe(1);
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(20_000n);
+  });
+
+  it("a balance whose first chunk is blocked by the daily budget is left untouched", async () => {
+    const spy = new TabSpy();
+    const ledger = ledgerWith(spy);
+    const w = await ws("chunk-budget", { thresholdCents: 5, budgetCents: 4 });
+    const cp = await newCounterparty(w);
+    await charge(ledger, w, cp, 12n * 10_000n, "cb-1");
+
+    const result = await ledger.settleTab({ workspaceId: w, counterpartyId: cp });
+
+    expect(result).toEqual({ outcome: "refused", reason: "DAILY_LIMIT_EXCEEDED", balanceMicro: 120_000n });
+    expect(spy.calls).toHaveLength(0);
   });
 
   it("an amount at the threshold is paid (the rule is 'above', as the commitment gate reads it)", async () => {

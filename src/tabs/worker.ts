@@ -1,10 +1,6 @@
 import { query } from "../db/client.js";
-import { newId } from "../utils/ids.js";
-import { PolicyDecision } from "../policy/engine.js";
-import { EffectClass } from "../policy/effect-classifier.js";
-import { currentRequestId } from "../observability/request-context.js";
 import { MICRO_PER_CENT } from "./units.js";
-import { utcDayStart } from "../utils/utc-day.js";
+import { utcDayKey } from "../utils/utc-day.js";
 import { SYSTEM_ACTOR, tabLedger, type TabLedger } from "./ledger.js";
 
 /**
@@ -97,46 +93,33 @@ export async function runTabSettlementStep(opts: TabWorkerOptions): Promise<TabW
   }
 
   // (c) Tabs that are due. A tab qualifies when it holds a cent, its supplier is verified with a payment address, its
-  // workspace has a settlement address and is not paused. The day rule counts the attempt marker written below.
+  // workspace has a settlement address and is not paused. End-of-day: each tab is claimed once per UTC day, inside the reserve
+  // transaction (tab_attempts). Threshold mode has no day claim. Both orders the batch by the least recently attempted tab,
+  // so a tab refused every time cannot starve the rest.
   if (opts.endOfDay === false && opts.settleOnThreshold !== true) return counts;
-  const dayStart = utcDayStart(opts.now);
+  const dayKey = utcDayKey(opts.now);
+  const endOfDay = opts.settleOnThreshold !== true;
   const due = await query(
     `SELECT s.workspace_id, s.id AS counterparty_id
      FROM suppliers s
      JOIN workspaces w ON w.id = s.workspace_id
+     LEFT JOIN tab_attempts a ON a.workspace_id = s.workspace_id AND a.counterparty_id = s.id
      WHERE s.verified = TRUE AND s.payment_address IS NOT NULL
        AND w.settlement_address IS NOT NULL AND w.agents_paused = FALSE
        AND (SELECT COALESCE(SUM(CASE e.kind WHEN 'clear' THEN -e.amount_micro ELSE e.amount_micro END), 0)
             FROM tab_entries e WHERE e.workspace_id = s.workspace_id AND e.counterparty_id = s.id) >= $1
-       AND ($2::boolean OR NOT EXISTS (
-             SELECT 1 FROM audit_logs a
-             WHERE a.workspace_id = s.workspace_id AND a.action = 'tab.end_of_day_attempt'
-               AND a.evidence->>'counterpartyId' = s.id AND a.created_at >= $3))
-     ORDER BY s.workspace_id ASC, s.id ASC
+       AND ($2::boolean OR a.last_utc_day IS NULL OR a.last_utc_day < $3::date)
+     ORDER BY COALESCE(a.last_attempt_at, '-infinity'::timestamptz) ASC, s.workspace_id ASC, s.id ASC
      LIMIT $4;`,
-    [MICRO_PER_CENT.toString(), opts.settleOnThreshold === true, dayStart, opts.batchSize]
+    [MICRO_PER_CENT.toString(), !endOfDay, dayKey, opts.batchSize]
   );
   for (const row of due.rows) {
     try {
-      // One attempt marker per tab per UTC day, written before the attempt, so a retry does not settle the tab twice.
-      await query(
-        `INSERT INTO audit_logs (id, workspace_id, workflow_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, tx_hash, created_at, request_id)
-         VALUES ($1, $2, NULL, $3, $4, $5, 'tab.end_of_day_attempt', $6, $7, NULL, NOW(), $8);`,
-        [
-          newId("audit"),
-          row.workspace_id,
-          SYSTEM_ACTOR.type,
-          "system:tab-worker",
-          EffectClass.COMMERCIAL_COMMITMENT,
-          PolicyDecision.ALLOW,
-          JSON.stringify({ counterpartyId: row.counterparty_id }),
-          currentRequestId(),
-        ]
-      );
       const result = await ledger.settleTab({
         workspaceId: row.workspace_id,
         counterpartyId: row.counterparty_id,
         actor: { type: "system", id: "system:tab-worker" },
+        endOfDay: endOfDay ? { utcDay: dayKey } : undefined,
       });
       if (result.outcome === "settlement") {
         counts.endOfDay += 1;

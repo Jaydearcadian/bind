@@ -642,3 +642,15 @@ CREATE TABLE IF NOT EXISTS tab_entries (
 );
 CREATE INDEX IF NOT EXISTS idx_tab_entries_tab ON tab_entries (workspace_id, counterparty_id);
 CREATE INDEX IF NOT EXISTS idx_tab_entries_settlement ON tab_entries (settlement_id);
+
+-- Per counterparty: when the tab was last attempted, and on which UTC day its end-of-day attempt was claimed (ADR 0081).
+-- The claim is one conditional upsert in the same transaction as the reservation, so a crash rolls both back together and a
+-- second batch on the same day finds the day claimed. last_attempt_at orders the batch, so no tab starves the others.
+CREATE TABLE IF NOT EXISTS tab_attempts (
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  counterparty_id VARCHAR(64) NOT NULL,
+  last_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_utc_day DATE,
+  PRIMARY KEY (workspace_id, counterparty_id),
+  FOREIGN KEY (workspace_id, counterparty_id) REFERENCES suppliers (workspace_id, id)
+);
