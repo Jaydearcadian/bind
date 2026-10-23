@@ -12,11 +12,14 @@ import { recordWorkerTick } from "../observability/metrics.js";
 import { RETENTION_HOURS } from "../server/idempotency.js";
 import { currentRequestId } from "../observability/request-context.js";
 import { purgeExpiredDemos } from "../demo/purge.js";
+import { runTabSettlementStep } from "../tabs/worker.js";
+import { tabLedger, type TabLedger } from "../tabs/ledger.js";
 
 /**
  * The background worker (ADR 0029, ADR 0030). One tick runs five steps in order, each bounded by a batch size:
  *   1. approval expiry, 2. interrupted-workflow recovery, 3. settlement confirmation polling,
- *   4. recovery of orders left in `settling`, 5. the restock sweep (off unless enabled), then the idempotency sweep and
+ *   4. recovery of orders left in `settling`, 4b. the tab settlements (docs/decisions/0081: resume pending, confirm submitted,
+ *   the end-of-day batch), 5. the restock sweep (off unless enabled), then the idempotency sweep and
  *   the demo expiry sweep (docs/decisions/0057), which deletes expired demo workspaces whatever the demo flag says.
  * Every step first takes a non-blocking session lock named `worker:<step>`. A step whose lock is busy is skipped
  * and reported as skipped. The operations are idempotent regardless, so the locks only avoid duplicate work.
@@ -32,6 +35,7 @@ export type WorkerStep =
   | "recovery"
   | "settlement_poll"
   | "stuck_settling"
+  | "tab_settlements"
   | "restock_sweep"
   | "idempotency_sweep"
   | "demo_expiry";
@@ -46,6 +50,16 @@ export interface TickReport {
   recovery: { skipped: boolean; recovered: number; failed: number; inDoubt: number };
   settlementPoll: { skipped: boolean; polled: number; finished: number; pending: number; held: number; failed: number };
   stuckSettling: { skipped: boolean; toSubmitted: number; toHold: number; failed: number };
+  /** Tab settlements (docs/decisions/0081). `resumed` were pending and are now submitted; `endOfDay` were settled by the batch. */
+  tabSettlements: {
+    skipped: boolean;
+    resumed: number;
+    confirmed: number;
+    held: number;
+    cancelled: number;
+    endOfDay: number;
+    failed: number;
+  };
   /** `skipped` is true when the sweep did not run: it is off, or its lock was busy. */
   restockSweep: { skipped: boolean; started: number; failed: number };
   /** Removes stored API idempotency outcomes older than their retention (ADR 0049). */
@@ -74,6 +88,11 @@ export interface TickOptions {
   restockWorkspaceIds?: string[];
   /** A sku with any workflow created this recently is not swept again (default 6 hours). */
   restockCooldownMs?: number;
+  /**
+   * Tab settlements (docs/decisions/0081). `endOfDay` runs the once-a-UTC-day batch and is on by default. `settleOnThreshold`
+   * settles a tab as soon as it holds one cent and is off by default. `ledger` is the tab ledger to use (tests inject one).
+   */
+  tabs?: { endOfDay?: boolean; settleOnThreshold?: boolean; ledger?: TabLedger };
 }
 
 export interface WorkerOptions extends TickOptions {
@@ -104,6 +123,7 @@ const STEP_KEY: Record<WorkerStep, keyof Omit<TickReport, "errors">> = {
   recovery: "recovery",
   settlement_poll: "settlementPoll",
   stuck_settling: "stuckSettling",
+  tab_settlements: "tabSettlements",
   restock_sweep: "restockSweep",
   idempotency_sweep: "idempotencySweep",
   demo_expiry: "demoExpiry",
@@ -115,6 +135,7 @@ function emptyReport(): TickReport {
     recovery: { skipped: false, recovered: 0, failed: 0, inDoubt: 0 },
     settlementPoll: { skipped: false, polled: 0, finished: 0, pending: 0, held: 0, failed: 0 },
     stuckSettling: { skipped: false, toSubmitted: 0, toHold: 0, failed: 0 },
+    tabSettlements: { skipped: false, resumed: 0, confirmed: 0, held: 0, cancelled: 0, endOfDay: 0, failed: 0 },
     restockSweep: { skipped: false, started: 0, failed: 0 },
     idempotencySweep: { skipped: false, removed: 0 },
     demoExpiry: { skipped: false, removed: 0, failed: 0 },
@@ -140,6 +161,11 @@ function resolved(opts: TickOptions) {
     restockSweep: opts.restockSweep ?? false,
     restockWorkspaceIds: opts.restockWorkspaceIds,
     restockCooldownMs: opts.restockCooldownMs ?? DEFAULT_RESTOCK_COOLDOWN_MS,
+    tabs: {
+      endOfDay: opts.tabs?.endOfDay ?? true,
+      settleOnThreshold: opts.tabs?.settleOnThreshold ?? false,
+      ledger: opts.tabs?.ledger ?? tabLedger,
+    },
   };
 }
 
@@ -167,6 +193,31 @@ async function runStep(step: WorkerStep, report: TickReport, body: () => Promise
     report.errors.push({ step, error: boundedMessage(err) });
   } finally {
     await lock.release();
+  }
+}
+
+/**
+ * Tab settlements (docs/decisions/0081): resumes pending settlements, confirms submitted ones and runs the due end-of-day
+ * batch. The tab step is one lock and one report entry; its errors are bounded and recorded like the other steps'.
+ */
+async function tabSettlementsStep(cfg: Resolved, report: TickReport): Promise<void> {
+  const counts = await runTabSettlementStep({
+    endOfDay: cfg.tabs.endOfDay,
+    settleOnThreshold: cfg.tabs.settleOnThreshold,
+    staleAfterMs: cfg.stuckSettlingAfterMs,
+    confirmAfterMs: cfg.confirmAfterMs,
+    batchSize: cfg.batchSize,
+    now: cfg.now,
+    ledger: cfg.tabs.ledger,
+  });
+  report.tabSettlements.resumed = counts.resumed;
+  report.tabSettlements.confirmed = counts.confirmed;
+  report.tabSettlements.held = counts.held;
+  report.tabSettlements.cancelled = counts.cancelled;
+  report.tabSettlements.endOfDay = counts.endOfDay;
+  report.tabSettlements.failed = counts.failed;
+  for (const message of counts.errors) {
+    report.errors.push({ step: "tab_settlements", error: redactText(message).slice(0, ERROR_LIMIT) });
   }
 }
 
@@ -397,6 +448,7 @@ export async function runTick(opts: TickOptions = {}): Promise<TickReport> {
   await runStep("recovery", report, () => recoveryStep(cfg, report));
   await runStep("settlement_poll", report, () => settlementPollStep(cfg, report));
   await runStep("stuck_settling", report, () => stuckSettlingStep(cfg, report));
+  await runStep("tab_settlements", report, () => tabSettlementsStep(cfg, report));
   if (cfg.restockSweep) {
     await runStep("restock_sweep", report, () => restockSweepStep(cfg, report));
   } else {
