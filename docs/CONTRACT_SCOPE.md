@@ -2,43 +2,150 @@ Decision: IN_SCOPE
 
 # Contract Scope & Deployment: BindSettlement on Arc L1
 
+Rewritten 2026-10-20 (Task 13) so that every claim says how it is known. Every fact from the earlier version is kept.
+
+## How to read the labels
+
+- `UNVERIFIED_CLAIM (earlier session; reproduce with: <command>)`: an earlier session stated this. The command is the reproduction the repository provides. This environment has no network access and no Foundry, so none of these claims was re-verified here. Running the command against the live network would verify only the part of the claim the command checks.
+- `UNVERIFIED_CLAIM (earlier session; no reproduction command in the repository)`: no script in the repository checks this claim.
+- `LOCAL_PASS (<command>)`: checked in this environment by the command shown.
+- `BLOCKED` and `NOT_RUN`: as defined in `docs/TESTING_AND_RELEASE_GATES.md`, section 10.
+
+Nothing in this document is a live pass or a remote verification. Those require a recorded run in `docs/RELEASE_EVIDENCE.md`.
+
+Reproduction command used below: `ARC_RPC_URL=<arc-rpc-url-with-token> npx tsx scripts/verify-live-arc.ts`. The script requires `ARC_RPC_URL` (or `ARC_TESTNET_RPC_URL`). Its built-in default contains the literal placeholder `<ARC_RPC_TOKEN>` and cannot be used. Gates 3 to 5 call Foundry's `cast` binary, which must be on `PATH`. The optional `LAST_LIVE_SETTLEMENT_TX=<hash>` overrides the hash that gate 6 checks. Each run appends a table to `docs/RELEASE_EVIDENCE.md`.
+
 ## 1. Bind-Owned Smart Contracts
 
-Bind deploys and owns [`BindSettlement.sol`](file:///home/ubuntu/bind/contracts/src/BindSettlement.sol):
+Bind deploys and owns [`BindSettlement.sol`](../contracts/src/BindSettlement.sol):
 - **Purpose**: Trustless on-chain milestone escrow, 3-way match hash recording (`keccak256(PO, DeliveryReceipt, SupplierBill)`), deterministic on-chain policy enforcement (rolling 24h daily spend limit, vendor allowlist), and native USDC settlement.
-- **Network**: Arc Testnet (Chain ID `5042002`).
-- **RPC**: Arc Canteen RPC (`https://rpc.testnet.arc-node.thecanteenapp.com/v1/<ARC_RPC_TOKEN>`). The access token is supplied via `ARC_RPC_URL`/`RPC_URL` and is never committed.
-- **Deployer / Owner Wallet**: `0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2`.
-- **Active Deployed Contract Address**: [`0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29`](https://testnet.arcscan.app/address/0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29).
-- **Deployment Transaction Hash**: [`0xe152f9ced4c696548c42d629ea88917ca1b810de845407ac0b7c17698245300e`](https://testnet.arcscan.app/tx/0xe152f9ced4c696548c42d629ea88917ca1b810de845407ac0b7c17698245300e).
-- **Previous Deployment**: `0x6cb713De75CDB19c3f7e9ACAB10Dc753b7cea96f` (Initial v1 without on-chain policy).
+  - Source note (read from `_checkAndUpdateDailyLimit`, not run): the daily limit is a fixed window, not a rolling one. `dailySpent` is reset only when a call arrives at or after `lastDayReset + 1 days`. `lastDayReset` changes only at construction and at that reset. `refundEscrow` subtracts the refunded amount from `dailySpent`.
+- **Network**: Arc Testnet (Chain ID `5042002`). `LIVE_READ_PASS` (reproduced 2026-10-22: eth_chainId = 5042002; see docs/RELEASE_EVIDENCE.md, live run). Gate 1 of that script reads `eth_chainId` and compares it with `5042002`.
+- **RPC**: Arc Canteen RPC (`https://rpc.testnet.arc-node.thecanteenapp.com/v1/<ARC_RPC_TOKEN>`). The access token is supplied via `ARC_RPC_URL`/`RPC_URL` and is never committed. The adapter reads `ARC_RPC_URL` then `RPC_URL` (`src/adapters/settlement/arc-l1.ts`). The endpoint claim is `LIVE_READ_PASS` (reproduced 2026-10-22: RPC answers; the provider name is not checked; see docs/RELEASE_EVIDENCE.md, live run), since gate 1 connects to it.
+- **Deployer / Owner Wallet**: `0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2`. `LIVE_READ_PASS` (reproduced 2026-10-22: owner() = this address and the signer key derives to it; see docs/RELEASE_EVIDENCE.md, live run). No script reads `owner()`.
+- **Active Deployed Contract Address**: [`0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29`](https://testnet.arcscan.app/address/0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29). `LIVE_READ_PASS` (reproduced 2026-10-22: code present; body matches the artifact except the compiler metadata tail; owner read; see docs/RELEASE_EVIDENCE.md, live run). Gate 2 checks only that the address has non-empty bytecode. It does not compare the bytecode with the artifact and does not check the owner.
+- **Deployment Transaction Hash**: [`0xe152f9ced4c696548c42d629ea88917ca1b810de845407ac0b7c17698245300e`](https://testnet.arcscan.app/tx/0xe152f9ced4c696548c42d629ea88917ca1b810de845407ac0b7c17698245300e). `LIVE_READ_PASS` (reproduced 2026-10-22: receipt success, contractAddress is the deployed contract, block 67155017; see docs/RELEASE_EVIDENCE.md, live run).
+- **Previous Deployment**: `0x6cb713De75CDB19c3f7e9ACAB10Dc753b7cea96f` (Initial v1 without on-chain policy). `LIVE_READ_PASS` (reproduced 2026-10-22: address has code; the "without on-chain policy" description is not checked; see docs/RELEASE_EVIDENCE.md, live run).
+
+Local check of the committed artifact: `LOCAL_PASS (npx vitest run tests/unit/contract-artifact.test.ts)`. It confirms that `contracts/artifacts/BindSettlement.json` carries the SHA-256 of the current `contracts/src/BindSettlement.sol`. It does not show that any deployment uses that bytecode.
 
 ## 2. On-Chain Policy Verification (Live Arc Testnet)
 
 1. **Daily Spend Limit (1.0 USDC / 1e18 wei)**:
-   - Configuration Tx: [`0x388196b8c8fdf16cf600a1f059fa8fa0fde6a710424588eea6f54c0425b5d1ab`](https://testnet.arcscan.app/tx/0x388196b8c8fdf16cf600a1f059fa8fa0fde6a710424588eea6f54c0425b5d1ab).
-   - Revert Verification: Attempted 2.0 USDC settlement reverts on-chain with `DailyLimitExceeded(2001000000000000000, 1000000000000000000)` (`0xef664d6a`).
+   - Configuration Tx: [`0x388196b8c8fdf16cf600a1f059fa8fa0fde6a710424588eea6f54c0425b5d1ab`](https://testnet.arcscan.app/tx/0x388196b8c8fdf16cf600a1f059fa8fa0fde6a710424588eea6f54c0425b5d1ab). `LIVE_READ_PASS` (reproduced 2026-10-22: receipt success to the contract at block 67155039; dailySpendLimit() = 1e18; see docs/RELEASE_EVIDENCE.md, live run). No script reads the transaction or the stored limit. Gate 5 shows only that a 2.0 USDC call reverts, which implies a limit below 2.0 USDC.
+   - Revert Verification: Attempted 2.0 USDC settlement reverts on-chain with `DailyLimitExceeded(2001000000000000000, 1000000000000000000)` (`0xef664d6a`). `LIVE_READ_PASS` (reproduced 2026-10-22: eth_call from the funded owner reverts with 0xef664d6a and arguments 2.0 and 1.0 USDC; see docs/RELEASE_EVIDENCE.md, live run). Gate 5 simulates a 2.0 USDC `settleOrder` and checks that the error contains `0xef664d6a`. It does not check the two arguments. The first argument is `dailySpent + amount`, so 2.001 USDC means 0.001 USDC was already counted when that call reverted. Section 2.3 records that settlement. The order of events should be checked against the chain.
+   - Selector `0xef664d6a`: `LOCAL_PASS (node --input-type=module -e 'import {toFunctionSelector} from "viem"; console.log(toFunctionSelector("DailyLimitExceeded(uint256,uint256)"))')`. The result matches the value above.
 2. **Vendor Whitelist Enforcement**:
-   - Enforcement Enabled Tx: [`0x4c8f5b2ca544c05a22caa639d4707cb8c81264ff38044d338d02f6bb7f2d7051`](https://testnet.arcscan.app/tx/0x4c8f5b2ca544c05a22caa639d4707cb8c81264ff38044d338d02f6bb7f2d7051).
-   - Vendor Whitelisted Tx: [`0x20f04822e1ea1fe0a79953071207a64db3575bd90e15f0243dc1a4be3575ae2a`](https://testnet.arcscan.app/tx/0x20f04822e1ea1fe0a79953071207a64db3575bd90e15f0243dc1a4be3575ae2a) (`0xa8358AED200D6CB6C856F972D853C1be833006ea`).
-   - Revert Verification: Settle to unwhitelisted vendor reverts on-chain with `VendorNotWhitelisted(address)` (`0x65e822e9`).
+   - Enforcement Enabled Tx: [`0x4c8f5b2ca544c05a22caa639d4707cb8c81264ff38044d338d02f6bb7f2d7051`](https://testnet.arcscan.app/tx/0x4c8f5b2ca544c05a22caa639d4707cb8c81264ff38044d338d02f6bb7f2d7051). `LIVE_READ_PASS` (reproduced 2026-10-22: receipt success at block 67155064; enforceVendorWhitelist() = true; see docs/RELEASE_EVIDENCE.md, live run). Gate 4 implies enforcement is on, because it expects a `VendorNotWhitelisted` revert, but it does not read the flag.
+   - Vendor Whitelisted Tx: [`0x20f04822e1ea1fe0a79953071207a64db3575bd90e15f0243dc1a4be3575ae2a`](https://testnet.arcscan.app/tx/0x20f04822e1ea1fe0a79953071207a64db3575bd90e15f0243dc1a4be3575ae2a) (`0xa8358AED200D6CB6C856F972D853C1be833006ea`). The whitelist status of the vendor is `LIVE_READ_PASS` (reproduced 2026-10-22: receipt success at block 67155084; whitelistedVendors = true; see docs/RELEASE_EVIDENCE.md, live run), because gate 3 reads `whitelistedVendors` for that address and expects `true`. The transaction hash itself is `UNVERIFIED_CLAIM (earlier session; no reproduction command in the repository)`.
+   - Revert Verification: Settle to unwhitelisted vendor reverts on-chain with `VendorNotWhitelisted(address)` (`0x65e822e9`). `LIVE_READ_PASS` (reproduced 2026-10-22: eth_call from the funded owner reverts with 0x65e822e9; see docs/RELEASE_EVIDENCE.md, live run). Only a gate-4 row whose status is `VERIFIED_REMOTE` contains the selector check. A non-revert failure in gate 4 is reported as `LIVE_READ_PASS` with revert wording (see section 5).
+   - Selector `0x65e822e9`: `LOCAL_PASS (node --input-type=module -e 'import {toFunctionSelector} from "viem"; console.log(toFunctionSelector("VendorNotWhitelisted(address)"))')`. The result matches the value above.
 3. **Live Whitelisted Settlement**:
-   - Tx: [`0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb`](https://testnet.arcscan.app/tx/0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb).
-   - Value: 0.001 USDC native transfer with `SettlementExecuted` event.
-   - Resulting `dailySpent()`: 1000000000000000 (0.001 USDC).
+   - Tx: [`0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb`](https://testnet.arcscan.app/tx/0x626129a1953e7fa8cea3c1d5f4904e246ec9eae5de1ecdb6fb91af581c711bbb). `LIVE_READ_PASS` (reproduced 2026-10-22: receipt success, block 67155117, from the owner, value 1e15; see docs/RELEASE_EVIDENCE.md, live run). Gate 6 checks that the receipt exists with status `0x1`. It does not check the block, the logs or the value.
+   - Value: 0.001 USDC native transfer with `SettlementExecuted` event. `LIVE_READ_PASS` (reproduced 2026-10-22: value 1e15 confirmed; the log comes from the system emitter, event name not decoded; see docs/RELEASE_EVIDENCE.md, live run).
+   - Resulting `dailySpent()`: 1000000000000000 (0.001 USDC). `LIVE_READ_PASS` (reproduced 2026-10-22: dailySpent() = 1e15; see docs/RELEASE_EVIDENCE.md, live run).
 
 ## 3. External System Contracts Consumed
 
 1. **Native USDC Precompile / System Emitter**:
-   - ERC-20 NativeFiatToken Interface (6 decimals): [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000).
-   - EIP-7708 System Log Emitter (18 decimals): `0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE`.
-   - Live Verified Transfer: [`0x03f3f068d372737396fe8aebbf5e3aaf4bbd3b857698e24de8b4657f43965e01`](https://testnet.arcscan.app/tx/0x03f3f068d372737396fe8aebbf5e3aaf4bbd3b857698e24de8b4657f43965e01) (Block `67153050`).
+   - ERC-20 NativeFiatToken Interface (6 decimals): [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000). The on-chain interface is `LIVE_READ_PASS` (reproduced 2026-10-22: 0x3600… has code, decimals 6, symbol USDC; see docs/RELEASE_EVIDENCE.md, live run). The address constant is `LOCAL_PASS (npx vitest run tests/unit/arc-contract-boundary.test.ts)`, which checks `ARC_USDC_PRECOMPILE` against this value and the `transfer` selector. That is not evidence of on-chain behaviour.
+   - EIP-7708 System Log Emitter (18 decimals): `0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE`. `UNVERIFIED_CLAIM (earlier session; no reproduction command in the repository)`. No source file in the repository references this address.
+   - Live Verified Transfer: [`0x03f3f068d372737396fe8aebbf5e3aaf4bbd3b857698e24de8b4657f43965e01`](https://testnet.arcscan.app/tx/0x03f3f068d372737396fe8aebbf5e3aaf4bbd3b857698e24de8b4657f43965e01) (Block `67153050`). `LIVE_READ_PASS` (reproduced 2026-10-22: receipt success at block 67153050 to 0x3600…; see docs/RELEASE_EVIDENCE.md, live run).
+   - Decimal conventions in the code (`LOCAL_PASS` by reading `src/adapters/settlement/arc-l1.ts`, not a run): `getBalance` divides the 6-decimal precompile balance by 10^4 to get cents. Settlement sends 1 cent as 1e16 wei of the 18-decimal native USDC.
 2. **ERC-8183 AgenticCommerce / Escrow Standard**:
-   - Reference contract on Arc Testnet: `0x0747EEf0706327138c69792bF28Cd525089e4583`.
+   - Reference contract on Arc Testnet: `0x0747EEf0706327138c69792bF28Cd525089e4583`. `LIVE_READ_PASS` (reproduced 2026-10-22: address has code; behaviour not checked; see docs/RELEASE_EVIDENCE.md, live run).
+   - The adapter declares an `ERC8183_ABI`, but `depositEscrow` and `releaseEscrow` throw `SettlementNotSupportedError` (`docs/decisions/0013-arc-settlement-truthful-states.md`). No code calls that reference contract.
+
+### Amount units: whole cents only
+
+- Bind settles whole USDC cents only. `TransferRequest.amountCents` is a bigint count of cents, and the minimum payable amount is 1 cent (0.01 USDC). Nothing is paid below 0.01 USDC (owner decision).
+- A zero, negative, fractional or otherwise non-bigint amount is refused with `SettlementRejectedError` code `SUB_CENT_AMOUNT_NOT_SUPPORTED`. The message reads: "amounts below one cent (0.01 USDC) are not supported yet, only whole cents are paid". The Arc adapter checks this first in `transferUSDC`, before any settings check, chain read or RPC call, so nothing is sent. The local simulator applies the same check in `transferUSDC` and `depositEscrow`.
+- The order is held in `payment_hold` with `SETTLEMENT_REJECTED`, and the code is written to the audit evidence.
+- Sub-cent payments (for example agent-to-agent payments below 0.01 USDC) need an owner decision before they are supported. Until then this refusal stands.
+- Unit coverage: `tests/unit/sub-cent-amount.test.ts`. This is `LOCAL_PASS` for the guard and the wei conversion (1 cent = 1e16 wei). It does not exercise the workflow's database path.
 
 ## 4. Foundry Verification Gates
 
-Executed in `contracts/` and verified via `scripts/verify-local.sh`:
-- `forge fmt --check`: 100% compliant.
-- `forge test -vvv`: 10 passed (unit, fuzzing, policy, invariant, and adversarial tests).
-- `forge coverage`: 100% line coverage (68/68 lines), 100% function coverage (11/11 functions).
+**Update 2026-10-20 (`f776d34`):** Foundry 1.5.1, Anvil 1.5.1 and Slither 0.11.6 were installed in this container and the gates were run. Results are in `docs/RELEASE_EVIDENCE.md` section 3: Forge format and build exit 0; 24 of 24 Forge tests passed (10 unit or fuzz, 8 reentrancy, 6 invariants at 256 runs, depth 15); contract coverage is lines 100% (68/68), statements 93.02%, branches 72.73%, functions 100%; Anvil suite 10 of 10; Slither found nothing medium or high. The lines below are the earlier session's claims, kept for history. The 10-test count and the 100% line and function figures are now reproduced. "No invariant tests" and "No reentrancy test exists" are superseded (Task 13b added them). Everything remains local: nothing ran in CI or against Arc.
+
+The earlier session recorded these results:
+- `forge fmt --check`: 100% compliant. `UNVERIFIED_CLAIM (earlier session; reproduce with: cd contracts && forge fmt --check)`. Local result on 2026-10-20: reproduced (`LOCAL_PASS`).
+- `forge test -vvv`: 10 passed (unit, fuzzing, policy, invariant, and adversarial tests). `UNVERIFIED_CLAIM (earlier session; reproduce with: cd contracts && forge test -vvv)`. Local result on 2026-10-20: reproduced (`LOCAL_PASS`).
+  - Static check, not a run (`LOCAL_PASS (grep -c "function test" contracts/test/BindSettlement.t.sol)`): the file defines 10 test functions, nine `test_*` and one `testFuzz_*`. It defines no `invariant_*` function and imports no invariant helper. The word "invariant" appears only in a comment. The "invariant" part of the claim is therefore not supported by the file.
+  - The adversarial tests are access-control checks (`test_PolicyAdmin_OnlyOwner`, `test_UnauthorizedCallerCannotRelease`). No reentrancy test exists.
+- `forge coverage`: 100% line coverage (68/68 lines), 100% function coverage (11/11 functions). `UNVERIFIED_CLAIM (earlier session; reproduce with: cd contracts && forge coverage)`. Local result on 2026-10-20: reproduced (`LOCAL_PASS`).
+
+Gaps against `docs/TESTING_AND_RELEASE_GATES.md` section 2, from the tree as it is:
+- No invariant tests (see above).
+- One fuzz test (`testFuzz_DepositAndRelease`, the deposit amount). No fuzzing of addresses, deadlines or IDs.
+- No Foundry deployment script: `contracts/` has no `script/` directory. The Anvil suite (`tests/integration/anvil-settlement.test.ts`) deploys the committed artifact through viem, not through a Foundry script. It is `NOT_RUN` here.
+- No gas snapshot (`forge snapshot` output is not in the repository).
+- No static analysis has been run. Slither is `BLOCKED` here and configured in CI (see section 6).
+
+## 5. Known issues found while writing this document (not fixed here)
+
+1. `scripts/verify-live-arc.ts`, gates 4 and 5: the `catch` branch treats every failure of `cast call` as the expected revert. A network error, a rejected token, or a missing `cast` binary in those gates gives status `LIVE_READ_PASS` and the detail text "deterministically reverted". Only a `VERIFIED_REMOTE` row, which means the selector appeared in stderr, supports the revert claims in section 2.
+2. The daily limit is described as rolling. The code is a fixed-window reset (section 1).
+3. The script appends to `docs/RELEASE_EVIDENCE.md` on every run.
+4. The earlier "invariant" wording in section 4 is not supported by the test file.
+5. The configuration and deployment transactions in sections 1 and 2 are not checked by any script in the repository.
+6. The live-reproduction script is not wired to any `package.json` script. Its usage is only the command above.
+
+## 6. Which gate ran where
+
+Local result is what happened in this container. CI is what `.github/workflows/quality-gates.yml` configures; no CI job has executed: the one dispatch on 2026-10-20 got no runner (`BLOCKED`).
+
+| Gate | Command | Local container result | CI (configured; one dispatch got no runner) | Evidence class |
+| --- | --- | --- | --- | --- |
+| Forge format | `forge fmt --check` in `contracts/` | exit 0 | `contracts` job | LOCAL_PASS |
+| Forge build | `forge build` in `contracts/` | exit 0 | `contracts` job | LOCAL_PASS |
+| Forge unit and fuzz tests | `forge test -vvv` in `contracts/` | 24 of 24 passed across 3 suites | `contracts` job | LOCAL_PASS |
+| Forge coverage | `forge coverage` in `contracts/` | lines 100% (68/68), statements 93.02%, branches 72.73%, functions 100% | `contracts` job | LOCAL_PASS |
+| Slither | `slither . --fail-medium` in `contracts/` (reads `contracts/slither.config.json`); CI uses `crytic/slither-action@v0.4.0` (unverified tag) | exit 0: no medium or high findings; 9 lower findings listed in the evidence. Without the config, `slither .` analysed 0 contracts and exited 0 | `contracts` job and `verify-local` job (which installs Slither unpinned) | LOCAL_PASS |
+| Anvil deployment and client suite | `ANVIL_RPC_URL=<node> npx vitest run tests/integration/anvil-settlement.test.ts` | 10 of 10 passed on a local Anvil (the suite skips without `ANVIL_RPC_URL`) | `contracts` job (Anvil on 8545) and `verify-local` job (Anvil on 18545) | LOCAL_PASS |
+| In-process EVM: client, ABI, events, artifact hash | `npx vitest run tests/unit/contract-artifact.test.ts tests/integration/local-chain.test.ts tests/integration/arc-settlement-evm.test.ts tests/integration/arc-find-transfer.test.ts` | LOCAL_PASS (4 files, 32 tests) | `contracts` job | LOCAL_PASS (in-process EVM, not Anvil) |
+| In-process property tests (I1 to I7, six seeds of 60 steps, the daily-window named tests) | `npx vitest run tests/integration/bind-settlement-properties.test.ts` | LOCAL_PASS (1 file, 9 tests: six seeds of 60 steps, one coverage check, two named tests) | not in CI | LOCAL_PASS (in-process EVM, not Forge invariant testing, not a proof) |
+| In-process reentrancy (six attacker modes, swallowed and bubbled) | `npx vitest run tests/integration/bind-settlement-reentrancy.test.ts` | LOCAL_PASS (1 file, 13 tests: six modes, each swallowed and bubbled, plus one extra test for a second order) | not in CI | LOCAL_PASS (in-process EVM, not Forge) |
+| Helper artifact hash guard (`ReentrantSupplier`) | `npx vitest run tests/unit/helper-artifacts.test.ts` | LOCAL_PASS (1 file, 5 tests) | not in CI | LOCAL_PASS |
+| Forge invariant suite (`BindSettlementInvariantTest`, I1 to I6 as Solidity invariants) | `cd contracts && forge test --match-contract BindSettlementInvariantTest` | 6 invariants passed (256 runs, depth 15, 0 reverts) | `contracts` job (never run) | LOCAL_PASS |
+| Forge reentrancy suite (`BindSettlementReentrancyTest`, uses `ReentrantSupplier`) | `cd contracts && forge test --match-contract BindSettlementReentrancyTest` | 8 tests passed | `contracts` job (never run) | LOCAL_PASS |
+| Live Arc reads and recorded transactions | `ARC_RPC_URL=<arc-rpc-url-with-token> npx tsx scripts/verify-live-arc.ts [--write-evidence <new-file>]` | NOT_RUN (no network, no token, no `cast`). The script is read-only and writes only the file named by `--write-evidence`. Without a configured URL every gate is BLOCKED. | not configured (no secret in CI) | UNVERIFIED_CLAIM (earlier session); the rewritten checks are unit-tested: LOCAL_PASS (`npx vitest run tests/unit/verify-live-arc.test.ts`, injected cast and RPC) |
+| Browser E2E | `npm run test:e2e` | BLOCKED (UI orphaned, ADR 0016); accepted as NOT_RUN only through `BIND_ACCEPT_NOT_RUN=test:e2e` | `verify-local` job, recorded as NOT_RUN_ACCEPTED | NOT_RUN (ADR 0016) |
+
+The in-process EVM rows and the Anvil row are different evidence. The in-process EVM is `LOCAL_PASS` for the client boundary. It is not a deployment or a live-chain result, and it does not satisfy the Anvil gate.
+
+## 7. Known issues: the daily window (Task 13b)
+
+These entries come from the property tests in `tests/integration/bind-settlement-properties.test.ts` (LOCAL_PASS, in-process
+EVM) and from reading `contracts/src/BindSettlement.sol`. The contract is deployed on Arc Testnet, so the source is not
+changed here. Each behaviour is asserted as it is, with a comment that names this section.
+
+1. **A refund after the window reset reduces the current window's spent amount (KNOWN ISSUE).**
+   `refundEscrow` subtracts the refunded amount from `dailySpent` whenever `dailySpent >= amount`. It does not check that
+   the escrow was made in the current window. Example: deposit 4 USDC on day 1; on day 2 settle 5 USDC (the window resets, so
+   `dailySpent` is 5); refund the day-1 escrow. `dailySpent` falls to 1. A further 9 USDC settles against the 10 USDC limit.
+   The window then holds 14 USDC of real settlements against a 10 USDC limit, so the limit is exceeded.
+   Asserted as current behaviour by `a refund after the daily window reset reduces today's spent amount (known issue)`.
+   `LOCAL_PASS (npx vitest run tests/integration/bind-settlement-properties.test.ts -t "known issue")`. Not fixed: a fix changes
+   deployed behaviour, so it is a product decision.
+2. **The daily limit is a fixed window, not a rolling window.** The window starts at `lastDayReset` (deployment, then the
+   first spend at or after `lastDayReset + 1 day`). A spend stops counting at that reset, not 24 hours after it was made.
+   Example: 9 USDC settled at 86,000 seconds into the window does not count after the reset at 86,400 seconds, so a further
+   9 USDC settles at 87,000 seconds. A rolling window would refuse it. Asserted by
+   `the daily limit is a fixed window reset, not a rolling window`. The NatSpec of `_checkAndUpdateDailyLimit` and of
+   `setDailyLimit` in the contract says "rolling"; the code is a fixed window.
+3. **A stranger on a settled escrow gets `EscrowAlreadySettled`, not `Unauthorized`.** `releaseEscrow` and `refundEscrow`
+   check the escrow status before the caller. The stranger rule therefore holds for open escrows only. The property model
+   encodes the actual order. `LOCAL_PASS` (property suite, I5).
+4. **Forge invariant and reentrancy suites** (`NOT_RUN` when this was written; run and passed on 2026-10-20, `LOCAL_PASS`). `contracts/test/BindSettlement.invariant.t.sol` and
+   `contracts/test/BindSettlement.reentrancy.t.sol` compile with solc-js, but no `forge test` has run them here. Their
+   results are unknown until a Forge run is recorded in `docs/RELEASE_EVIDENCE.md`.
+5. **Corrections to earlier text in this document (Task 13b).** Section 4 says "No invariant tests" and the Forge gate row says
+   "no invariant tests in the file". Both are now true only for the committed `BindSettlement.t.sol`: the new invariant file
+   exists and is `NOT_RUN`. Section 2 says a gate-4 row can be `VERIFIED_REMOTE`. The rewritten script never produces that
+   status, because every check is read-only (`LIVE_READ_PASS`, `BLOCKED` or `FAILED`). Section 5 item 1 (the catch branch
+   that treats every `cast` failure as a revert) and item 3 (the script appends to `RELEASE_EVIDENCE.md`) are fixed in the
+   script, but the script has not been run against the network here.
+6. **Test-chain gas price (a test-harness observation, not a contract issue).** The in-process chain's receipts report
+   `effectiveGasPrice` of 1 gwei, but it charges 1.2 gwei (viem's estimate) to the sender. Tests that check the payer's gas
+   read the charged amount from balances and do not use the receipt price (`tests/integration/bind-settlement-properties.test.ts`).

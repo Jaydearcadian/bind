@@ -1,0 +1,14 @@
+{
+  "id": "459940.3293",
+  "type": "orders.submit",
+  "schemaVersion": 1,
+  "at": "2026-10-20T10:00:00.000Z",
+  "workspaceId": "ws-kitchen-1",
+  "effectClass": "commercial_commitment",
+  "decision": "ALLOW",
+  "actor": {
+    "type": "agent",
+    "id": "procurement_agent"
+  },
+  "data": {}
+}

@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bind:schema:response-meta-v1",
+  "title": "Bind response metadata, version 1 (proposed)",
+  "description": "An optional `_meta` object added to command responses and to the resource reads that matter. Existing fields do not move or change. `status` is the authoritative outcome of the request; the HTTP status stays as it is today.",
+  "type": "object",
+  "required": [
+    "requestId",
+    "status"
+  ],
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "accepted",
+        "held",
+        "refused"
+      ],
+      "description": "completed: done and recorded. accepted: started, not finished (see processing). held: waiting for a person (see nextActions). refused: a rule said no (see reasonCodes in the body)."
+    },
+    "state": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "The resulting state of the main resource, in its own vocabulary."
+    },
+    "provenance": {
+      "enum": [
+        "verified",
+        "configured_unverified",
+        "simulated",
+        "not_applicable"
+      ],
+      "description": "Whether the outside party involved is live and verified, configured but unverified, or simulated. Never shown as verified unless a verifier succeeded."
+    },
+    "asOf": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this was read. Present on reads."
+    },
+    "processing": {
+      "type": "object",
+      "properties": {
+        "remaining": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "poll": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "events": {
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "additionalProperties": false
+    },
+    "nextActions": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "actor",
+          "method"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "actor": {
+            "enum": [
+              "owner",
+              "staff",
+              "agent",
+              "system"
+            ]
+          },
+          "method": {
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "DELETE"
+            ]
+          },
+          "href": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "needsConfirmation": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Only actions the caller's role may take now."
+    },
+    "warnings": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 300
+      }
+    }
+  },
+  "additionalProperties": false
+}

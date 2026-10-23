@@ -96,6 +96,7 @@ export async function writeWorkflowAntiDriftFiles(
     paymentStatusOverride?:
       | "PENDING_ARC_TESTNET_SETTLEMENT"
       | "SETTLED_ON_ARC_TESTNET"
+      | "SETTLED_LOCAL_SIMULATION"
       | "REVERTED_BY_ONCHAIN_POLICY";
   }
 ): Promise<AntiDriftFilesOutput> {
@@ -136,7 +137,7 @@ export async function writeWorkflowAntiDriftFiles(
 
 - **Business Template:** \`${record.templateId}\`
 - **Current Phase:** \`${
-    paymentStatus === "SETTLED_ON_ARC_TESTNET"
+    paymentStatus === "SETTLED_ON_ARC_TESTNET" || paymentStatus === "SETTLED_LOCAL_SIMULATION"
       ? "SETTLED_AWAITING_PHYSICAL_DELIVERY_3WAY_MATCH"
       : "DECISION_LOCKED_READY_FOR_SETTLEMENT"
   }\`
@@ -158,7 +159,11 @@ export async function writeWorkflowAntiDriftFiles(
     record.onChainPolicyPreFlight.withinDailyLimit ? "PASS" : "EXCEEDS_LIMIT_0xef664d6a"
   }\`
 - **Vendor Whitelist Check:** \`${
-    record.onChainPolicyPreFlight.vendorWhitelisted ? "PASS" : "UNWHITELISTED_0x65e822e9"
+    record.onChainPolicyPreFlight.vendorWhitelisted === true
+      ? "PASS"
+      : record.onChainPolicyPreFlight.vendorWhitelisted === false
+      ? "UNWHITELISTED_0x65e822e9"
+      : "NOT_CHECKED_BY_BIND"
   }\`
 - **Canonical Decision Hash:** \`${record.decisionHash}\`
 ${

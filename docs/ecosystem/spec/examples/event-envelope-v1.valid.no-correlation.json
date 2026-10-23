@@ -1,0 +1,19 @@
+{
+  "id": "459941.1",
+  "type": "auth.token_issued",
+  "name": "token.issued",
+  "schemaVersion": 1,
+  "at": "2026-10-20T10:01:00.000Z",
+  "workspaceId": "ws-kitchen-1",
+  "effectClass": "read",
+  "decision": "ALLOW",
+  "actor": {
+    "type": "system",
+    "id": "system:operator-cli"
+  },
+  "object": {
+    "type": "token",
+    "id": null
+  },
+  "data": {}
+}

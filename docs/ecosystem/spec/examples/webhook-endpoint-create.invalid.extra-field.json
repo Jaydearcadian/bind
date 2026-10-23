@@ -1,0 +1,7 @@
+{
+  "url": "https://hooks.example.com/bind",
+  "events": [
+    "order.submitted"
+  ],
+  "secret": "chosen-by-caller"
+}

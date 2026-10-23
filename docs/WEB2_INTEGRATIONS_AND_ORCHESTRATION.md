@@ -1,5 +1,13 @@
 # Bind: Web2 Experience, Surface Adapters, Webhooks & Orchestration
 
+> **Status (2026-10-20, Task 14): design, not the built system.** Implemented here: Bind's signed webhook receiver, the HTTP API,
+> the SDK, the MCP server, and a simulated owner-notice emitter (`src/adapters/web2/notifications.ts`) that records each message
+> with status `simulated` and delivers nothing. WhatsApp, Gmail, Telegram, X, POS systems, Gemini, LangSmith, Circle compliance
+> screening and the Parallel research CLI are not implemented, and no live connection to any of them exists. The TypeSafe Jev
+> scorer and the market-benchmark services run only when their keys are set, and no key is set in the repository's test setup.
+> Sections 1 to 6 describe the target. Where a line below names a specific header or feature, the implemented behaviour is in
+> `docs/RUNBOOK.md` and `docs/EVENTS.md`.
+
 This document specifies how Bind meets businesses where they already operate—delivering a seamless, zero-jargon Web2 experience across Gmail, WhatsApp, Telegram, Twitter/X, POS systems, and webhooks, while orchestrating stateful agents with deterministic safety and Arc/Circle settlement under the hood.
 
 ---
@@ -111,10 +119,10 @@ Real business systems emit webhooks when external events occur. Bind's Webhook E
    * Action: Advances workflow state from `request_sent` to `quote_received` or `confirmed`.
 
 ### Ingestion Safety Rules:
-* **HMAC Signature Verification**: Every webhook provider's signature header (e.g., `X-Square-Signature`, `X-Shopify-Hmac-Sha256`, `Circle-Signature`) is verified before body parsing.
-* **Replay Protection**: Nonce and timestamp verification; rejects payloads older than 5 minutes.
-* **Idempotency Deduplication**: Stores `provider_event_id` in Postgres. Duplicate events return immediate `200 OK` without re-triggering workflows.
-* **Asynchronous Queueing**: Webhook endpoint acknowledges receipt in $<100\text{ms}$ and pushes payload to internal queue for state evaluation.
+* **HMAC Signature Verification** (implemented for Bind's own webhooks only): the `x-bind-signature` header (HMAC-SHA256 over `<x-bind-timestamp>.<raw body>`) is checked against the raw bytes before parsing (ADR 0022, `docs/RUNBOOK.md` section 11). The provider headers named here (`X-Square-Signature`, `X-Shopify-Hmac-Sha256`, `Circle-Signature`) are not implemented.
+* **Replay Protection** (implemented as a timestamp window only): a timestamp more than 300 seconds old, or 60 seconds in the future, is refused. There is no nonce.
+* **Idempotency Deduplication** (implemented for Bind's own event ids): an event id is recorded in PostgreSQL, and a repeat is answered as a duplicate (ADR 0022). The `provider_event_id` scheme above is not implemented.
+* **Asynchronous Queueing** (not implemented): there is no internal queue and no latency measurement. The route processes the event before it answers.
 
 ---
 
@@ -171,6 +179,8 @@ To achieve rapid business adoption, Bind abstracts all blockchain primitives beh
 ---
 
 ## 6. Deep Research & Due Diligence Integration
+
+Not implemented. The only search integration in code is `src/adapters/marketBenchmark.ts` (Parallel or Tavily, used only when their keys are set; otherwise a labelled offline reference, `OFFLINE_DETERMINISTIC_FALLBACK`). The `parallel-cli` commands below are a design sketch, and the compliance check is not implemented.
 
 When the Procurement Agent seeks new suppliers or audits current pricing, it delegates to **Parallel AI** via [`parallel-cli`](file:///home/ubuntu/.local/bin/parallel-cli):
 1. **Automated RFQ Discovery**:

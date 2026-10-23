@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bind:schema:error-v2",
+  "title": "Bind error body, version 2 (proposed)",
+  "description": "Additive to today's { error, code?, reasonCodes? } (ADR 0034 section 4). Every field that exists today keeps its name and meaning. Unknown extra fields are allowed.",
+  "type": "object",
+  "required": [
+    "error",
+    "code",
+    "category",
+    "retryable",
+    "requestId"
+  ],
+  "properties": {
+    "error": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "description": "A safe, human-readable message. Never a raw exception (ADR 0031)."
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "description": "A stable machine code. Listed in error-catalogue.json."
+    },
+    "category": {
+      "enum": [
+        "validation",
+        "authentication",
+        "authorization",
+        "not_found",
+        "conflict",
+        "policy",
+        "rate_limited",
+        "upstream",
+        "unavailable",
+        "internal"
+      ]
+    },
+    "retryable": {
+      "type": "boolean",
+      "description": "True when repeating the same request, unchanged, can succeed. Never true for a validation, authorization, not-found or policy failure."
+    },
+    "retryAfterSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "description": "The same value as the x-request-id response header."
+    },
+    "reasonCodes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      },
+      "maxItems": 20
+    },
+    "details": {
+      "type": "object",
+      "description": "Safe context only, such as the names of the fields that failed. Never free text from a customer, a supplier or a document."
+    },
+    "recovery": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": [
+          "action",
+          "description"
+        ],
+        "properties": {
+          "action": {
+            "enum": [
+              "fix_request",
+              "authenticate",
+              "use_other_role",
+              "retry",
+              "wait_and_retry",
+              "refresh_and_retry",
+              "ask_owner",
+              "contact_support"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "href": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "docs": {
+      "type": "string",
+      "maxLength": 300,
+      "description": "A path or URL to the error catalogue entry."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "category": {
+            "const": "rate_limited"
+          }
+        },
+        "required": [
+          "category"
+        ]
+      },
+      "then": {
+        "required": [
+          "retryAfterSeconds"
+        ],
+        "properties": {
+          "retryable": {
+            "const": true
+          },
+          "retryAfterSeconds": {}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "category": {
+            "enum": [
+              "validation",
+              "authentication",
+              "authorization",
+              "not_found",
+              "policy"
+            ]
+          }
+        },
+        "required": [
+          "category"
+        ]
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}

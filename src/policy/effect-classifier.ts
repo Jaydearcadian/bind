@@ -21,6 +21,8 @@ const OPERATION_EFFECT_MAP: Record<string, EffectClass> = {
   "webhooks.ping": EffectClass.EXTERNAL_REQUEST,
   "suppliers.inquire_availability": EffectClass.EXTERNAL_REQUEST,
   "client.send_invoice_draft": EffectClass.EXTERNAL_REQUEST,
+  // A menu proposal is a request for an owner's decision. It changes nothing a customer sees (ADR 0028).
+  "menu.propose_change": EffectClass.EXTERNAL_REQUEST,
 
   // Commercial Commitments (Binding business effects, movement of money, legal agreements)
   "orders.submit": EffectClass.COMMERCIAL_COMMITMENT,
@@ -30,6 +32,10 @@ const OPERATION_EFFECT_MAP: Record<string, EffectClass> = {
   "escrow.release_milestone": EffectClass.COMMERCIAL_COMMITMENT,
   "contractors.payout": EffectClass.COMMERCIAL_COMMITMENT,
   "invoices.issue_and_settle": EffectClass.COMMERCIAL_COMMITMENT,
+  // Accepting a customer order is accepting an offer (AGENTS.md). Decided in src/workflows/fulfilment.ts (ADR 0026).
+  "orders.accept_customer": EffectClass.COMMERCIAL_COMMITMENT,
+  // Publishing a menu change is an offer to customers: it needs an owner's approval, and an agent needs the role's grant (ADR 0028).
+  "menu.publish_change": EffectClass.COMMERCIAL_COMMITMENT,
 };
 
 /**
@@ -37,13 +43,14 @@ const OPERATION_EFFECT_MAP: Record<string, EffectClass> = {
  * Fails closed if the operation is unrecognized.
  */
 export function classifyOperation(operationName: string): EffectClass {
-  const effect = OPERATION_EFFECT_MAP[operationName];
-  if (!effect) {
+  // Only the declared names classify. A plain object inherits names such as `constructor` and `__proto__`, so
+  // a lookup without an own-property check would return an inherited value instead of failing closed.
+  if (!Object.hasOwn(OPERATION_EFFECT_MAP, operationName)) {
     throw new Error(
       `Unrecognized operation '${operationName}'. Must be explicitly declared in effect classification map.`
     );
   }
-  return effect;
+  return OPERATION_EFFECT_MAP[operationName];
 }
 
 /**

@@ -6,7 +6,8 @@ import {
   ThreeWayMatchResult,
 } from "./types.js";
 
-export { MatchStatus, PurchaseOrderDoc, DeliveryReceiptDoc, SupplierBillDoc, ThreeWayMatchResult };
+export { MatchStatus };
+export type { PurchaseOrderDoc, DeliveryReceiptDoc, SupplierBillDoc, ThreeWayMatchResult };
 
 /**
  * Evaluates a strict Three-Way Match across Purchase Order, Delivery Receipt, and Supplier Bill.

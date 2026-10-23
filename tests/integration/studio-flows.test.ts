@@ -5,17 +5,41 @@ import type { Server } from "node:http";
 import { createApp } from "../../src/server/app.js";
 import { query } from "../../src/db/client.js";
 import { runMigrations } from "../../src/db/migrate.js";
+import { config } from "../../src/config/env.js";
+import { signPayload, workspaceWebhookSecret } from "../../src/webhooks/signing.js";
 
 describe("Business Onboarding & Operations Studio (Flows A, B, C, D)", () => {
   const app = createApp();
   const blankWsId = `ws-blank-${Date.now()}`;
   let server: Server;
   let baseUrl = "";
+  // The owner token comes back from onboarding (the workspace is created inside the flow).
+  let ownerToken = "";
+
+  /** A POST with a raw body, so a signature can be computed over the exact bytes sent. */
+  async function rawPost(routePath: string, raw: string, headers: Record<string, string>) {
+    const res = await fetch(`${baseUrl}${routePath}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: raw,
+    });
+    const text = await res.text();
+    let body: any;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+    return { status: res.status, body, text };
+  }
 
   async function api(method: string, routePath: string, body?: unknown) {
     const res = await fetch(`${baseUrl}${routePath}`, {
       method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: {
+        ...(ownerToken ? { Authorization: `Bearer ${ownerToken}` } : {}),
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
     const contentType = res.headers.get("content-type") || "";
@@ -80,6 +104,7 @@ describe("Business Onboarding & Operations Studio (Flows A, B, C, D)", () => {
 
     expect(onboardRes.status).toBe(201);
     expect(onboardRes.body.workspaceId).toBe(blankWsId);
+    ownerToken = onboardRes.body.ownerToken.token;
     expect(onboardRes.body.provenance).toBe("OWNER_CONFIRMED");
 
     // 3. Verify 0 fabricated orders, workflows, inventory, or journal entries
@@ -182,7 +207,8 @@ describe("Business Onboarding & Operations Studio (Flows A, B, C, D)", () => {
     expect(bindStaffRes.body.integration_status).toBe("configured_unverified");
 
     // 2. Negative test: registered 'staff' actor attempts to spoof actorRole: 'owner' in webhook payload to approve spend
-    const spoofApproveRes = await api("POST", "/api/webhooks/incoming", {
+    // Signed with the workspace's current secret (ADR 0022), so the request reaches the binding check.
+    const spoofRaw = JSON.stringify({
       eventType: "SURFACE_OWNER_APPROVAL_DECISION",
       eventId: `evt_spoof_${Date.now()}`,
       workspaceId: blankWsId,
@@ -192,9 +218,15 @@ describe("Business Onboarding & Operations Studio (Flows A, B, C, D)", () => {
       approvalId: "appr_fake_123",
       decision: "approve",
     });
+    const spoofTimestamp = Math.floor(Date.now() / 1000);
+    const spoofSecret = workspaceWebhookSecret(config.BIND_MASTER_SECRET!, blankWsId, 1);
+    const spoofApproveRes = await rawPost("/api/webhooks/incoming", spoofRaw, {
+      "x-bind-timestamp": String(spoofTimestamp),
+      "x-bind-signature": signPayload(spoofSecret, spoofTimestamp, spoofRaw),
+    });
 
     expect(spoofApproveRes.status).toBe(403);
-    expect(spoofApproveRes.body.error).toContain("SURFACE_ROLE_VIOLATION");
+    expect(spoofApproveRes.body.code).toBe("SURFACE_ROLE_VIOLATION");
   });
 
   it("Flow D: executes two-stage Extract -> Confirm for quotes, feeds procurement, enforces 3-way match on invoices, and exports accounting ledger CSV", async () => {
@@ -244,6 +276,26 @@ describe("Business Onboarding & Operations Studio (Flows A, B, C, D)", () => {
     const ordCheck = await query(`SELECT * FROM orders WHERE id = $1;`, [orderId]);
     expect(Number(ordCheck.rows[0].unit_price_cents)).toBe(3800);
     expect(Number(ordCheck.rows[0].total_price_cents)).toBe(30400);
+
+    // 3b. Stage 2 for the delivery: a receipt for the 8 units on the order. Settlement needs a stored
+    // receipt and a stored bill; until the bill arrives the order is held as pending, never paired with
+    // an invented bill.
+    const receiptExtract = await api("POST", `/api/workspaces/${blankWsId}/documents/extract`, {
+      docType: "delivery_receipt",
+      sourceLabel: "delivery_packing_slip",
+      rawText: `Delivery note\nSKU: SKU-FLOUR-001\nQty: 8`,
+      linkedOrderId: orderId,
+    });
+    expect(receiptExtract.status).toBe(201);
+
+    const receiptConfirm = await api(
+      "POST",
+      `/api/workspaces/${blankWsId}/documents/${receiptExtract.body.docId}/confirm`,
+      { decidedBy: "owner@bind.local", linkedOrderId: orderId }
+    );
+    expect(receiptConfirm.status).toBe(200);
+    expect(receiptConfirm.body.pending).toBe("AWAITING_SUPPLIER_BILL");
+    expect(receiptConfirm.body.reconciled).toBe(false);
 
     // 4. Negative 3-Way Match: Extract & Confirm a Vendor Bill with a price overcharge ($45.00 instead of $38.00)
     const badBillExtract = await api("POST", `/api/workspaces/${blankWsId}/documents/extract`, {

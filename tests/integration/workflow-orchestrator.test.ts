@@ -6,6 +6,7 @@ import { ProcurementWorkflowRunner } from "../../src/workflows/procurement.js";
 import { WorkflowState } from "../../src/workflows/types.js";
 import { MatchStatus } from "../../src/accounting/three-way-match.js";
 import { notificationEmitter } from "../../src/adapters/web2/notifications.js";
+import { upsertSurfaceBinding } from "../../src/adapters/socialSurface.js";
 
 describe("Workflow Orchestrator & End-to-End Kitchen Slice", () => {
   const wsId = "ws-integration-kitchen-01";
@@ -39,7 +40,7 @@ describe("Workflow Orchestrator & End-to-End Kitchen Slice", () => {
     expect(BigInt(orderRes.rows[0].total_price_cents)).toBe(24500n); // $245.00
 
     // Now execute 3-way match, settlement payment, and inventory restock
-    const reconResult = await runner.fulfillAndReconcile(result.orderId!);
+    const reconResult = await runner.fulfillAndReconcile(result.orderId!, wsId);
     expect(reconResult.status).toBe(MatchStatus.MATCHED);
     expect(reconResult.reconciled).toBe(true);
     expect(reconResult.txHash).toBeDefined();
@@ -54,6 +55,8 @@ describe("Workflow Orchestrator & End-to-End Kitchen Slice", () => {
 
   it("pauses in AWAITING_APPROVAL and notifies owner when order exceeds threshold ($392 > $250)", async () => {
     notificationEmitter.clear();
+    // The owner has a WhatsApp binding in this workspace. Approval requests go only to the owner's own binding.
+    await upsertSurfaceBinding(wsId, { surface: "whatsapp", actorId: "+15550100001", actorRole: "owner" }, { type: "owner", id: "test-owner" });
 
     // Butter: 4 cases @ $98.00 = $392.00 (Exceeds $250.00 threshold)
     const result = await runner.startReplenishment(wsId, "FOOD-BUTTER-36LB");
@@ -73,12 +76,12 @@ describe("Workflow Orchestrator & End-to-End Kitchen Slice", () => {
     expect(BigInt(apprRes.rows[0].amount_cents)).toBe(39200n);
 
     // Simulate Human Owner Approval
-    const resumeResult = await runner.approveAndSubmit(result.approvalId!, "owner@lebistro.example.com");
+    const resumeResult = await runner.approveAndSubmit(result.approvalId!, "owner@lebistro.example.com", wsId);
     expect(resumeResult.state).toBe(WorkflowState.CONFIRMED);
     expect(resumeResult.orderId).toBeDefined();
 
     // Complete fulfillment and reconciliation
-    const reconResult = await runner.fulfillAndReconcile(resumeResult.orderId!);
+    const reconResult = await runner.fulfillAndReconcile(resumeResult.orderId!, wsId);
     expect(reconResult.status).toBe(MatchStatus.MATCHED);
     expect(reconResult.reconciled).toBe(true);
   });

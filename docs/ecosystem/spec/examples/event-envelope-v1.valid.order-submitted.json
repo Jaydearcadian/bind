@@ -1,0 +1,25 @@
+{
+  "id": "459940.3293",
+  "type": "orders.submit",
+  "name": "order.submitted",
+  "schemaVersion": 1,
+  "at": "2026-10-20T10:00:00.000Z",
+  "workspaceId": "ws-kitchen-1",
+  "effectClass": "commercial_commitment",
+  "decision": "ALLOW",
+  "actor": {
+    "type": "agent",
+    "id": "procurement_agent"
+  },
+  "workflowId": "wf_proc_1",
+  "object": {
+    "type": "order",
+    "id": "ord_wf_proc_1"
+  },
+  "correlationId": "9f2c1a6e-4b1d-4c7e-8a55-3e0d2f7b1c10",
+  "data": {
+    "orderId": "ord_wf_proc_1",
+    "supplierId": "sup_1",
+    "status": "submitted"
+  }
+}

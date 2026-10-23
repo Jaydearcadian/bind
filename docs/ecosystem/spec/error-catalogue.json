@@ -1,0 +1,382 @@
+{
+  "version": 1,
+  "note": "existing=true: the code is sent today (checked against the source by tests/unit/ecosystem-spec.test.ts, and compared with the runtime table in src/server/error-contract.ts). existing=false: proposed and not in the source yet. HTTP statuses of the older codes come from the handlers in src/server/app.ts and docs/EVENTS.md; the generic codes are chosen by status.",
+  "codes": [
+    {
+      "code": "MALFORMED_JSON",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "INVALID_CHARACTERS",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "INVALID_INPUT",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": "Service-level validation (orders, tokens). The field names go in details."
+    },
+    {
+      "code": "INVALID_CURSOR",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "INVALID_LIMIT",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "BODY_TOO_LARGE",
+      "httpStatus": 413,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "DEMO_DISABLED",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "Demo workspaces are off on this server (BIND_DEMO_ENABLED, off in production by default). docs/decisions/0057."
+    },
+    {
+      "code": "NOT_A_DEMO",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "A reset was asked for a workspace that is not a demo. Nothing is changed. docs/decisions/0057."
+    },
+    {
+      "code": "DEMO_BUSY",
+      "httpStatus": 503,
+      "category": "unavailable",
+      "retryable": true,
+      "existing": true,
+      "note": "Another demo create or reset holds the lock. Answered with Retry-After. docs/decisions/0057."
+    },
+    {
+      "code": "EMAIL_NOT_CONFIGURED",
+      "httpStatus": 503,
+      "category": "unavailable",
+      "retryable": false,
+      "existing": true,
+      "note": "Owner email is not set up on this server (ADR 0074). Nothing is sent."
+    },
+    {
+      "code": "EMAIL_DEMO_REFUSED",
+      "httpStatus": 403,
+      "category": "policy",
+      "retryable": false,
+      "existing": true,
+      "note": "A demo workspace sends and verifies no email (ADR 0074)."
+    },
+    {
+      "code": "EMAIL_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "The address is not on this workspace's list (ADR 0074)."
+    },
+    {
+      "code": "EMAIL_SEND_LIMITED",
+      "httpStatus": 429,
+      "category": "rate_limited",
+      "retryable": true,
+      "existing": true,
+      "note": "Three verification codes per address per hour (ADR 0074). Retry-After is set."
+    },
+    {
+      "code": "EMAIL_SEND_FAILED",
+      "httpStatus": 502,
+      "category": "upstream",
+      "retryable": true,
+      "existing": true,
+      "note": "The email provider refused or did not answer the verification mail (ADR 0074)."
+    },
+    {
+      "code": "EMAIL_CODE_INVALID",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": "A wrong code. The message says how many attempts are left (ADR 0074)."
+    },
+    {
+      "code": "EMAIL_CODE_EXPIRED",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "The code is older than ten minutes. Ask for a new one (ADR 0074)."
+    },
+    {
+      "code": "EMAIL_ATTEMPTS_EXCEEDED",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "Five wrong codes end the code. Ask for a new one (ADR 0074)."
+    },
+    {
+      "code": "DEMO_CAPACITY_REACHED",
+      "httpStatus": 503,
+      "category": "unavailable",
+      "retryable": true,
+      "existing": true,
+      "note": "The cap on active demo workspaces is reached. Try again later. docs/decisions/0057."
+    },
+    {
+      "code": "RATE_LIMITED",
+      "httpStatus": 429,
+      "category": "rate_limited",
+      "retryable": true,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "TOO_MANY_STREAMS",
+      "httpStatus": 429,
+      "category": "rate_limited",
+      "retryable": true,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "APPROVAL_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "WORKFLOW_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "ORDER_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "TOKEN_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "APPROVAL_NOT_PENDING",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "Already decided. Refresh and look at the current state."
+    },
+    {
+      "code": "APPROVAL_EXPIRED",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "WORKFLOW_NOT_CANCELLABLE",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "WORKFLOW_STATE_CHANGED",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": true,
+      "existing": true,
+      "note": "Safe to retry after reading the workflow again."
+    },
+    {
+      "code": "ORDER_NOT_AWAITING_CONFIRMATION",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "LAST_OWNER_TOKEN",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "UNAUTHENTICATED",
+      "httpStatus": 401,
+      "category": "authentication",
+      "retryable": false,
+      "existing": true,
+      "note": "Today a 401 carries only a message."
+    },
+    {
+      "code": "VALIDATION_FAILED",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": "The generic 400 for a field that fails its schema. details.fields names them."
+    },
+    {
+      "code": "INTERNAL_ERROR",
+      "httpStatus": 500,
+      "category": "internal",
+      "retryable": false,
+      "existing": true,
+      "note": "Detail is logged with the request id, never returned."
+    },
+    {
+      "code": "FORBIDDEN",
+      "httpStatus": 403,
+      "category": "authorization",
+      "retryable": false,
+      "existing": true,
+      "note": "Generic 403: the token's role may not do this. Staff on an owner route. Recovery: use another role or ask an owner."
+    },
+    {
+      "code": "NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "Generic 404. The same body answers a missing workspace and another tenant's (ADR 0021)."
+    },
+    {
+      "code": "CONFLICT",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "Generic 409, such as an id that is not available."
+    },
+    {
+      "code": "UNAVAILABLE",
+      "httpStatus": 503,
+      "category": "unavailable",
+      "retryable": true,
+      "existing": true,
+      "note": "A dependency, such as the token lookup or the credential store, is not available."
+    },
+    {
+      "code": "IDEMPOTENCY_KEY_INVALID",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": ""
+    },
+    {
+      "code": "IDEMPOTENCY_KEY_REUSED",
+      "httpStatus": 422,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": "The same key was sent with a different request."
+    },
+    {
+      "code": "IDEMPOTENCY_IN_PROGRESS",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": true,
+      "existing": true,
+      "note": "The first request with this key has not finished. Retry after retryAfterSeconds."
+    },
+    {
+      "code": "WEBHOOK_URL_REFUSED",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": false,
+      "note": "Not https, or resolves to a private address."
+    },
+    {
+      "code": "WEBHOOK_ENDPOINT_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": false,
+      "note": ""
+    },
+    {
+      "code": "INVITE_UNUSABLE",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "People and invitations (ADR 0051)."
+    },
+    {
+      "code": "INVITE_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "People and invitations (ADR 0051)."
+    },
+    {
+      "code": "MEMBER_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "People and invitations (ADR 0051)."
+    },
+    {
+      "code": "ALREADY_MEMBER",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "People and invitations (ADR 0051)."
+    },
+    {
+      "code": "LAST_OWNER",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "People and invitations (ADR 0051)."
+    }
+  ]
+}

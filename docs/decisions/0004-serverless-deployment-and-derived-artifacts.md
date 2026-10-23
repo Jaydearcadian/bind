@@ -3,6 +3,10 @@
 ## Status
 Accepted
 
+Note (2026-10-20, Task 14). The deployment, endpoint and "Verification" results in this ADR are earlier-session claims. Task 14
+did not reproduce them: this environment has no network, and several of the endpoint checks were writes, not reads. See the
+appendix of `docs/RELEASE_EVIDENCE.md`.
+
 ## Context
 Bind is a single Express application (`src/server/app.ts`) that serves a static SPA
 (`src/ui/public/`) from the same origin as the `/api/*` routes, backed by PostgreSQL.

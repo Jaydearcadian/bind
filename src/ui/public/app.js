@@ -810,6 +810,13 @@ function renderApprovalsPanel() {
                    <button type="button" class="btn btn-secondary btn-sm" onclick="rejectOrder('${escapeHtml(appr.id)}')">
                      Reject
                    </button>
+                   <button type="button" class="btn btn-secondary btn-sm" onclick="revokeOrder('${escapeHtml(appr.id)}')">
+                     Revoke
+                   </button>
+                 </div>`
+              : appr.status === "expired"
+              ? `<div class="mono" style="font-size:0.74rem; color:var(--bind-text-muted);">
+                   Owner window elapsed · no order submitted
                  </div>`
               : `<div class="mono" style="font-size:0.74rem; color:var(--bind-text-muted);">
                    Decided by ${escapeHtml(appr.decided_by || "owner")} · ${escapeHtml(formatTimestamp(appr.decided_at))}
@@ -1066,18 +1073,30 @@ async function approveOrder(approvalId) {
 }
 
 async function rejectOrder(approvalId) {
+  await declineApproval(approvalId, "reject", "Owner declined order quantity", "Proposal rejected by owner.");
+}
+
+async function revokeOrder(approvalId) {
+  await declineApproval(approvalId, "revoke", "Owner withdrew the proposal", "Pending approval revoked. Nothing was submitted.");
+}
+
+async function declineApproval(approvalId, action, reason, successMessage) {
   try {
-    const res = await fetch(`/api/approvals/${approvalId}/reject`, {
+    const res = await fetch(`/api/approvals/${approvalId}/${action}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decidedBy: "owner@bind.local", reason: "Owner declined order quantity" }),
+      body: JSON.stringify({ decidedBy: "owner@bind.local", reason }),
     });
-    if (res.ok) {
-      showToast("Proposal rejected by owner.");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(`${action === "revoke" ? "Revoke" : "Reject"} error: ${data.error || "Failed"}`);
       await ensureWorkspaceAndLoad();
+      return;
     }
+    showToast(successMessage);
+    await ensureWorkspaceAndLoad();
   } catch (err) {
-    showToast(`Reject error: ${err.message}`);
+    showToast(`${action === "revoke" ? "Revoke" : "Reject"} error: ${err.message}`);
   }
 }
 
@@ -1603,6 +1622,7 @@ async function confirmStagedDoc(docId) {
 window.triggerReplenishment = triggerReplenishment;
 window.approveOrder = approveOrder;
 window.rejectOrder = rejectOrder;
+window.revokeOrder = revokeOrder;
 window.reconcileOrder = reconcileOrder;
 window.selectWorkflow = selectWorkflow;
 window.openEvidenceDrawer = openEvidenceDrawer;

@@ -1,0 +1,42 @@
+{
+  "requestId": "9f2c1a6e-4b1d-4c7e-8a55-3e0d2f7b1c10",
+  "status": "held",
+  "state": "awaiting_approval",
+  "provenance": "simulated",
+  "processing": {
+    "remaining": [
+      "owner_decision",
+      "supplier_order",
+      "settlement"
+    ],
+    "poll": "/api/workspaces/ws-kitchen-1/workflows",
+    "events": "/api/workspaces/ws-kitchen-1/events"
+  },
+  "nextActions": [
+    {
+      "id": "approve",
+      "label": "Approve the order",
+      "actor": "owner",
+      "method": "POST",
+      "href": "/api/approvals/appr_wf_proc_1/approve",
+      "needsConfirmation": true
+    },
+    {
+      "id": "reject",
+      "label": "Reject the order",
+      "actor": "owner",
+      "method": "POST",
+      "href": "/api/approvals/appr_wf_proc_1/reject"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "SUPPLIER_SIMULATED",
+      "message": "The supplier is a simulated adapter, not a live integration."
+    }
+  ],
+  "links": {
+    "workflow": "/api/workspaces/ws-kitchen-1/workflows",
+    "approval": "/api/workspaces/ws-kitchen-1/approvals"
+  }
+}

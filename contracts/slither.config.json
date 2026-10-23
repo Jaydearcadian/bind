@@ -1,0 +1,4 @@
+{
+  "solc_remaps": "forge-std/=lib/forge-std/src/",
+  "filter_paths": "lib|test"
+}

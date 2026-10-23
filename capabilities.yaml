@@ -31,6 +31,11 @@ skills:
     type: github
     def:
       repo: intellectronica/agent-skills::skills/context7
+  - id: context7-netresearch
+    type: local
+    def:
+      path: .agents/skills/context7-netresearch
+      description: Context7 REST fallback (netresearch v1.7.3, vendored, renamed to avoid a name clash). See SOURCE.md in the folder.
   - id: frontend-design
     type: github
     def:

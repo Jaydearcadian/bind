@@ -1,0 +1,17 @@
+{
+  "id": "459940.3293",
+  "type": "orders.submit",
+  "at": "2026-10-20T10:00:00.000Z",
+  "effectClass": "commercial_commitment",
+  "decision": "ALLOW",
+  "actor": {
+    "type": "agent",
+    "id": "procurement_agent"
+  },
+  "workflowId": "wf_...",
+  "data": {
+    "orderId": "ord_...",
+    "supplierId": "sup_...",
+    "status": "submitted"
+  }
+}

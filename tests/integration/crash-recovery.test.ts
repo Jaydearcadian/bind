@@ -25,6 +25,14 @@ describe("Workflow Crash Recovery & Restart Resilience", () => {
     const wfId = "wf_crashed_auth_101";
     const idemKey = "idem_crash_auth_101";
 
+    // The stored quote the workflow was authorized against. The commitment gate reads quotes from the table.
+    await query(
+      `INSERT INTO quotes (id, workspace_id, rfq_id, supplier_id, supplier_name, item_sku, quantity, unit_price_cents, total_price_cents, currency, valid_until, created_at)
+       VALUES ('quote_sysco_recovery_1', $1, 'rfq_recovery_1', $2, 'Sysco Metro Distribution', 'FOOD-FLOUR-50LB', 10, 2450, 24500, 'USDC', NOW() + INTERVAL '1 day', NOW())
+       ON CONFLICT (id) DO UPDATE SET valid_until = EXCLUDED.valid_until;`,
+      [wsId, `${wsId}_supp-sysco-metro`]
+    );
+
     // Simulate workflow that reached AUTHORIZED but process died before submission
     await engine.createWorkflow(wfId, wsId, "kitchen_replenishment", idemKey, {
       itemName: "Organic All-Purpose Flour",

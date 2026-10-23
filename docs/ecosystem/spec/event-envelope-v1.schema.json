@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bind:schema:event-envelope-v1",
+  "title": "Bind event envelope, version 1 (proposed)",
+  "description": "Every field of today's envelope (docs/EVENTS.md) is kept with the same meaning. New: name, schemaVersion, workspaceId, object, correlationId. `type` stays the audit action; `name` is the past-tense name in event-names.json.",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "name",
+    "schemaVersion",
+    "at",
+    "workspaceId",
+    "effectClass",
+    "decision",
+    "actor",
+    "data"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9]{1,19}\\.[0-9]{1,19}$",
+      "description": "The cursor: <txid>.<seq>. Unique per event; use it to deduplicate and to resume."
+    },
+    "type": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 80
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z_]*\\.[a-z][a-z_]*$"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "effectClass": {
+      "enum": [
+        "read",
+        "external_request",
+        "commercial_commitment"
+      ]
+    },
+    "decision": {
+      "enum": [
+        "ALLOW",
+        "REQUIRE_APPROVAL",
+        "DENY"
+      ]
+    },
+    "actor": {
+      "type": "object",
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "workflowId": {
+      "type": "string"
+    },
+    "object": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        }
+      },
+      "additionalProperties": false,
+      "description": "The main thing the event is about. id is null only when the row carries none. There is no object version yet: no table keeps one."
+    },
+    "correlationId": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "The request id that caused the event, when the row recorded one. Absent otherwise."
+    },
+    "data": {
+      "type": "object",
+      "description": "Only the allowlisted evidence keys of docs/EVENTS.md. Free text, nested objects and secrets are never present."
+    }
+  },
+  "additionalProperties": true
+}

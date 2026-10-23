@@ -81,7 +81,7 @@ describe("Arc L1 Contract & ABI Boundary Verification (docs/CONTRACT_SCOPE.md)",
   });
 
   it("safely handles offline RPC fallback without crashing", async () => {
-    const adapter = new ArcL1SettlementAdapter("http://127.0.0.1:9999"); // offline port
+    const adapter = new ArcL1SettlementAdapter({ rpcUrl: "http://127.0.0.1:9999" }); // offline port
     const balance = await adapter.getBalance("0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2");
     expect(balance).toBe(0n);
   });

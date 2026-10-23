@@ -1,0 +1,939 @@
+{
+ "version": 1,
+ "note": "Reviewed classification of every API operation. The tier names are the exposure classes in docs/ecosystem/ECOSYSTEM_AUDIT.md section 3. Surfaces (SDK, MCP) are derived by scripts/generate-capabilities.ts, not written here.",
+ "operations": [
+  {
+   "operationId": "acceptCustomerOrder",
+   "exposure": "public_api",
+   "effect": "owner_decision",
+   "irreversible": true,
+   "economic": true,
+   "stability": "stable",
+   "flags": [],
+   "note": "Owner accepts a held customer order. This is a promise to a customer, so it cannot be silently undone."
+  },
+  {
+   "operationId": "approveApproval",
+   "exposure": "public_api",
+   "effect": "owner_decision",
+   "irreversible": true,
+   "economic": true,
+   "stability": "stable",
+   "flags": [],
+   "note": "Authority action. Never exposed to agents."
+  },
+  {
+   "operationId": "approveMenuProposal",
+   "exposure": "public_api",
+   "effect": "owner_decision",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "cancelCustomerOrder",
+   "exposure": "public_api",
+   "effect": "commercial_commitment",
+   "irreversible": true,
+   "economic": true,
+   "stability": "stable",
+   "flags": [],
+   "note": "Cancelling an accepted order is a commitment."
+  },
+  {
+   "operationId": "cancelMenuProposal",
+   "exposure": "public_api",
+   "effect": "owner_decision",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "cancelWorkflow",
+   "exposure": "public_api",
+   "effect": "owner_decision",
+   "irreversible": true,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Owner cancels a workflow."
+  },
+  {
+   "operationId": "confirmDocument",
+   "exposure": "public_api",
+   "effect": "owner_decision",
+   "irreversible": true,
+   "economic": true,
+   "stability": "preview",
+   "flags": [],
+   "note": "Owner confirmation commits a quote or links a receipt or bill."
+  },
+  {
+   "operationId": "confirmOrderSettlement",
+   "exposure": "internal_service",
+   "effect": "operational",
+   "irreversible": false,
+   "economic": true,
+   "stability": "internal",
+   "flags": [
+    "reconciliation_internal"
+   ],
+   "note": "Confirms a settlement that was submitted. An operator action."
+  },
+  {
+   "operationId": "createCustomerOrder",
+   "exposure": "public_api",
+   "effect": "commercial_commitment",
+   "irreversible": false,
+   "economic": true,
+   "stability": "stable",
+   "flags": [],
+   "note": "Records and may promise a customer order. Repeating externalRef returns the earlier decision."
+  },
+  {
+   "operationId": "createDemo",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [
+    "unauthenticated",
+    "returns_secret_once:token"
+   ],
+   "note": "Creates a throwaway demo workspace for four hours. Simulated only. Limited per address and in total. The owner token is shown once. docs/decisions/0057."
+  },
+  {
+   "operationId": "createWorkspace",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [
+    "duplicate_of:onboardWorkspace",
+    "unauthenticated"
+   ],
+   "note": "Overlaps onboardWorkspace. Candidate to retire."
+  },
+  {
+   "operationId": "extractDocument",
+   "exposure": "public_api",
+   "effect": "data_entry",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [],
+   "note": "Stages an untrusted draft. Nothing is committed until an owner confirms."
+  },
+  {
+   "operationId": "fulfilCustomerOrder",
+   "exposure": "public_api",
+   "effect": "commercial_commitment",
+   "irreversible": true,
+   "economic": true,
+   "stability": "stable",
+   "flags": [],
+   "note": "Marks an order fulfilled and consumes reserved stock. Not exposed to agents."
+  },
+  {
+   "operationId": "getAgents",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "getCustomerOrder",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "getFeedbackSummary",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "getHealth",
+   "exposure": "internal_service",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "internal",
+   "flags": [],
+   "note": "Liveness probe for the platform, not a product capability."
+  },
+  {
+   "operationId": "getLedger",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [],
+   "note": "Accounting journal; JSON or CSV."
+  },
+  {
+   "operationId": "getMetrics",
+   "exposure": "internal_service",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "internal",
+   "flags": [],
+   "note": "Aggregate operations metrics, behind its own token."
+  },
+  {
+   "operationId": "getNeedsAttention",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "getOpenApi",
+   "exposure": "protocol_primitive",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "The contract itself."
+  },
+  {
+   "operationId": "getPublicConfig",
+   "exposure": "internal_service",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "internal",
+   "flags": [],
+   "note": "Browser sign-in configuration: the public Privy app id or null. Not a product capability (ADR 0070)."
+  },
+  {
+   "operationId": "getReady",
+   "exposure": "internal_service",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "internal",
+   "flags": [],
+   "note": "Readiness probe for the platform."
+  },
+  {
+   "operationId": "getTemplateBlueprint",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "getWebhookSecret",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "returns_secret_repeatedly"
+   ],
+   "note": "Returns the secret on every call. Review: show once on rotate instead."
+  },
+  {
+   "operationId": "getWorkspace",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "ingestFeedback",
+   "exposure": "public_api",
+   "effect": "external_request",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Stores customer or staff feedback. Text is untrusted."
+  },
+  {
+   "operationId": "issueToken",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "returns_secret_once:token"
+   ],
+   "note": "The token is shown once."
+  },
+  {
+   "operationId": "listApprovals",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listAudit",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listConnectors",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "credential_metadata"
+   ],
+   "note": ""
+  },
+  {
+   "operationId": "listCustomerOrders",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listDocuments",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listFeedback",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listInventory",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listKitchenCapacity",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listMenu",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listMenuProposals",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listOrders",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listSuppliers",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listSurfaces",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listTemplates",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [],
+   "note": "Templates are still partly data and partly code."
+  },
+  {
+   "operationId": "listTokens",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "credential_metadata"
+   ],
+   "note": ""
+  },
+  {
+   "operationId": "listWorkflows",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "getMe",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Who the bearer token is (ADR 0058). Read only; never returns a secret, hash or token id."
+  },
+  {
+   "operationId": "listWorkspaces",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "onboardWorkspace",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [
+    "unauthenticated",
+    "returns_secret_once:ownerToken"
+   ],
+   "note": "Creates a workspace and returns the first owner token once. Rate-limited."
+  },
+  {
+   "operationId": "pollEvents",
+   "exposure": "protocol_primitive",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "The same events as pages."
+  },
+  {
+   "operationId": "proposeMenuChange",
+   "exposure": "public_api",
+   "effect": "external_request",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Creates a proposal that stays proposed until an owner acts."
+  },
+  {
+   "operationId": "publishMenuProposal",
+   "exposure": "public_api",
+   "effect": "owner_decision",
+   "irreversible": true,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Owner makes a menu change live for customers. Reversing it needs a new proposal."
+  },
+  {
+   "operationId": "receiveWebhook",
+   "exposure": "protocol_primitive",
+   "effect": "external_request",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Inbound signed events from a business's surfaces (ADR 0022). Surface actor roles come only from bindings."
+  },
+  {
+   "operationId": "reconcileOrder",
+   "exposure": "internal_service",
+   "effect": "operational",
+   "irreversible": false,
+   "economic": false,
+   "stability": "internal",
+   "flags": [
+    "reconciliation_internal"
+   ],
+   "note": "Resolves an order whose outcome was unknown. An operator action, not a product capability."
+  },
+  {
+   "operationId": "recoverWorkflows",
+   "exposure": "internal_service",
+   "effect": "operational",
+   "irreversible": false,
+   "economic": false,
+   "stability": "internal",
+   "flags": [
+    "reconciliation_internal"
+   ],
+   "note": "Runs recovery on demand. The worker normally does this."
+  },
+  {
+   "operationId": "rejectApproval",
+   "exposure": "public_api",
+   "effect": "owner_decision",
+   "irreversible": false,
+   "economic": true,
+   "stability": "stable",
+   "flags": [],
+   "note": "Authority action. Never exposed to agents."
+  },
+  {
+   "operationId": "rejectMenuProposal",
+   "exposure": "public_api",
+   "effect": "owner_decision",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "replenish",
+   "exposure": "public_api",
+   "effect": "commercial_commitment",
+   "irreversible": false,
+   "economic": true,
+   "stability": "stable",
+   "flags": [],
+   "note": "Starts replenishment. Policy decides whether an order is placed, held for approval, or refused."
+  },
+  {
+   "operationId": "resetDemo",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [
+    "returns_secret_once:token"
+   ],
+   "note": "Deletes this demo workspace and its data. A demo is a throwaway sandbox, so no real data is lost, and no idempotency key is taken: the answer cannot be replayed once the workspace is gone. Returns a new demo with a new token. Refused for a workspace that is not a demo. docs/decisions/0057."
+  },
+  {
+   "operationId": "revokeApproval",
+   "exposure": "public_api",
+   "effect": "owner_decision",
+   "irreversible": false,
+   "economic": true,
+   "stability": "stable",
+   "flags": [],
+   "note": "Authority action. Never exposed to agents."
+  },
+  {
+   "operationId": "revokeConnector",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": true,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Removes a stored credential. The secret is destroyed; reconnecting needs the secret again."
+  },
+  {
+   "operationId": "revokeToken",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": true,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "A revoked token stops working at once and cannot be restored; issue a new one."
+  },
+  {
+   "operationId": "rotateWebhookSecret",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": true,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "returns_secret_once:secret"
+   ],
+   "note": "Invalidates the previous secret. Senders must switch to the new one; the new secret is returned once."
+  },
+  {
+   "operationId": "setAgentsPaused",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": true,
+   "stability": "stable",
+   "flags": [],
+   "note": "The pause switch. Owner only; an agent must never reach it."
+  },
+  {
+   "operationId": "setConnector",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "accepts_secret"
+   ],
+   "note": "Accepts a secret. It must never pass through a model or an agent tool."
+  },
+  {
+   "operationId": "setKitchenCapacity",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "streamEvents",
+   "exposure": "protocol_primitive",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "SSE stream (ADR 0035)."
+  },
+  {
+   "operationId": "updatePolicy",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": true,
+   "stability": "stable",
+   "flags": [],
+   "note": "Changes limits that govern spending. Owner only."
+  },
+  {
+   "operationId": "upsertAgentRole",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": true,
+   "stability": "stable",
+   "flags": [
+    "generic_upsert"
+   ],
+   "note": "Grants tools and limits to a role. Forbidden capabilities are rejected server side."
+  },
+  {
+   "operationId": "upsertInventoryItem",
+   "exposure": "public_api",
+   "effect": "data_entry",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "generic_upsert"
+   ],
+   "note": "Plain stock data. It can trigger restock logic indirectly."
+  },
+  {
+   "operationId": "upsertSupplier",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": true,
+   "stability": "stable",
+   "flags": [
+    "generic_upsert"
+   ],
+   "note": "Changes who can be paid."
+  },
+  {
+   "operationId": "upsertSurfaceBinding",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "generic_upsert"
+   ],
+   "note": "Binds a messaging actor to a role. Changes who may approve from a surface."
+  },
+  {
+   "operationId": "getNotificationChannels",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Owner email notices: whether email is on for this server and the workspace's addresses with their status. Never a code or a hash (ADR 0074)."
+  },
+  {
+   "operationId": "requestOwnerEmailVerification",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Sends a six-digit code to an address, which the owner must then enter. Sends an email to the address typed (ADR 0074). Limited to three codes per address per hour. Never agent-exposed."
+  },
+  {
+   "operationId": "verifyOwnerEmail",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Checks the code. On success the address receives owner notices (ADR 0074). Never agent-exposed."
+  },
+  {
+   "operationId": "removeOwnerEmail",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "The address stops receiving owner notices at once (ADR 0074). Never agent-exposed."
+  },
+  {
+   "operationId": "verifyConnector",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [],
+   "note": "No live verifier exists yet, so a connector is never reported verified."
+  },
+  {
+   "operationId": "createSession",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "returns_secret_once:sessionToken"
+   ],
+   "note": "Signs a person in with a Privy token. The session lasts one hour by default and is shown once."
+  },
+  {
+   "operationId": "signOut",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Ends the account session the request used."
+  },
+  {
+   "operationId": "listAccountWorkspaces",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "The workspaces this account belongs to."
+  },
+  {
+   "operationId": "createAccountWorkspace",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Creates a workspace and makes the account its owner. No owner token is issued."
+  },
+  {
+   "operationId": "acceptInvite",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Joins a workspace as staff with a single-use code."
+  },
+  {
+   "operationId": "createInvite",
+   "exposure": "public_api",
+   "effect": "credential",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "returns_secret_once:code"
+   ],
+   "note": "A single-use staff invitation. The code is shown once and only its hash is stored."
+  },
+  {
+   "operationId": "listInvites",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [
+    "credential_metadata"
+   ],
+   "note": ""
+  },
+  {
+   "operationId": "revokeInvite",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "listMembers",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "setMemberRole",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "The last owner cannot be demoted."
+  },
+  {
+   "operationId": "removeMember",
+   "exposure": "public_api",
+   "effect": "owner_configuration",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "Ends the person's sessions at once. The last owner cannot be removed."
+  },
+  {
+   "operationId": "getWorkflow",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "One workflow, so a caller can follow asynchronous work by reading it."
+  },
+  {
+   "operationId": "getOrder",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "One supplier order with its latest match."
+  },
+  {
+   "operationId": "getApproval",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "stable",
+   "flags": [],
+   "note": "One approval."
+  }
+ ]
+}

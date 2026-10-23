@@ -1,17 +1,42 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build:vercel && rm -rf public && mkdir -p public && cp -r src/ui/public/. public/",
+  "buildCommand": "bash scripts/vercel-build.sh",
   "outputDirectory": "public",
   "functions": {
     "api/index.js": {
-      "includeFiles": "dist/**",
+      "includeFiles": "{dist/**,mcp/dist/**,docs/openapi.json}",
       "memory": 1024,
       "maxDuration": 60
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/health", "destination": "/api/index" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/mcp",
+      "destination": "/api/index"
+    }
+  ],
+  "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self';script-src 'self';style-src 'self';img-src 'self' data:;font-src 'self';connect-src 'self' https://auth.privy.io;frame-src https://auth.privy.io;object-src 'none';base-uri 'self';form-action 'self';frame-ancestors 'none'"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    }
   ]
 }

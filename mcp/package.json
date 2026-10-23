@@ -1,0 +1,18 @@
+{
+  "name": "@bind/mcp",
+  "version": "0.1.0",
+  "description": "MCP tool server over the Bind SDK (docs/decisions/0037). Private: it runs from the repository checkout, which installs and locks its dependencies.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/mcp/src/server.js",
+  "bin": {
+    "bind-mcp": "dist/mcp/src/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -2,6 +2,7 @@ import { kitchenTemplate } from "./kitchen-v1.js";
 import { agencyTemplate } from "./agency-v1.js";
 import { WorkspaceTemplate } from "./types.js";
 import { withTransaction } from "../db/client.js";
+import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.js";
 
 const BASE_TEMPLATES: Record<string, WorkspaceTemplate> = {
   "kitchen-v1": kitchenTemplate,
@@ -9,9 +10,12 @@ const BASE_TEMPLATES: Record<string, WorkspaceTemplate> = {
 };
 
 export function getTemplate(templateId: string): WorkspaceTemplate | undefined {
-  if (BASE_TEMPLATES[templateId]) return BASE_TEMPLATES[templateId];
-  if (templateId === "kitchen-ops") return BASE_TEMPLATES["kitchen-v1"];
-  return BASE_TEMPLATES[templateId];
+  // Only the template table's own keys count: "constructor" or "__proto__" name no template (Task 11).
+  const own = (id: string): WorkspaceTemplate | undefined =>
+    Object.prototype.hasOwnProperty.call(BASE_TEMPLATES, id) ? BASE_TEMPLATES[id] : undefined;
+  if (own(templateId)) return own(templateId);
+  if (templateId === "kitchen-ops") return own("kitchen-v1");
+  return own(templateId);
 }
 
 export function listTemplates(): WorkspaceTemplate[] {
@@ -23,6 +27,16 @@ export interface ProvisionOptions {
   settlementMode?: "local" | "arc-testnet";
   customDailyLimitCents?: bigint;
   customApprovalThresholdCents?: bigint;
+  /**
+   * When the workspace already exists, leave it completely untouched: no field reset, no role, supplier or
+   * inventory re-seeding. Used for the demo workspace on every boot, so an owner's policy survives a restart.
+   */
+  ifAbsent?: boolean;
+  /**
+   * Makes the workspace a demo that expires at this time (docs/decisions/0057). Written in the same insert as the workspace row.
+   * Only a new row gets it: a conflicting id is updated without the demo fields, so a real workspace never becomes a demo.
+   */
+  demoExpiresAt?: Date;
 }
 
 /**
@@ -43,23 +57,55 @@ export async function provisionWorkspace(
   const dailyLimit = options?.customDailyLimitCents ?? template.defaultDailyLimitCents;
   const approvalThreshold = options?.customApprovalThresholdCents ?? template.defaultApprovalThresholdCents;
   const settlementMode = options?.settlementMode ?? "local";
-  const settlementAddress = options?.settlementAddress || "0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2";
+  // No shared default payer wallet. A local workspace gets its own simulated address. An
+  // arc-testnet workspace without an address stores NULL, and its payments are held until one is set.
+  const explicitSettlementAddress = options?.settlementAddress || null;
+  const isDemo = options?.demoExpiresAt !== undefined;
+  const demoExpiresAt = options?.demoExpiresAt ?? null;
+  const settlementAddress =
+    explicitSettlementAddress ??
+    (settlementMode === "local" ? simulatedPaymentAddress(`workspace:${workspaceId}`) : null);
 
   await withTransaction(async (client) => {
     // 1. Insert Workspace
-    await client.query(
-      `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (id) DO UPDATE SET
-         name = EXCLUDED.name,
-         template_id = EXCLUDED.template_id,
-         settlement_address = EXCLUDED.settlement_address,
-         settlement_mode = EXCLUDED.settlement_mode,
-         budget_daily_limit_cents = EXCLUDED.budget_daily_limit_cents,
-         approval_threshold_cents = EXCLUDED.approval_threshold_cents,
-         updated_at = NOW();`,
-      [workspaceId, name, templateId, settlementAddress, settlementMode, dailyLimit, approvalThreshold]
-    );
+    if (options?.ifAbsent) {
+      const created = await client.query(
+        `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents, is_demo, demo_expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (id) DO NOTHING
+         RETURNING id;`,
+        [workspaceId, name, templateId, settlementAddress, settlementMode, dailyLimit, approvalThreshold, isDemo, demoExpiresAt]
+      );
+      if ((created.rowCount ?? 0) === 0) {
+        // Already provisioned: the owner's configuration is not touched, and nothing else is seeded.
+        return;
+      }
+    } else {
+      await client.query(
+        `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents, is_demo, demo_expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $9, $10)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name,
+           template_id = EXCLUDED.template_id,
+           settlement_address = COALESCE($8::text, workspaces.settlement_address, EXCLUDED.settlement_address),
+           settlement_mode = EXCLUDED.settlement_mode,
+           budget_daily_limit_cents = EXCLUDED.budget_daily_limit_cents,
+           approval_threshold_cents = EXCLUDED.approval_threshold_cents,
+           updated_at = NOW();`,
+        [
+          workspaceId,
+          name,
+          templateId,
+          settlementAddress,
+          settlementMode,
+          dailyLimit,
+          approvalThreshold,
+          explicitSettlementAddress,
+          isDemo,
+          demoExpiresAt,
+        ]
+      );
+    }
 
     // 2. Insert Agent Roles
     for (const role of template.roles) {
@@ -90,11 +136,22 @@ export async function provisionWorkspace(
     if (template.seedSuppliers) {
       for (const supp of template.seedSuppliers) {
         const suppId = `${workspaceId}_${supp.id}`;
+        // Only simulated suppliers get a payee address here; a real supplier gets one from its owner.
+        const paymentAddress = supp.isSimulated ? simulatedPaymentAddress(suppId) : null;
         await client.query(
-          `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, endpoint_url)
-           VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7)
+          `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, endpoint_url, payment_address)
+           VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7, $8)
            ON CONFLICT (id) DO NOTHING;`,
-          [suppId, workspaceId, supp.name, supp.adapterType, supp.contactEmail, supp.isSimulated, supp.endpointUrl]
+          [
+            suppId,
+            workspaceId,
+            supp.name,
+            supp.adapterType,
+            supp.contactEmail,
+            supp.isSimulated,
+            supp.endpointUrl,
+            paymentAddress,
+          ]
         );
       }
     }

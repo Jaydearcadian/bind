@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12 -16 88 92" role="img" aria-label="Bind"><title>Bind</title><style>
+@media (prefers-reduced-motion:no-preference){
+.pr{stroke-dasharray:100;animation:draw 640ms cubic-bezier(.45,0,.2,1) both}
+.pl{animation:drop 520ms 560ms both}}
+@keyframes draw{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}
+@keyframes drop{0%{transform:translate(15.00px,-25.98px);opacity:0;animation-timing-function:cubic-bezier(.45,0,.2,1)}
+20%{opacity:1}80%{transform:translate(-0.80px,1.39px);animation-timing-function:cubic-bezier(.3,.9,.2,1)}100%{transform:translate(0,0)}}</style><defs><mask id="mb" maskUnits="userSpaceOnUse" x="-12" y="-12" width="88" height="88"><rect x="-12" y="-12" width="88" height="88" fill="#fff"/><circle cx="42.00" cy="14.68" r="8.1" fill="#000"/></mask></defs><path class="pr" d="M32.00 12.00 A20.0 20.0 0 1 1 32.00 52.00 A20.0 20.0 0 1 1 32.00 12.00" fill="none" stroke="#1A1612" stroke-width="6.0" stroke-linecap="round" pathLength="100" mask="url(#mb)"/><circle class="pl" cx="42.00" cy="14.68" r="6.4" fill="#A94F25"/></svg>

@@ -3,8 +3,12 @@ import path from "node:path";
 import { z } from "zod";
 import { query, withTransaction } from "../db/client.js";
 import { getTemplate } from "../templates/registry.js";
+import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.js";
 import { CANONICAL_ARC_LOCK } from "../agents/antiDriftWriter.js";
 import { templatesArtifactsDir } from "../utils/artifacts.js";
+import { newId } from "../utils/ids.js";
+import type { AuditActor } from "../auth/tokens.js";
+import { currentRequestId } from "../observability/request-context.js";
 
 export const SAFE_AGENT_TOOLS = [
   "get_business_context",
@@ -79,7 +83,7 @@ export const OnboardWorkspaceSchema = z.object({
   settlementAddress: z
     .string()
     .regex(/^0x[a-fA-F0-9]{40}$/, "Must be a valid 40-hex-character EVM address")
-    .default("0xA4D196C26F07bcd68FA76a0f1bECd2536C4ae9C2"),
+    .optional(),
   budgetDailyLimitCents: z.number().int().positive(),
   approvalThresholdCents: z.number().int().nonnegative(),
   supplies: z.array(InitialSupplyItemSchema).default([]),
@@ -174,7 +178,7 @@ export function getTemplateBlueprint(templateId: string) {
  * Creates a genuinely blank or owner-configured workspace in PostgreSQL.
  * Never fabricates orders, workflows, invoices, or transactions.
  */
-export async function onboardBlankWorkspace(rawInput: unknown) {
+export async function onboardBlankWorkspace(rawInput: unknown, actor: AuditActor) {
   const input = OnboardWorkspaceSchema.parse(rawInput);
 
   if (input.approvalThresholdCents > input.budgetDailyLimitCents) {
@@ -183,6 +187,12 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
     );
   }
 
+  // Same rule as provisionWorkspace: a local workspace gets its own simulated address, an
+  // arc-testnet workspace without an address stores NULL (payments are held until one is set).
+  const settlementAddress =
+    input.settlementAddress ??
+    (input.settlementMode === "local" ? simulatedPaymentAddress(`workspace:${input.workspaceId}`) : null);
+
   await withTransaction(async (client) => {
     await client.query(
       `INSERT INTO workspaces (id, name, template_id, settlement_address, settlement_mode, budget_daily_limit_cents, approval_threshold_cents, created_at, updated_at)
@@ -190,7 +200,7 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name,
          template_id = EXCLUDED.template_id,
-         settlement_address = EXCLUDED.settlement_address,
+         settlement_address = COALESCE($8::text, workspaces.settlement_address, EXCLUDED.settlement_address),
          settlement_mode = EXCLUDED.settlement_mode,
          budget_daily_limit_cents = EXCLUDED.budget_daily_limit_cents,
          approval_threshold_cents = EXCLUDED.approval_threshold_cents,
@@ -199,10 +209,11 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
         input.workspaceId,
         input.name,
         input.workspaceId,
-        input.settlementAddress,
+        settlementAddress,
         input.settlementMode,
         input.budgetDailyLimitCents,
         input.approvalThresholdCents,
+        input.settlementAddress ?? null,
       ]
     );
 
@@ -227,12 +238,13 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
         ? supp.id
         : `${input.workspaceId}_${supp.id}`;
       await client.query(
-        `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, endpoint_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO suppliers (id, workspace_id, name, adapter_type, contact_email, verified, is_simulated, endpoint_url, payment_address)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (id) DO UPDATE SET
            name = EXCLUDED.name,
            verified = EXCLUDED.verified,
-           contact_email = EXCLUDED.contact_email;`,
+           contact_email = EXCLUDED.contact_email,
+           payment_address = COALESCE(suppliers.payment_address, EXCLUDED.payment_address);`,
         [
           fullSuppId,
           input.workspaceId,
@@ -242,6 +254,7 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
           supp.verified,
           supp.isSimulated,
           supp.endpointUrl || null,
+          supp.isSimulated ? simulatedPaymentAddress(fullSuppId) : null,
         ]
       );
     }
@@ -281,13 +294,15 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
       );
     }
 
-    // Record owner audit log
+    // The audit row names the actor the caller passed (ADR 0023).
     await client.query(
-      `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-       VALUES ($1, $2, 'owner', 'owner@bind.local', 'commercial_commitment', 'workspace.onboard_configured', 'ALLOW', $3::jsonb, NOW());`,
+      `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+       VALUES ($1, $2, $3, $4, 'commercial_commitment', 'workspace.onboard_configured', 'ALLOW', $5::jsonb, NOW(), $6);`,
       [
-        `audit_onboard_${Date.now()}`,
+        newId("audit_onboard"),
         input.workspaceId,
+        actor.type,
+        actor.id,
         JSON.stringify({
           provenance: "OWNER_CONFIRMED",
           businessType: input.businessType,
@@ -297,6 +312,7 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
           suppliesCount: input.supplies.length,
           suppliersCount: input.suppliers.length,
         }),
+        currentRequestId(),
       ]
     );
   });
@@ -314,7 +330,7 @@ export async function onboardBlankWorkspace(rawInput: unknown) {
 /**
  * Upserts an agent role in PostgreSQL and regenerates derived AGENTS.md / SKILL.md files.
  */
-export async function upsertAgentRole(workspaceId: string, rawInput: unknown) {
+export async function upsertAgentRole(workspaceId: string, rawInput: unknown, actor: AuditActor) {
   const input = AgentRoleUpsertSchema.parse(rawInput);
   assertSafeAgentTools(input.allowedTools);
 
@@ -355,11 +371,13 @@ export async function upsertAgentRole(workspaceId: string, rawInput: unknown) {
   );
 
   await query(
-    `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at)
-     VALUES ($1, $2, 'owner', 'owner@bind.local', 'commercial_commitment', 'agent_role.configure', 'ALLOW', $3::jsonb, NOW());`,
+    `INSERT INTO audit_logs (id, workspace_id, actor_type, actor_id, effect_class, action, policy_decision, evidence, created_at, request_id)
+     VALUES ($1, $2, $3, $4, 'commercial_commitment', 'agent_role.configure', 'ALLOW', $5::jsonb, NOW(), $6);`,
     [
-      `audit_role_${Date.now()}`,
+      newId("audit_role"),
       workspaceId,
+      actor.type,
+      actor.id,
       JSON.stringify({
         provenance: "OWNER_CONFIRMED",
         roleName: input.roleName,
@@ -369,6 +387,7 @@ export async function upsertAgentRole(workspaceId: string, rawInput: unknown) {
         allowedTools: input.allowedTools,
         enabled: input.enabled,
       }),
+      currentRequestId(),
     ]
   );
 
@@ -437,7 +456,7 @@ export async function syncWorkspaceDerivedTemplateFiles(workspaceId: string) {
 ## 1. Workspace Authority & Spending Policy
 - **Workspace ID:** \`${ws.id}\`
 - **Settlement Mode:** \`${ws.settlement_mode}\`
-- **Treasury Address:** \`${ws.settlement_address}\`
+- **Treasury Address:** \`${ws.settlement_address ?? "not set"}\`
 - **BindSettlement Contract (Arc Testnet 5042002):** \`${CANONICAL_ARC_LOCK.bindSettlementContract}\`
 - **Hard Daily Spend Limit:** \`${dailyFormatted}\`
 - **Owner Approval Gate:** Orders exceeding \`${gateFormatted}\` require explicit owner sign-off.

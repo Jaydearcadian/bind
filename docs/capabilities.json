@@ -1,0 +1,2200 @@
+{
+  "version": 1,
+  "source": "docs/openapi.json + docs/ecosystem/exposure.json + sdk/src/client.ts + mcp/src/tools.ts. Generated: do not edit by hand.",
+  "counts": {
+    "operations": 89,
+    "mcpTools": 17,
+    "exposure:public_api": 78,
+    "exposure:internal_service": 7,
+    "exposure:protocol_primitive": 4,
+    "effect:owner_decision": 10,
+    "effect:owner_configuration": 18,
+    "effect:commercial_commitment": 4,
+    "effect:operational": 3,
+    "effect:credential": 10,
+    "effect:data_entry": 2,
+    "effect:read": 39,
+    "effect:external_request": 3
+  },
+  "capabilities": [
+    {
+      "id": "acceptCustomerOrder",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/customer-orders/{orderId}/accept",
+      "summary": "Accept a held order (the owner decides it; the capacity is checked again).",
+      "tag": "Customer orders",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_decision",
+      "irreversible": true,
+      "economic": true,
+      "stability": "stable",
+      "flags": [],
+      "note": "Owner accepts a held customer order. This is a promise to a customer, so it cannot be silently undone.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "acceptInvite",
+      "method": "POST",
+      "route": "/api/account/invites/accept",
+      "summary": "Join a workspace as staff with a single-use invitation code.",
+      "tag": "People",
+      "authorization": "account",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Joins a workspace as staff with a single-use code.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "approveApproval",
+      "method": "POST",
+      "route": "/api/approvals/{id}/approve",
+      "summary": "Approve a pending approval. The order is submitted once, as the owner token's label.",
+      "tag": "Approvals",
+      "authorization": "owner-any",
+      "exposure": "public_api",
+      "effect": "owner_decision",
+      "irreversible": true,
+      "economic": true,
+      "stability": "stable",
+      "flags": [],
+      "note": "Authority action. Never exposed to agents.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "approveMenuProposal",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/menu-proposals/{proposalId}/approve",
+      "summary": "Approve a proposal (an owner decision; it is not yet on the menu).",
+      "tag": "Menu",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_decision",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "cancelCustomerOrder",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/customer-orders/{orderId}/cancel",
+      "summary": "Cancel a customer order. Staff may cancel. Nothing is ordered or paid by this.",
+      "tag": "Customer orders",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "commercial_commitment",
+      "irreversible": true,
+      "economic": true,
+      "stability": "stable",
+      "flags": [],
+      "note": "Cancelling an accepted order is a commitment.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "cancel_customer_order"
+      }
+    },
+    {
+      "id": "cancelMenuProposal",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/menu-proposals/{proposalId}/cancel",
+      "summary": "Cancel a proposal that is not yet published.",
+      "tag": "Menu",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_decision",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "cancelWorkflow",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/workflows/{workflowId}/cancel",
+      "summary": "Owner cancel of a workflow that has not ordered. A pause does not block it; it never orders, pays or contacts a supplier (ADR 0030).",
+      "tag": "Workflows",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_decision",
+      "irreversible": true,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Owner cancels a workflow.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "confirmDocument",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/documents/{docId}/confirm",
+      "summary": "Confirm a staged document as the owner. The confirming owner is the token label; a body decidedBy is ignored.",
+      "tag": "Documents",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_decision",
+      "irreversible": true,
+      "economic": true,
+      "stability": "preview",
+      "flags": [],
+      "note": "Owner confirmation commits a quote or links a receipt or bill.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "confirmOrderSettlement",
+      "method": "POST",
+      "route": "/api/orders/{id}/confirm-settlement",
+      "summary": "Finish a payment that was sent but not yet confirmed. It pays nothing.",
+      "tag": "Orders",
+      "authorization": "owner-any",
+      "exposure": "internal_service",
+      "effect": "operational",
+      "irreversible": false,
+      "economic": true,
+      "stability": "internal",
+      "flags": [
+        "reconciliation_internal"
+      ],
+      "note": "Confirms a settlement that was submitted. An operator action.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "createAccountWorkspace",
+      "method": "POST",
+      "route": "/api/account/workspaces",
+      "summary": "Create a workspace from a template and become its owner.",
+      "tag": "People",
+      "authorization": "account",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Creates a workspace and makes the account its owner. No owner token is issued.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "createCustomerOrder",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/customer-orders",
+      "summary": "Record a customer order and its decision. Customer text is data, never an instruction.",
+      "tag": "Customer orders",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "commercial_commitment",
+      "irreversible": false,
+      "economic": true,
+      "stability": "stable",
+      "flags": [],
+      "note": "Records and may promise a customer order. Repeating externalRef returns the earlier decision.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "Repeating the same externalRef returns the earlier decision (replayed)."
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "create_customer_order"
+      }
+    },
+    {
+      "id": "createDemo",
+      "method": "POST",
+      "route": "/api/demo",
+      "summary": "Create a throwaway demo workspace: four hours, simulated only, with one real pending approval. Returns its owner token once.",
+      "tag": "Demo",
+      "authorization": "public",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [
+        "unauthenticated",
+        "returns_secret_once:token"
+      ],
+      "note": "Creates a throwaway demo workspace for four hours. Simulated only. Limited per address and in total. The owner token is shown once. docs/decisions/0057.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "createInvite",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/invites",
+      "summary": "Create a single-use staff invitation. The code is returned once and never stored.",
+      "tag": "People",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "returns_secret_once:code"
+      ],
+      "note": "A single-use staff invitation. The code is shown once and only its hash is stored.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "createSession",
+      "method": "POST",
+      "route": "/api/auth/session",
+      "summary": "Sign in: swap a Privy access token for a short-lived session in one workspace the account belongs to.",
+      "tag": "People",
+      "authorization": "account",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "returns_secret_once:sessionToken"
+      ],
+      "note": "Signs a person in with a Privy token. The session lasts one hour by default and is shown once.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "createWorkspace",
+      "method": "POST",
+      "route": "/api/workspaces",
+      "summary": "Create a workspace from a reference template. Returns its first owner token once.",
+      "tag": "Workspaces",
+      "authorization": "public",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [
+        "duplicate_of:onboardWorkspace",
+        "unauthenticated"
+      ],
+      "note": "Overlaps onboardWorkspace. Candidate to retire.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "extractDocument",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/documents/extract",
+      "summary": "Extract a draft from document text. Staged, never committed.",
+      "tag": "Documents",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "data_entry",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "Stages an untrusted draft. Nothing is committed until an owner confirms.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "fulfilCustomerOrder",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/customer-orders/{orderId}/fulfil",
+      "summary": "Mark an accepted order fulfilled, and release its reserved stock.",
+      "tag": "Customer orders",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "commercial_commitment",
+      "irreversible": true,
+      "economic": true,
+      "stability": "stable",
+      "flags": [],
+      "note": "Marks an order fulfilled and consumes reserved stock. Not exposed to agents.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getAgents",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/agents",
+      "summary": "Agent roles, with the tool registry and the forbidden capabilities.",
+      "tag": "Agents",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getApproval",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/approvals/{approvalId}",
+      "summary": "One approval of this workspace.",
+      "tag": "Approvals",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "One approval.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getCustomerOrder",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/customer-orders/{orderId}",
+      "summary": "One customer order.",
+      "tag": "Customer orders",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getFeedbackSummary",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/feedback/summary",
+      "summary": "Themes and a sample of the feedback since a date (default: 30 days). Reproducible from stored rows.",
+      "tag": "Feedback",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "feedback_summary"
+      }
+    },
+    {
+      "id": "getHealth",
+      "method": "GET",
+      "route": "/health",
+      "summary": "Liveness: the process answers and the database responds. Carries no data.",
+      "tag": "Monitoring",
+      "authorization": "public",
+      "exposure": "internal_service",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "internal",
+      "flags": [],
+      "note": "Liveness probe for the platform, not a product capability.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getLedger",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/accounting/ledger",
+      "summary": "Journal entries for paid and reconciled orders. ?format=csv returns the same rows as text/csv.",
+      "tag": "Accounting",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "Accounting journal; JSON or CSV.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getMe",
+      "method": "GET",
+      "route": "/api/me",
+      "summary": "Who the bearer token is: its workspace, role, label, credential kind and the pause switch. Never a secret.",
+      "tag": "Workspaces",
+      "authorization": "authenticated",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Who the bearer token is (ADR 0058). Read only; never returns a secret, hash or token id.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getMetrics",
+      "method": "GET",
+      "route": "/metrics",
+      "summary": "Prometheus metrics: aggregate counts only (ADR 0032).",
+      "tag": "Monitoring",
+      "authorization": "metrics-token",
+      "exposure": "internal_service",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "internal",
+      "flags": [],
+      "note": "Aggregate operations metrics, behind its own token.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getNeedsAttention",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/needs-attention",
+      "summary": "What the owner must decide: ids, codes and the next action. No customer, supplier or feedback text.",
+      "tag": "Workflows",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "needs_attention"
+      }
+    },
+    {
+      "id": "getNotificationChannels",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/notifications",
+      "summary": "Whether email notices are on for this server, and the workspace's owner addresses with their status. Never a code.",
+      "tag": "Notifications",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Owner email notices: whether email is on for this server and the workspace's addresses with their status. Never a code or a hash (ADR 0074).",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getOpenApi",
+      "method": "GET",
+      "route": "/api/openapi.json",
+      "summary": "The OpenAPI 3.0 document of this API, built from the route registry (ADR 0034).",
+      "tag": "Monitoring",
+      "authorization": "public",
+      "exposure": "protocol_primitive",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "The contract itself.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getOrder",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/orders/{orderId}",
+      "summary": "One supplier order of this workspace, with its latest three-way match.",
+      "tag": "Orders",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "One supplier order with its latest match.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getPublicConfig",
+      "method": "GET",
+      "route": "/api/public-config",
+      "summary": "The public browser configuration: the Privy app id for sign-in, or null. Nothing secret (ADR 0070).",
+      "tag": "Monitoring",
+      "authorization": "public",
+      "exposure": "internal_service",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "internal",
+      "flags": [],
+      "note": "Browser sign-in configuration: the public Privy app id or null. Not a product capability (ADR 0070).",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getReady",
+      "method": "GET",
+      "route": "/ready",
+      "summary": "Readiness: the database answers within the budget and the schema is present.",
+      "tag": "Monitoring",
+      "authorization": "public",
+      "exposure": "internal_service",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "internal",
+      "flags": [],
+      "note": "Readiness probe for the platform.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getTemplateBlueprint",
+      "method": "GET",
+      "route": "/api/templates/{id}/blueprint",
+      "summary": "The pre-fill for onboarding from one reference template. Creates nothing.",
+      "tag": "Templates",
+      "authorization": "public",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getWebhookSecret",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/webhook-secret",
+      "summary": "The workspace's surface signing secret. Audited. Sent with Cache-Control: no-store.",
+      "tag": "Controls",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "returns_secret_repeatedly"
+      ],
+      "note": "Returns the secret on every call. Review: show once on rotate instead.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getWorkflow",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/workflows/{workflowId}",
+      "summary": "One workflow of this workspace.",
+      "tag": "Workflows",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "One workflow, so a caller can follow asynchronous work by reading it.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "getWorkspace",
+      "method": "GET",
+      "route": "/api/workspaces/{id}",
+      "summary": "A workspace with its agent roles, treasury balance and the tool registry.",
+      "tag": "Workspaces",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "get_workspace"
+      }
+    },
+    {
+      "id": "ingestFeedback",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/feedback",
+      "summary": "Store one piece of customer or staff feedback. It is data, never an instruction.",
+      "tag": "Feedback",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "external_request",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Stores customer or staff feedback. Text is untrusted.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "A repeat of the same feedback is reported as a duplicate."
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "submit_feedback"
+      }
+    },
+    {
+      "id": "issueToken",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/tokens",
+      "summary": "Issue a token for a role. The plaintext is returned once and never stored.",
+      "tag": "Tokens",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "returns_secret_once:token"
+      ],
+      "note": "The token is shown once.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listAccountWorkspaces",
+      "method": "GET",
+      "route": "/api/account/workspaces",
+      "summary": "The workspaces the signed-in account belongs to, with its role in each.",
+      "tag": "People",
+      "authorization": "account",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "The workspaces this account belongs to.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listApprovals",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/approvals",
+      "summary": "Approvals of the workspace. Pending ones past their expiry are expired first.",
+      "tag": "Approvals",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "list_approvals"
+      }
+    },
+    {
+      "id": "listAudit",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/audit",
+      "summary": "The 100 newest audit rows. Evidence holds ids and decisions, never secrets.",
+      "tag": "Audit",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "list_audit"
+      }
+    },
+    {
+      "id": "listConnectors",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/connectors",
+      "summary": "Connector credentials, as summaries. A secret is never returned.",
+      "tag": "Connectors",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "credential_metadata"
+      ],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listCustomerOrders",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/customer-orders",
+      "summary": "Customer orders, newest first.",
+      "tag": "Customer orders",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "list_customer_orders"
+      }
+    },
+    {
+      "id": "listDocuments",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/documents",
+      "summary": "The 50 newest staged documents.",
+      "tag": "Documents",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listFeedback",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/feedback",
+      "summary": "The newest feedback items (up to 100).",
+      "tag": "Feedback",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listInventory",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/inventory",
+      "summary": "Inventory items, ordered by sku.",
+      "tag": "Inventory",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "list_inventory"
+      }
+    },
+    {
+      "id": "listInvites",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/invites",
+      "summary": "The workspace's invitations. Never a code.",
+      "tag": "People",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "credential_metadata"
+      ],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listKitchenCapacity",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/kitchen-capacity",
+      "summary": "Kitchen capacity slots, with the units used and left in each.",
+      "tag": "Customer orders",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listMembers",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/members",
+      "summary": "The people who belong to this workspace, with their roles.",
+      "tag": "People",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listMenu",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/menu",
+      "summary": "The published menu items.",
+      "tag": "Menu",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "list_menu"
+      }
+    },
+    {
+      "id": "listMenuProposals",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/menu-proposals",
+      "summary": "Menu proposals, newest first.",
+      "tag": "Menu",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": "list_menu_proposals"
+      }
+    },
+    {
+      "id": "listOrders",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/orders",
+      "summary": "The 50 newest orders, with the latest three-way match.",
+      "tag": "Orders",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "list_orders"
+      }
+    },
+    {
+      "id": "listSuppliers",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/suppliers",
+      "summary": "Suppliers of the workspace, by name.",
+      "tag": "Suppliers",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listSurfaces",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/surfaces",
+      "summary": "Identity bindings of messaging surfaces. A binding is the only source of a surface actor's role.",
+      "tag": "Surfaces",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listTemplates",
+      "method": "GET",
+      "route": "/api/templates",
+      "summary": "The reference templates a workspace can start from.",
+      "tag": "Templates",
+      "authorization": "public",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "Templates are still partly data and partly code.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listTokens",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/tokens",
+      "summary": "The tokens of this workspace. Never a hash or a plaintext.",
+      "tag": "Tokens",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "credential_metadata"
+      ],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listWorkflows",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/workflows",
+      "summary": "The 50 newest workflows.",
+      "tag": "Workflows",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "list_workflows"
+      }
+    },
+    {
+      "id": "listWorkspaces",
+      "method": "GET",
+      "route": "/api/workspaces",
+      "summary": "The caller's own workspace (never another one).",
+      "tag": "Workspaces",
+      "authorization": "authenticated",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "onboardWorkspace",
+      "method": "POST",
+      "route": "/api/workspaces/onboard",
+      "summary": "Create a blank or owner-configured workspace. Returns its first owner token once.",
+      "tag": "Workspaces",
+      "authorization": "public",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [
+        "unauthenticated",
+        "returns_secret_once:ownerToken"
+      ],
+      "note": "Creates a workspace and returns the first owner token once. Rate-limited.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "pollEvents",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/events/poll",
+      "summary": "The same events as the stream, as JSON pages, for clients that cannot hold a stream (serverless). Without after: the newest events, ascending.",
+      "tag": "Events",
+      "authorization": "member",
+      "exposure": "protocol_primitive",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "The same events as pages.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "poll_events"
+      }
+    },
+    {
+      "id": "proposeMenuChange",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/menu-proposals",
+      "summary": "Propose a menu change. A staff token proposes as the menu agent (its role and the pause apply).",
+      "tag": "Menu",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "external_request",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Creates a proposal that stays proposed until an owner acts.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "propose_menu_change"
+      }
+    },
+    {
+      "id": "publishMenuProposal",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/menu-proposals/{proposalId}/publish",
+      "summary": "Publish an approved proposal to the menu. An offer to customers: only an owner may do it.",
+      "tag": "Menu",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_decision",
+      "irreversible": true,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Owner makes a menu change live for customers. Reversing it needs a new proposal.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "receiveWebhook",
+      "method": "POST",
+      "route": "/api/webhooks/incoming",
+      "summary": "A surface event (signed with the workspace's surface secret) or a standard event (signed with BIND_WEBHOOK_SECRET). The body is the signed bytes.",
+      "tag": "Webhooks",
+      "authorization": "signed-webhook",
+      "exposure": "protocol_primitive",
+      "effect": "external_request",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Inbound signed events from a business's surfaces (ADR 0022). Surface actor roles come only from bindings.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "reconcileOrder",
+      "method": "POST",
+      "route": "/api/orders/{id}/reconcile",
+      "summary": "Match the delivery receipt and the bill to the order, and settle it if they match.",
+      "tag": "Orders",
+      "authorization": "owner-any",
+      "exposure": "internal_service",
+      "effect": "operational",
+      "irreversible": false,
+      "economic": false,
+      "stability": "internal",
+      "flags": [
+        "reconciliation_internal"
+      ],
+      "note": "Resolves an order whose outcome was unknown. An operator action, not a product capability.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "recoverWorkflows",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/recover",
+      "summary": "Recover interrupted workflows of this workspace. In-doubt submissions are reported, never resent.",
+      "tag": "Workflows",
+      "authorization": "owner",
+      "exposure": "internal_service",
+      "effect": "operational",
+      "irreversible": false,
+      "economic": false,
+      "stability": "internal",
+      "flags": [
+        "reconciliation_internal"
+      ],
+      "note": "Runs recovery on demand. The worker normally does this.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "rejectApproval",
+      "method": "POST",
+      "route": "/api/approvals/{id}/reject",
+      "summary": "Reject a pending approval. The workflow is cancelled and nothing is ordered.",
+      "tag": "Approvals",
+      "authorization": "owner-any",
+      "exposure": "public_api",
+      "effect": "owner_decision",
+      "irreversible": false,
+      "economic": true,
+      "stability": "stable",
+      "flags": [],
+      "note": "Authority action. Never exposed to agents.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "rejectMenuProposal",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/menu-proposals/{proposalId}/reject",
+      "summary": "Reject a proposal.",
+      "tag": "Menu",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_decision",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "removeMember",
+      "method": "DELETE",
+      "route": "/api/workspaces/{id}/members/{accountId}",
+      "summary": "Remove a member and end their sessions. The last owner cannot be removed.",
+      "tag": "People",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Ends the person's sessions at once. The last owner cannot be removed.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "removeOwnerEmail",
+      "method": "DELETE",
+      "route": "/api/workspaces/{id}/notifications/email/{emailId}",
+      "summary": "Remove an owner address. It stops receiving notices at once. The binding it created is removed with it.",
+      "tag": "Notifications",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "The address stops receiving owner notices at once (ADR 0074). Never agent-exposed.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "replenish",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/replenish",
+      "summary": "Start a replenishment for one sku. Returns the workflow it is in.",
+      "tag": "Replenishment",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "commercial_commitment",
+      "irreversible": false,
+      "economic": true,
+      "stability": "stable",
+      "flags": [],
+      "note": "Starts replenishment. Policy decides whether an order is placed, held for approval, or refused.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "A repeat while the workflow is awaiting approval returned the same workflow (observed in the model-driven MCP check, ADR 0042). Other states are not documented."
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": "request_replenishment"
+      }
+    },
+    {
+      "id": "requestOwnerEmailVerification",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/notifications/email",
+      "summary": "Send a six-digit code to an address, to be entered at /verify. The code goes only in the email.",
+      "tag": "Notifications",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Sends a six-digit code to an address, which the owner must then enter. Sends an email to the address typed (ADR 0074). Limited to three codes per address per hour. Never agent-exposed.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "resetDemo",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/demo/reset",
+      "summary": "Reset a demo: delete it and its data, and return a fresh demo with new credentials. The old token stops working.",
+      "tag": "Demo",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [
+        "returns_secret_once:token"
+      ],
+      "note": "Deletes this demo workspace and its data. A demo is a throwaway sandbox, so no real data is lost, and no idempotency key is taken: the answer cannot be replayed once the workspace is gone. Returns a new demo with a new token. Refused for a workspace that is not a demo. docs/decisions/0057.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "revokeApproval",
+      "method": "POST",
+      "route": "/api/approvals/{id}/revoke",
+      "summary": "Revoke an approval that was given. Recorded as revoked, not rejected.",
+      "tag": "Approvals",
+      "authorization": "owner-any",
+      "exposure": "public_api",
+      "effect": "owner_decision",
+      "irreversible": false,
+      "economic": true,
+      "stability": "stable",
+      "flags": [],
+      "note": "Authority action. Never exposed to agents.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "revokeConnector",
+      "method": "DELETE",
+      "route": "/api/workspaces/{id}/connectors/{connectorId}",
+      "summary": "Revoke a connector: its ciphertext is destroyed and it is marked revoked.",
+      "tag": "Connectors",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": true,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Removes a stored credential. The secret is destroyed; reconnecting needs the secret again.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "revokeInvite",
+      "method": "DELETE",
+      "route": "/api/workspaces/{id}/invites/{inviteId}",
+      "summary": "Revoke an invitation that has not been used.",
+      "tag": "People",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "revokeToken",
+      "method": "DELETE",
+      "route": "/api/workspaces/{id}/tokens/{tokenId}",
+      "summary": "Revoke a token. The last active owner token of a workspace cannot be revoked.",
+      "tag": "Tokens",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": true,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "A revoked token stops working at once and cannot be restored; issue a new one.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "rotateWebhookSecret",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/webhook-secret/rotate",
+      "summary": "Rotate the surface signing secret. The old secret stops validating at once.",
+      "tag": "Controls",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": true,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "returns_secret_once:secret"
+      ],
+      "note": "Invalidates the previous secret. Senders must switch to the new one; the new secret is returned once.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "setAgentsPaused",
+      "method": "PUT",
+      "route": "/api/workspaces/{id}/agents-paused",
+      "summary": "The pause switch. While paused, no commitment is made and no replenishment starts (ADR 0022).",
+      "tag": "Controls",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": true,
+      "stability": "stable",
+      "flags": [],
+      "note": "The pause switch. Owner only; an agent must never reach it.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "setConnector",
+      "method": "PUT",
+      "route": "/api/workspaces/{id}/connectors/{connectorId}",
+      "summary": "Store a connector secret. Accepted once, encrypted at rest, never returned.",
+      "tag": "Connectors",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "accepts_secret"
+      ],
+      "note": "Accepts a secret. It must never pass through a model or an agent tool.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "setKitchenCapacity",
+      "method": "PUT",
+      "route": "/api/workspaces/{id}/kitchen-capacity",
+      "summary": "Replace the kitchen capacity slots.",
+      "tag": "Customer orders",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "setMemberRole",
+      "method": "PUT",
+      "route": "/api/workspaces/{id}/members/{accountId}",
+      "summary": "Change a member's role. The last owner cannot be demoted.",
+      "tag": "People",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "The last owner cannot be demoted.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "signOut",
+      "method": "POST",
+      "route": "/api/auth/sign-out",
+      "summary": "End the account session this request used.",
+      "tag": "People",
+      "authorization": "authenticated",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Ends the account session the request used.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "streamEvents",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/events",
+      "summary": "Live stream (text/event-stream) of the workspace's finished audit events. Each event: id (<txid>.<seq>), event (the audit action) and data (the envelope). Resumes after Last-Event-ID (header) or lastEventId (query); with neither, starts after the latest event.",
+      "tag": "Events",
+      "authorization": "member",
+      "exposure": "protocol_primitive",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "SSE stream (ADR 0035).",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "updatePolicy",
+      "method": "PUT",
+      "route": "/api/workspaces/{id}/policy",
+      "summary": "Set the daily budget, the approval threshold and the settlement address.",
+      "tag": "Workspaces",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": true,
+      "stability": "stable",
+      "flags": [],
+      "note": "Changes limits that govern spending. Owner only.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "upsertAgentRole",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/agents",
+      "summary": "Add or update an agent role. Only the typed tool registry is allowed; forbidden capabilities are refused.",
+      "tag": "Agents",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": true,
+      "stability": "stable",
+      "flags": [
+        "generic_upsert"
+      ],
+      "note": "Grants tools and limits to a role. Forbidden capabilities are rejected server side.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "upsertInventoryItem",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/inventory",
+      "summary": "Add or update an inventory item by sku.",
+      "tag": "Inventory",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "data_entry",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "generic_upsert"
+      ],
+      "note": "Plain stock data. It can trigger restock logic indirectly.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "convenience",
+        "mcp": null
+      }
+    },
+    {
+      "id": "upsertSupplier",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/suppliers",
+      "summary": "Add or update a supplier. A payee address is checked and stored checksummed.",
+      "tag": "Suppliers",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": true,
+      "stability": "stable",
+      "flags": [
+        "generic_upsert"
+      ],
+      "note": "Changes who can be paid.",
+      "idempotency": {
+        "clientKey": true,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "upsertSurfaceBinding",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/surfaces",
+      "summary": "Bind an actor on a surface to a role in this workspace.",
+      "tag": "Surfaces",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [
+        "generic_upsert"
+      ],
+      "note": "Binds a messaging actor to a role. Changes who may approve from a surface.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "verifyConnector",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/connectors/{connectorId}/verify",
+      "summary": "Verify a connector against its provider where a verifier exists. Otherwise NOT_AVAILABLE.",
+      "tag": "Connectors",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "credential",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "No live verifier exists yet, so a connector is never reported verified.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "verifyOwnerEmail",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/notifications/email/verify",
+      "summary": "Check the six-digit code. On success the address receives owner notices.",
+      "tag": "Notifications",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "stable",
+      "flags": [],
+      "note": "Checks the code. On success the address receives owner notices (ADR 0074). Never agent-exposed.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    }
+  ]
+}

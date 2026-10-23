@@ -1,5 +1,11 @@
 # Bind: Mission, Philosophy, and Core Architecture
 
+> **Status (2026-10-20, Task 14): design intent, not a description of the built system.** The rules in sections 2 and 4
+> (policy outside the model, effect classes, the commitment gate, the pause, the ledger) are what the code enforces. Sections 3,
+> 5 and 6 describe a target: Arc and Circle settlement, the ERC-8004 and ERC-8183 contracts, WhatsApp and Gmail surfaces, and
+> vendor performance figures. None of those is implemented or verified in this repository. What exists, and how it was checked,
+> is in `README.md` and `docs/RELEASE_EVIDENCE.md`.
+
 ## 1. Executive Summary
 
 Bind is a deployment and connectivity layer for business agents. It enables any business—beginning with a commercial kitchen vertical—to connect once, configure operating preferences and authority boundaries, and receive a coordinated, role-specific agent team that can safely use real business tools, communicate with external services, and settle value.
@@ -85,11 +91,11 @@ $$\text{draft} \longrightarrow \text{request\_sent} \longrightarrow \text{quote\
 
 ## 5. Settlement & Custody: Arc L1 and Circle
 
-* **Arc L1**: Provides stablecoin-native sub-second settlement ($<500\text{ms}$) with predictable, low-cost gas ($\sim\$0.01$) paid directly in native USDC.
-* **Circle Agent Stack**: Provides programmatic developer-controlled smart contract wallets, spending policy limiters, and compliance screening against sanctions allowlists/blocklists.
-* **Onchain Contracts**:
-  * ERC-8004 for agent identity and reputation.
-  * ERC-8183 for milestone-based deliverable escrow and settlement.
+* **Arc L1** (vendor description, not measured here): stablecoin-native settlement with low gas paid in native USDC. The local simulator is the default; the Arc adapter is tested only against an in-process EVM (`docs/CONTRACT_SCOPE.md`).
+* **Circle Agent Stack** (vendor description): the Circle CLI adapter is disabled unless `ENABLE_LIVE_CIRCLE_CLI` is set, and it was not run here. Circle compliance screening is not implemented.
+* **Onchain Contracts** (not implemented beyond `BindSettlement.sol`):
+  * ERC-8004 for agent identity and reputation: no contract or adapter in this repository.
+  * ERC-8183 for milestone-based deliverable escrow and settlement: the reference address is recorded in `docs/CONTRACT_SCOPE.md`, and its escrow calls throw `SettlementNotSupportedError`.
 
 ---
 

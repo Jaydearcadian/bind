@@ -207,6 +207,14 @@ test.describe("Bind Editorial Landing Page (/) & Operations Workspace (/app) E2E
     await page.locator("#stagedDocumentPreviewBox button:has-text('Stage 2: Owner Confirm')").click();
     await expect(page.locator("#stagedDocumentPreviewBox")).toContainText("OWNER_CONFIRMED");
 
+    // Delivery: stage and confirm a Delivery Packing Slip for the 12 units on order. Settlement needs a stored receipt.
+    await page.locator("#docExtractType").selectOption("delivery_receipt");
+    await page.locator("#docRawText").fill("Delivery note\nSKU: SKU-YEAST-005\nQty: 12");
+    await page.locator("#extractDocStage1Btn").click();
+    await expect(page.locator("#stagedDocumentPreviewBox")).toContainText("DOCUMENT_EXTRACTED (Unconfirmed)");
+    await page.locator("#stagedDocumentPreviewBox button:has-text('Stage 2: Owner Confirm')").click();
+    await expect(page.locator("#stagedDocumentPreviewBox")).not.toContainText("DOCUMENT_EXTRACTED (Unconfirmed)");
+
     // Failed 3-Way Match test: extract a Supplier Bill with an overcharged price ($99.00 vs $25.00 PO) and confirm -> PRICE_DISCREPANCY
     await page.locator("#docExtractType").selectOption("supplier_bill");
     await page.locator("#docRawText").fill(

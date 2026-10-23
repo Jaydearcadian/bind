@@ -22,6 +22,10 @@ export interface InboundWebhookEvent {
 export interface NotificationResult {
   messageId: string;
   channel: NotificationChannel;
-  status: "delivered" | "queued" | "simulated";
+  /**
+   * "sent": a live provider accepted the message (ADR 0074, email only). "simulated": recorded in memory, nothing sent.
+   * "delivered" and "queued" are reserved for receipts that a provider reports later.
+   */
+  status: "sent" | "delivered" | "queued" | "simulated";
   timestamp: Date;
 }

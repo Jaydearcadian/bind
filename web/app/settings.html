@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Settings · Bind</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/brand/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/brand/tokens.css">
+<link rel="stylesheet" href="/assets/site.css">
+<link rel="stylesheet" href="/app/app.css">
+<script src="/app/boot.js"></script>
+<script type="module" src="/app/settings.js"></script>
+</head>
+<body class="app">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header app-header">
+  <div class="header-row">
+    <a class="lockup" href="/app/" aria-label="Bind, Today"><svg viewBox="0 0 192 58" aria-hidden="true" focusable="false"><g transform="translate(0 7) scale(.8)"><defs><mask id="mk-a" maskUnits="userSpaceOnUse" x="-12" y="-12" width="88" height="88"><rect x="-12" y="-12" width="88" height="88" fill="#fff"/><circle class="orbit" cx="42" cy="14.68" r="8.1" fill="#000"/></mask></defs><path pathLength="100" d="M32 12A20 20 0 1 1 32 52A20 20 0 1 1 32 12" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" mask="url(#mk-a)"/><circle class="bead orbit" cx="42" cy="14.68" r="6.4"/></g><g transform="translate(66 -1)"><g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 10V46"/><circle cx="22" cy="34" r="12"/><path d="M47 22V46"/><path d="M58 46V33A11 11 0 0 1 80 33V46"/><circle cx="103" cy="34" r="12"/><path d="M115 10V46"/></g><circle class="bead" cx="47" cy="11" r="3.4"/></g></svg></a>
+    <p class="ws-name" id="ws-name" aria-live="polite"></p>
+    <div class="header-actions">
+      <button class="pause-btn" id="pause-btn" type="button" hidden><span class="pause-dot" aria-hidden="true"></span><span id="pause-label">Pause all agents</span></button>
+      <div class="account">
+        <button class="account-btn" id="account-btn" type="button" aria-expanded="false" aria-controls="account-menu"><span class="avatar" id="avatar" aria-hidden="true"></span><span class="visually-hidden">Account</span></button>
+        <div class="account-menu" id="account-menu" hidden>
+          <p class="account-who"><b id="account-label"></b><span id="account-role"></span></p>
+          <button class="menu-item" id="sign-out" type="button">Sign out</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="app-frame">
+  <nav class="side-nav" aria-label="App">
+    <ul>
+      <li><a class="nav-item" href="/app/"><span class="nav-ico ico-today" aria-hidden="true"></span>Today</a></li>
+      <li><a class="nav-item" href="/app/activity"><span class="nav-ico ico-activity" aria-hidden="true"></span>Activity</a></li>
+      <li><a class="nav-item" href="/app/team"><span class="nav-ico ico-team" aria-hidden="true"></span>Team and limits</a></li>
+      <li><a class="nav-item" href="/app/connections"><span class="nav-ico ico-connections" aria-hidden="true"></span>Connections</a></li>
+      <li><a class="nav-item" href="/app/data"><span class="nav-ico ico-data" aria-hidden="true"></span>Business data</a></li>
+      <li><a class="nav-item" href="/app/people"><span class="nav-ico ico-people" aria-hidden="true"></span>People</a></li>
+      <li><a class="nav-item is-current" href="/app/settings" aria-current="page"><span class="nav-ico ico-settings" aria-hidden="true"></span>Settings</a></li>
+      <li><a class="nav-item" href="/app/help"><span class="nav-ico ico-help" aria-hidden="true"></span>Help</a></li>
+    </ul>
+  </nav>
+
+  <main id="main" class="app-main">
+    <div class="banner banner-paused" id="paused-banner" hidden role="status">
+      <svg class="bind-mark" data-state="held" viewBox="0 0 64 64" aria-hidden="true"><path class="ring" d="M32 12A20 20 0 1 1 32 52A20 20 0 1 1 32 12"/><circle class="clasp" cx="42" cy="14.68" r="6.4"/></svg>
+      <p><b>All agents are paused.</b> Nothing new is ordered or committed. You can still read everything and cancel work.</p>
+    </div>
+    <div class="banner banner-stale" id="stale-banner" hidden role="status">
+      <p id="stale-text">Can't reach Bind right now. Showing what we had.</p>
+      <button class="btn-small" id="refresh-now" type="button">Refresh now</button>
+    </div>
+
+    <header class="page-head">
+      <p class="eyebrow">How Bind works for you</p>
+      <h1 class="page-title">Settings</h1>
+    </header>
+
+    <section class="panel" aria-labelledby="ws-title">
+      <div class="panel-head"><h2 id="ws-title">Workspace</h2></div>
+      <dl class="facts" id="ws-facts"></dl>
+      <p class="help">Renaming a workspace, its time zone and business hours come later. Times are shown in your device's time zone.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="look-title">
+      <div class="panel-head"><h2 id="look-title">Appearance</h2></div>
+      <fieldset class="choices" id="theme">
+        <legend class="visually-hidden">Appearance</legend>
+        <label class="choice"><input type="radio" name="theme" value="device"> <span><b>Follow this device</b><small>Light or dark, as your device is set.</small></span></label>
+        <label class="choice"><input type="radio" name="theme" value="light"> <span><b>Light</b></span></label>
+        <label class="choice"><input type="radio" name="theme" value="dark"> <span><b>Dark</b></span></label>
+      </fieldset>
+      <p class="help">Saved on this device only.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="notify-title">
+      <div class="panel-head"><h2 id="notify-title">Notifications</h2></div>
+      <ul class="lines">
+        <li class="line"><div class="line-main"><p class="line-title">In Bind</p><p class="line-sub">Today shows what needs you as it happens.</p></div><span class="status status-ok">On</span></li>
+        <li class="line email-line" id="email-line"><div class="line-main"><p class="line-title">Email</p><p class="line-sub" id="email-sub">Checking…</p></div><span class="status status-outline" id="email-status">…</span></li>
+        <li class="line"><div class="line-main"><p class="line-title">Messaging apps</p><p class="line-sub">WhatsApp, Telegram and similar.</p></div><span class="status status-outline">Coming</span></li>
+      </ul>
+      <div id="email-box" hidden>
+        <ul class="lines" id="email-list"></ul>
+        <form class="add-form" id="email-form" novalidate hidden>
+          <label for="email-address">Where should we email you?</label>
+          <input id="email-address" class="text-input" type="email" autocomplete="email" maxlength="120" placeholder="you@yourbusiness.com">
+          <p class="help">We email a 6-digit code to check the address is yours. Notices are short: they say something is waiting and link to Bind. They never contain a button that approves anything.</p>
+          <p class="error" id="email-error" role="alert" hidden></p>
+          <div class="form-actions"><button class="btn btn-quiet" type="button" id="email-cancel">Cancel</button><button class="btn btn-primary" type="submit" id="email-send">Send the code</button></div>
+        </form>
+        <button class="btn-small" type="button" id="email-add" hidden>Add an address</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="signin-title">
+      <div class="panel-head"><h2 id="signin-title">Signing in</h2></div>
+      <ul class="lines">
+        <li class="line"><div class="line-main"><p class="line-title" id="signin-now"></p><p class="line-sub" id="signin-sub"></p></div></li>
+        <li class="line"><div class="line-main"><p class="line-title">Google and wallet</p><p class="line-sub" id="signin-methods-sub">Open with the next release. You'll be able to link both to one account here.</p></div><span class="status status-outline" id="signin-methods-status">Coming</span></li>
+      </ul>
+    </section>
+
+    <section class="panel" aria-labelledby="wallet-title" id="wallet-panel">
+      <div class="panel-head"><h2 id="wallet-title">Your wallet</h2></div>
+      <p class="panel-lede">Created for you when you sign in with Google, and held for you by Privy. Bind never sees its key and never sends anything from it. When a business pays, an owner still approves it.</p>
+      <div id="wallet-body" aria-live="polite"><p class="line-empty">Checking…</p></div>
+    </section>
+
+    <section class="panel builders" aria-labelledby="builders-title" id="builders">
+      <div class="panel-head"><h2 id="builders-title">For builders</h2></div>
+      <p class="panel-lede">To connect an agent step by step, use <a class="text-link" href="/app/connect-agent">Connect an agent</a>. Access keys let a program, the SDK or an MCP tool act in this workspace. A key can do what its role allows, nothing more, and every action it takes shows in Activity.</p>
+      <p class="line-empty" id="builders-staff" hidden>Only owners manage access keys.</p>
+      <div id="builders-owner" hidden>
+        <form class="add-form" id="key-form" novalidate>
+          <label for="key-label">What is this key for?</label>
+          <input id="key-label" class="text-input" maxlength="80" autocomplete="off" placeholder="Inventory sync script">
+          <label for="key-role">It acts as</label>
+          <select id="key-role" class="text-input">
+            <option value="staff" selected>Staff: can read and propose, can't approve spending</option>
+            <option value="owner">Owner: can do everything, including approving spending</option>
+          </select>
+          <p class="error" id="key-error" role="alert" hidden></p>
+          <div class="form-actions"><button class="btn btn-primary" type="submit" id="key-make">Make a key</button></div>
+        </form>
+        <div class="invite-made" id="key-made" hidden>
+          <p class="invite-made-title">Your new key for <b id="key-for"></b></p>
+          <div class="link-row">
+            <input id="key-value" class="text-input mono" readonly aria-label="New access key">
+            <button class="btn-small" type="button" id="key-copy">Copy</button>
+          </div>
+          <p class="help">Shown once. Bind keeps only a fingerprint, so if it's lost, make a new one and remove the old.</p>
+          <button class="btn btn-quiet" type="button" id="key-done">Done</button>
+        </div>
+        <h3 class="sub-h">Keys</h3>
+        <ul class="lines" id="keys" aria-busy="true"><li class="skeleton"></li></ul>
+
+        <h3 class="sub-h">Signing secret for messaging apps</h3>
+        <p class="help">Messaging adapters sign what they send to Bind with this secret, so Bind can tell real messages from forged ones. Viewing it is recorded.</p>
+        <div class="link-row" id="secret-row" hidden>
+          <input id="secret-value" class="text-input mono" readonly aria-label="Signing secret">
+          <button class="btn-small" type="button" id="secret-copy">Copy</button>
+        </div>
+        <p class="error" id="secret-error" role="alert" hidden></p>
+        <div class="form-actions start">
+          <button class="btn-small" type="button" id="secret-show">Show secret</button>
+          <button class="btn-small" type="button" id="secret-rotate">Replace secret</button>
+        </div>
+
+        <h3 class="sub-h">Reference</h3>
+        <p><a class="text-link" href="/api/openapi.json">The API description (OpenAPI)</a> · <a class="text-link" href="/sdk/index.js">The browser SDK</a></p>
+      </div>
+    </section>
+
+    <section class="panel danger" aria-labelledby="danger-title">
+      <div class="panel-head"><h2 id="danger-title">Leaving or closing</h2></div>
+      <ul class="lines">
+        <li class="line"><div class="line-main"><p class="line-title">Export everything</p><p class="line-sub">A copy of this workspace's data and history.</p></div><span class="status status-outline">Coming</span></li>
+        <li class="line"><div class="line-main"><p class="line-title">Leave this workspace</p><p class="line-sub">Ask an owner to remove you from People for now.</p></div><span class="status status-outline">Coming</span></li>
+        <li class="line"><div class="line-main"><p class="line-title">Delete this workspace</p><p class="line-sub">Removes it and its data for good.</p></div><span class="status status-outline">Coming</span></li>
+      </ul>
+    </section>
+  </main>
+</div>
+
+<nav class="tab-bar" aria-label="App">
+  <a class="tab-item" href="/app/"><span class="nav-ico ico-today" aria-hidden="true"></span>Today</a>
+  <a class="tab-item" href="/app/activity"><span class="nav-ico ico-activity" aria-hidden="true"></span>Activity</a>
+  <a class="tab-item" href="/app/team"><span class="nav-ico ico-team" aria-hidden="true"></span>Team</a>
+  <a class="tab-item" href="/app/connections"><span class="nav-ico ico-connections" aria-hidden="true"></span>Connections</a>
+  <button class="tab-item tab-more is-current" id="more-btn" type="button" aria-expanded="false" aria-controls="more-menu"><span class="nav-ico ico-more" aria-hidden="true"></span>More</button>
+</nav>
+<div class="more-menu" id="more-menu" hidden>
+  <a class="more-item" href="/app/data">Business data</a>
+  <a class="more-item" href="/app/people">People and access</a>
+  <a class="more-item is-current" href="/app/settings" aria-current="page">Settings</a>
+  <a class="more-item" href="/app/help">Help</a>
+</div>
+
+
+
+<dialog class="sheet sheet-small" id="pause-sheet" aria-labelledby="pause-title">
+  <div class="sheet-inner">
+    <h2 id="pause-title" class="sheet-title">Pause every agent?</h2>
+    <p class="sheet-text">Nothing new will be ordered or committed until you resume. Reading, reviewing and cancelling still work.</p>
+    <div class="sheet-actions">
+      <button class="btn btn-quiet" type="button" data-close>Keep working</button>
+      <button class="btn btn-primary" type="button" id="pause-confirm">Pause all agents</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="sheet sheet-small" id="confirm-sheet" aria-labelledby="confirm-title">
+  <div class="sheet-inner">
+    <h2 id="confirm-title" class="sheet-title"></h2>
+    <p class="sheet-text" id="confirm-text"></p>
+    <p class="error" id="confirm-error" role="alert" hidden></p>
+    <div class="sheet-actions">
+      <button class="btn btn-quiet" type="button" data-close>Keep it</button>
+      <button class="btn btn-primary btn-danger" type="button" id="confirm-go"></button>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

@@ -4,6 +4,7 @@ import path from "node:path";
 import { ChatOpenAI } from "@langchain/openai";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { log } from "../observability/logger.js";
 import {
   HybridMarketBenchmarkAdapter,
   MarketBenchmarkResult,
@@ -65,7 +66,11 @@ export interface SimulatedVendorQuote {
   unitPriceUsdc: string;
   totalPriceUsdc: string;
   leadTimeDays: number;
-  isWhitelistedOnChain: boolean;
+  /**
+   * true or false only when a check actually ran. null means Bind did not check the on-chain whitelist; the
+   * BindSettlement.sol contract enforces it at settlement. null is rendered as "not checked", never as false.
+   */
+  isWhitelistedOnChain: boolean | null;
 }
 
 export interface VerifiableDecisionRecord {
@@ -81,7 +86,8 @@ export interface VerifiableDecisionRecord {
     chainId: 5042002;
     dailyLimitUsdc: string;
     withinDailyLimit: boolean;
-    vendorWhitelisted: boolean;
+    /** null when the whitelist was not checked by Bind. */
+    vendorWhitelisted: boolean | null;
     requiresOwnerOverride: boolean;
   };
   lifecycleSeparation: {
@@ -96,6 +102,13 @@ export interface VerifiableDecisionRecord {
   createdAt: string;
 }
 
+/** Renders the whitelist field for humans: a checked result or "not checked". Never a guess. */
+function whitelistLabel(value: boolean | null): string {
+  if (value === true) return "true";
+  if (value === false) return "false";
+  return "not checked by Bind (enforced by BindSettlement.sol)";
+}
+
 const DEFAULT_CONTRACT = "0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29" as const;
 
 export async function generateVerifiableDecisionRecord(params: {
@@ -105,6 +118,8 @@ export async function generateVerifiableDecisionRecord(params: {
   quantityRequested: number;
   candidateQuotes: SimulatedVendorQuote[];
   dailyLimitUsdc?: string;
+  /** False keeps the market benchmark local (demo workspaces, docs/decisions/0057). Default true. */
+  allowExternal?: boolean;
 }): Promise<VerifiableDecisionRecord> {
   const dailyLimitUsdc = params.dailyLimitUsdc ?? "1.0";
   const templateDir = resolveTemplateDir(params.templateId);
@@ -120,13 +135,12 @@ export async function generateVerifiableDecisionRecord(params: {
       : params.templateId.includes("kitchen") || params.templateId.includes("restaurant")
       ? "commercial restaurant kitchen"
       : `${params.templateId} operations`;
-  const marketBenchmark = await benchmarkAdapter.fetchBenchmark(
-    params.skuName,
-    contextDomain
-  );
+  const marketBenchmark = await benchmarkAdapter.fetchBenchmark(params.skuName, contextDomain, {
+    allowExternal: params.allowExternal,
+  });
 
   // Deterministic vendor selection baseline (whitelisted + lowest total cost)
-  const whitelistedQuotes = params.candidateQuotes.filter((q) => q.isWhitelistedOnChain);
+  const whitelistedQuotes = params.candidateQuotes.filter((q) => q.isWhitelistedOnChain === true);
   const pool = whitelistedQuotes.length > 0 ? whitelistedQuotes : params.candidateQuotes;
   const selectedVendor = [...pool].sort(
     (a, b) => parseFloat(a.totalPriceUsdc) - parseFloat(b.totalPriceUsdc)
@@ -134,12 +148,12 @@ export async function generateVerifiableDecisionRecord(params: {
 
   const withinDailyLimit =
     parseFloat(selectedVendor.totalPriceUsdc) <= parseFloat(dailyLimitUsdc);
-  const requiresOwnerOverride =
-    !withinDailyLimit || !selectedVendor.isWhitelistedOnChain;
+  // An unchecked whitelist (null) is not a known violation, so it does not by itself require an owner override.
+  const requiresOwnerOverride = !withinDailyLimit || selectedVendor.isWhitelistedOnChain === false;
 
   let agentRationale =
     `Selected ${selectedVendor.vendorName} (${selectedVendor.vendorWallet}) at ${selectedVendor.totalPriceUsdc} USDC ` +
-    `via SIMULATED_SUPPLIER_ADAPTER. On-chain whitelist=${selectedVendor.isWhitelistedOnChain}, ` +
+    `via SIMULATED_SUPPLIER_ADAPTER. On-chain whitelist=${whitelistLabel(selectedVendor.isWhitelistedOnChain)}, ` +
     `within ${dailyLimitUsdc} USDC daily cap=${withinDailyLimit}. Goods fulfilment remains pending 3-way match.`;
   let reasoningProvider: "nebius-deepagent" | "deterministic-policy-engine" =
     "deterministic-policy-engine";
@@ -253,9 +267,7 @@ export async function generateVerifiableDecisionRecord(params: {
   try {
     await writeWorkflowAntiDriftFiles(fullRecord);
   } catch (err: any) {
-    console.warn(
-      `Anti-drift artifact write skipped for ${fullRecord.workflowId}: ${err?.message}`
-    );
+    log.warn("agent.antidrift_write_skipped", { workflowId: fullRecord.workflowId, error: err });
   }
 
   return fullRecord;

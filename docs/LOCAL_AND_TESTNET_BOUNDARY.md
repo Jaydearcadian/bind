@@ -5,7 +5,7 @@
 - PostgreSQL is local and disposable.
 - EVM calls use Anvil chain ID `31337`, bound to `127.0.0.1`.
 - Use only Anvil's development accounts and test contracts locally.
-- Supplier/third-party simulators are explicit in UI, API configuration, logs, and test evidence.
+- Supplier/third-party simulators are explicit in API responses, logs, and test evidence (`SIMULATED_SUPPLIER_ADAPTER`, `simulated`). The UI is orphaned (ADR 0016), so it labels nothing.
 - No production, testnet, or mainnet RPC is allowed in local CI configuration by default.
 - Do not put real secrets in `.env.local.example`, local fixtures, screenshots, logs, or `capabilities.yaml`.
 

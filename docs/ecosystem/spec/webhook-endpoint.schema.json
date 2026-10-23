@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bind:schema:webhook-endpoint",
+  "title": "Outbound webhook endpoint (proposed)",
+  "$defs": {
+    "create": {
+      "type": "object",
+      "required": [
+        "url",
+        "events"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https://[^\\s/]+(/[^\\s]*)?$",
+          "maxLength": 500,
+          "description": "HTTPS only. Addresses that resolve to private, loopback or link-local ranges are refused at registration and at every delivery."
+        },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 60,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^([a-z][a-z_]*\\.[a-z][a-z_]*|\\*)$"
+          }
+        },
+        "audience": {
+          "enum": [
+            "member",
+            "owner"
+          ],
+          "default": "member",
+          "description": "member: the events staff can see. owner: also the owner-only events. Choosing owner needs the owner token and is recorded."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false
+    },
+    "endpoint": {
+      "type": "object",
+      "required": [
+        "id",
+        "url",
+        "events",
+        "audience",
+        "status",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "audience": {
+          "enum": [
+            "member",
+            "owner"
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "disabled"
+          ]
+        },
+        "secret": {
+          "type": "string",
+          "description": "Present only in the create response and the rotate response. Never returned again."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "disabledReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "delivery": {
+      "type": "object",
+      "required": [
+        "id",
+        "endpointId",
+        "eventId",
+        "attempt",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "endpointId": {
+          "type": "string"
+        },
+        "eventId": {
+          "type": "string",
+          "pattern": "^[0-9]{1,19}\\.[0-9]{1,19}$"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "delivered",
+            "failed",
+            "abandoned"
+          ]
+        },
+        "responseStatus": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 100,
+          "maximum": 599
+        },
+        "nextAttemptAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "deliveredAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

@@ -3,6 +3,12 @@
 ## Status
 Accepted
 
+Corrections (2026-10-20, Task 14). The daily limit is a fixed window, not a rolling 24-hour window: `_checkAndUpdateDailyLimit`
+resets `dailySpent` when a call arrives at or after `lastDayReset + 1 days` (`contracts/src/BindSettlement.sol`). The NatSpec
+still says "rolling". A refund after a window reset can also reduce the current window's spent amount. See
+`docs/CONTRACT_SCOPE.md` section 7. The figures under "Verification" are earlier-session claims. They were not reproduced for
+Task 14, and the Forge results were not run here. See the appendix of `docs/RELEASE_EVIDENCE.md`.
+
 ## Context
 Bind separates model reasoning from deterministic policy enforcement. While off-chain policy gates (in `src/policy/`) govern agent actions prior to dispatching transactions, mission-critical safety guarantees for decentralized autonomous agents require smart-contract-level invariant enforcement. If an agent key is compromised, misconfigured, or experiences unexpected behavior, the smart contract itself must reject transfers that violate business limits or pay non-approved parties.
 

@@ -1,0 +1,488 @@
+{
+  "version": 1,
+  "note": "Every event type in docs/EVENTS.md, with the past-tense name that the v1 envelope adds. `type` stays as it is; nothing is removed or renamed on the wire. `object` is the kind of thing the event is about. `visibility` follows docs/EVENTS.md: staff do not receive auth., connector. or kitchen_capacity. events.",
+  "events": [
+    {
+      "type": "auth.token_issued",
+      "name": "token.issued",
+      "object": "token",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "auth.token_revoked",
+      "name": "token.revoked",
+      "object": "token",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "auth.webhook_secret_viewed",
+      "name": "webhook_secret.viewed",
+      "object": "webhook_secret",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "auth.webhook_secret_rotated",
+      "name": "webhook_secret.rotated",
+      "object": "webhook_secret",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "workspace.agents_paused_changed",
+      "name": "workspace.agents_pause_changed",
+      "object": "workspace",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "workspace.onboard_configured",
+      "name": "workspace.onboarded",
+      "object": "workspace",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "agent_role.configure",
+      "name": "agent_role.configured",
+      "object": "agent_role",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "connector.credential_set",
+      "name": "connector.credential_set",
+      "object": "connector",
+      "visibility": "owner",
+      "renamed": false
+    },
+    {
+      "type": "connector.credential_revoked",
+      "name": "connector.credential_revoked",
+      "object": "connector",
+      "visibility": "owner",
+      "renamed": false
+    },
+    {
+      "type": "connector.credential_verified",
+      "name": "connector.credential_verified",
+      "object": "connector",
+      "visibility": "owner",
+      "renamed": false
+    },
+    {
+      "type": "connector.credential_verification_failed",
+      "name": "connector.credential_verification_failed",
+      "object": "connector",
+      "visibility": "owner",
+      "renamed": false
+    },
+    {
+      "type": "connector.credential_rotated",
+      "name": "connector.credential_rotated",
+      "object": "connector",
+      "visibility": "owner",
+      "renamed": false
+    },
+    {
+      "type": "kitchen_capacity.set",
+      "name": "kitchen_capacity.set",
+      "object": "kitchen_capacity",
+      "visibility": "owner",
+      "renamed": false
+    },
+    {
+      "type": "approval.approved",
+      "name": "approval.approved",
+      "object": "approval",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "approval.rejected",
+      "name": "approval.rejected",
+      "object": "approval",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "approval.revoked",
+      "name": "approval.revoked",
+      "object": "approval",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "commitment.evaluate",
+      "name": "commitment.evaluated",
+      "object": "workflow",
+      "visibility": "member",
+      "renamed": true,
+      "note": "Name and object are proposed from the type string. Confirm against the recording code before implementing."
+    },
+    {
+      "type": "commitment.recheck",
+      "name": "commitment.rechecked",
+      "object": "workflow",
+      "visibility": "member",
+      "renamed": true,
+      "note": "Name and object are proposed from the type string. Confirm against the recording code before implementing."
+    },
+    {
+      "type": "orders.submit",
+      "name": "order.submitted",
+      "object": "order",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "orders.submit.in_doubt",
+      "name": "order.submission_in_doubt",
+      "object": "order",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "orders.submit.response_invalid",
+      "name": "order.submission_response_invalid",
+      "object": "order",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "suppliers.request_quote.response_invalid",
+      "name": "supplier.quote_response_invalid",
+      "object": "workflow",
+      "visibility": "member",
+      "renamed": true,
+      "note": "Name and object are proposed from the type string. Confirm against the recording code before implementing."
+    },
+    {
+      "type": "inventory.detect_low_stock",
+      "name": "inventory.low_stock_detected",
+      "object": "inventory_item",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "replenishment.propose",
+      "name": "replenishment.proposed",
+      "object": "workflow",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "replenishment.sweep_skipped",
+      "name": "replenishment.sweep_skipped",
+      "object": "workspace",
+      "visibility": "member",
+      "renamed": false,
+      "note": "Name and object are proposed from the type string. Confirm against the recording code before implementing."
+    },
+    {
+      "type": "replenishment.sweep_failed",
+      "name": "replenishment.sweep_failed",
+      "object": "workspace",
+      "visibility": "member",
+      "renamed": false,
+      "note": "Name and object are proposed from the type string. Confirm against the recording code before implementing."
+    },
+    {
+      "type": "replenishment.trigger_skipped",
+      "name": "replenishment.trigger_skipped",
+      "object": "inventory_item",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "replenishment.trigger_failed",
+      "name": "replenishment.trigger_failed",
+      "object": "inventory_item",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "settlement.reconcile_and_pay",
+      "name": "settlement.reconcile_and_pay_attempted",
+      "object": "order",
+      "visibility": "member",
+      "renamed": true,
+      "note": "Name and object are proposed from the type string. Confirm against the recording code before implementing."
+    },
+    {
+      "type": "settlement.submitted",
+      "name": "settlement.submitted",
+      "object": "order",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "settlement.paused_hold",
+      "name": "settlement.held_for_pause",
+      "object": "order",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "settlement.reattached",
+      "name": "settlement.reattached",
+      "object": "order",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "settlement.recovered_to_submitted",
+      "name": "settlement.recovered_to_submitted",
+      "object": "order",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "settlement.recovered_to_hold",
+      "name": "settlement.recovered_to_hold",
+      "object": "order",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "accounting.three_way_match_failed",
+      "name": "accounting.three_way_match_failed",
+      "object": "order",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "workflow.cancelled",
+      "name": "workflow.cancelled",
+      "object": "workflow",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.in_doubt",
+      "name": "notification.in_doubt",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.failed",
+      "name": "notification.failed",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.skipped_no_recipient",
+      "name": "notification.skipped_no_recipient",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.email_code_sent",
+      "name": "notification.email_code_sent",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.email_send_failed",
+      "name": "notification.email_send_failed",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.email_verified",
+      "name": "notification.email_verified",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.email_verify_failed",
+      "name": "notification.email_verify_failed",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "notification.email_removed",
+      "name": "notification.email_removed",
+      "object": "notification",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "customer_order.accepted",
+      "name": "customer_order.accepted",
+      "object": "customer_order",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "customer_order.partially_available",
+      "name": "customer_order.partially_available",
+      "object": "customer_order",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "customer_order.declined",
+      "name": "customer_order.declined",
+      "object": "customer_order",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "customer_order.held",
+      "name": "customer_order.held",
+      "object": "customer_order",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "customer_order.cancelled",
+      "name": "customer_order.cancelled",
+      "object": "customer_order",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "customer_order.fulfilled",
+      "name": "customer_order.fulfilled",
+      "object": "customer_order",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "feedback.ingested",
+      "name": "feedback.ingested",
+      "object": "feedback",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "menu.proposed",
+      "name": "menu.proposed",
+      "object": "menu_proposal",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "menu.propose_refused",
+      "name": "menu.proposal_refused",
+      "object": "menu_proposal",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "menu.approved",
+      "name": "menu.approved",
+      "object": "menu_proposal",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "menu.rejected",
+      "name": "menu.rejected",
+      "object": "menu_proposal",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "menu.cancelled",
+      "name": "menu.cancelled",
+      "object": "menu_proposal",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "menu.published",
+      "name": "menu.published",
+      "object": "menu_proposal",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "menu.publish_refused",
+      "name": "menu.publish_refused",
+      "object": "menu_proposal",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "surface.bind_identity",
+      "name": "surface.identity_bound",
+      "object": "surface_binding",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "document.extract_staged",
+      "name": "document.staged",
+      "object": "document",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "document.confirm_quote",
+      "name": "document.quote_confirmed",
+      "object": "document",
+      "visibility": "member",
+      "renamed": true
+    },
+    {
+      "type": "auth.member_joined",
+      "name": "member.joined",
+      "object": "member",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "auth.member_removed",
+      "name": "member.removed",
+      "object": "member",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "auth.member_role_changed",
+      "name": "member.role_changed",
+      "object": "member",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "auth.invite_created",
+      "name": "invite.created",
+      "object": "invite",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "auth.invite_revoked",
+      "name": "invite.revoked",
+      "object": "invite",
+      "visibility": "owner",
+      "renamed": true
+    },
+    {
+      "type": "demo.created",
+      "name": "demo.created",
+      "object": "workspace",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "agent.tool_called",
+      "name": "agent.tool_called",
+      "object": "token",
+      "visibility": "member",
+      "renamed": false
+    }
+  ]
+}
