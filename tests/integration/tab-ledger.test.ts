@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { query, closePool } from "../../src/db/client.js";
+import { query, withTransaction, closePool } from "../../src/db/client.js";
+import { committedSpendTodayCents } from "../../src/tabs/ledger.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import { TabLedger } from "../../src/tabs/ledger.js";
 import { TabError } from "../../src/tabs/errors.js";
@@ -643,5 +644,90 @@ describe("tab ledger: transfer outcomes (PostgreSQL)", () => {
     expect(spy.calls[0].toAddress).toBe(PAYEE);
     expect(spy.calls[0].orderId.startsWith("tab_tabset_")).toBe(true);
     expect(spy.calls[0].matchHash).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+});
+
+describe("tab ledger: the daily budget is one decision per workspace, on the UTC day (regression)", () => {
+  beforeAll(async () => {
+    await runMigrations();
+  });
+
+  afterEach(async () => {
+    await removeWorkspaces(created.splice(0));
+  });
+
+  it("concurrent settles across four counterparties of one workspace pay a budget that fits one", async () => {
+    // Every reserve reads the committed spend, then waits at the barrier before it writes. Without a workspace-level lock all
+    // four read zero before any of them writes, so all four pass. The barrier releases after four arrivals, or after 800 ms
+    // so a serialised reserve (which can only arrive alone) still completes.
+    let arrivals = 0;
+    let waiting: Array<() => void> = [];
+    const release = () => {
+      const pending = waiting.splice(0);
+      for (const resolve of pending) resolve();
+    };
+    const barrier = () =>
+      new Promise<void>((resolve) => {
+        waiting.push(resolve);
+        arrivals += 1;
+        if (arrivals === 4) release();
+        else setTimeout(release, 800);
+      });
+
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy, afterBudgetRead: barrier });
+    const w = await ws("budget-race", { budgetCents: 10 });
+    const cps: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const cp = await newCounterparty(w);
+      cps.push(cp);
+      await charge(ledger, w, cp, 6n * 10_000n, `race-${i}`);
+    }
+
+    const results = await Promise.all(cps.map((cp) => ledger.settleTab({ workspaceId: w, counterpartyId: cp })));
+
+    expect(results.filter((r) => r.outcome === "settlement")).toHaveLength(1);
+    expect(results.filter((r) => r.outcome === "refused")).toHaveLength(3);
+    expect(spy.calls).toHaveLength(1);
+    expect(spy.movedCents()).toBe(6n);
+  });
+
+  it("the tab budget day is the UTC day, whatever the database session time zone", async () => {
+    const w = await ws("utc-budget", { budgetCents: 1_000_000 });
+    const cp = await newCounterparty(w);
+    const now = new Date();
+    const utcDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    // One confirmed one-cent settlement every hour from 26 hours before to 26 hours after the UTC day starts.
+    // Hours 0 to 26 are at or after the UTC day start: 27 cents, whatever the local clock says.
+    for (let hour = -26; hour <= 26; hour += 1) {
+      const id = `tabset_utc_${w}_${hour + 26}`;
+      await query(
+        `INSERT INTO tab_settlements (id, workspace_id, counterparty_id, amount_cents, status, created_at, updated_at)
+         VALUES ($1, $2, $3, 1, 'confirmed', $4::timestamptz, $4::timestamptz);`,
+        [id, w, cp, new Date(utcDay.getTime() + hour * 3_600_000).toISOString()]
+      );
+      await query(
+        `INSERT INTO tab_entries (id, workspace_id, counterparty_id, kind, amount_micro, idempotency_key, settlement_id, description, created_at)
+         VALUES ($1, $2, $3, 'clear', 10000, $4, $5, 'utc test', NOW());`,
+        [`tabent_utc_${w}_${hour + 26}`, w, cp, `clear:${id}`, id]
+      );
+    }
+
+    const inUtc = await withTransaction(async (client) => {
+      await client.query("SET LOCAL TIME ZONE 'UTC';");
+      return committedSpendTodayCents(client, w);
+    });
+    const farEast = await withTransaction(async (client) => {
+      await client.query("SET LOCAL TIME ZONE 'Etc/GMT-14';");
+      return committedSpendTodayCents(client, w);
+    });
+    const farWest = await withTransaction(async (client) => {
+      await client.query("SET LOCAL TIME ZONE 'Etc/GMT+12';");
+      return committedSpendTodayCents(client, w);
+    });
+
+    expect(inUtc).toBe(27n);
+    expect(farEast).toBe(27n);
+    expect(farWest).toBe(27n);
   });
 });

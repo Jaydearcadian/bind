@@ -4,6 +4,7 @@ import { PolicyDecision } from "../policy/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
 import { currentRequestId } from "../observability/request-context.js";
 import { MICRO_PER_CENT } from "./units.js";
+import { utcDayStart } from "../utils/utc-day.js";
 import { SYSTEM_ACTOR, tabLedger, type TabLedger } from "./ledger.js";
 
 /**
@@ -46,10 +47,6 @@ export function emptyTabCounts(): TabWorkerCounts {
   return { resumed: 0, confirmed: 0, held: 0, cancelled: 0, endOfDay: 0, failed: 0, errors: [] };
 }
 
-/** Start of the UTC day that holds `now`. The end-of-day rule counts settlement attempts from this instant. */
-export function utcDayStart(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
 
 function boundedMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);

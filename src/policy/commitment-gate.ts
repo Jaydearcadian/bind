@@ -1,5 +1,6 @@
 import { query } from "../db/client.js";
 import { spendStatusesSql } from "../orders/statuses.js";
+import { UTC_DAY_START_SQL } from "../utils/utc-day.js";
 import { PolicyEngine } from "./engine.js";
 import { PolicyDecision } from "./types.js";
 
@@ -196,7 +197,7 @@ export async function loadCommitmentFacts(input: CommitmentInput): Promise<Commi
     `SELECT COALESCE(SUM(total_price_cents), 0) AS spent
      FROM orders
      WHERE workspace_id = $1
-       AND created_at >= CURRENT_DATE
+       AND created_at >= ${UTC_DAY_START_SQL}
        AND status IN (${spendStatusesSql()})
        AND id <> $2;`,
     [input.workspaceId, `ord_${input.workflowId}`]

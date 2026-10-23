@@ -8,6 +8,8 @@ import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import type { SettlementAdapter, TransferRequest, TransferResult } from "../adapters/settlement/types.js";
 import { effectiveSettlementMode } from "../demo/policy.js";
 import { spendStatusesSql } from "../orders/statuses.js";
+import { spendLockKey } from "../orders/reservation.js";
+import { UTC_DAY_START_SQL } from "../utils/utc-day.js";
 import { newId } from "../utils/ids.js";
 import { log } from "../observability/logger.js";
 import { currentRequestId } from "../observability/request-context.js";
@@ -155,7 +157,15 @@ export type ConfirmOutcome =
 export interface TabLedgerDeps {
   /** The adapter for a settlement mode. Defaults to the configured adapter, exactly as orders use it. */
   settlementFor?: (mode: string) => SettlementAdapter;
+  /**
+   * Test seam: runs inside a reserve transaction after the committed spend is read, before anything is written. The
+   * budget race test uses it to hold every reserve at the same point. Not set in production.
+   */
+  afterBudgetRead?: () => Promise<void>;
 }
+
+/** How long a reserve waits for the workspace spend lock. A busy lock is refused, never skipped. */
+const SPEND_LOCK_WAIT_MS = 10_000;
 
 interface Db {
   query: (text: string, params?: unknown[]) => Promise<{ rows: any[]; rowCount: number | null }>;
@@ -178,13 +188,13 @@ async function balanceOf(db: Db, workspaceId: string, counterpartyId: string): P
  * it) plus each tab settlement that owns a clear (pending, submitted, confirmed or held). A cancelled settlement and a
  * gate-refused hold own no balance and count for nothing.
  */
-async function committedSpendTodayCents(db: Db, workspaceId: string): Promise<bigint> {
+export async function committedSpendTodayCents(db: Db, workspaceId: string): Promise<bigint> {
   const res = await db.query(
     `SELECT (
         COALESCE((SELECT SUM(total_price_cents) FROM orders
-                  WHERE workspace_id = $1 AND created_at >= CURRENT_DATE AND status IN (${spendStatusesSql()})), 0)
+                  WHERE workspace_id = $1 AND created_at >= ${UTC_DAY_START_SQL} AND status IN (${spendStatusesSql()})), 0)
       + COALESCE((SELECT SUM(t.amount_cents) FROM tab_settlements t
-                  WHERE t.workspace_id = $1 AND t.created_at >= CURRENT_DATE
+                  WHERE t.workspace_id = $1 AND t.created_at >= ${UTC_DAY_START_SQL}
                     AND t.status IN ('pending', 'submitted', 'confirmed', 'held')
                     AND EXISTS (SELECT 1 FROM tab_entries e WHERE e.settlement_id = t.id AND e.kind = 'clear')), 0)
      )::text AS spent;`,
@@ -306,7 +316,10 @@ function rejectionCodeOf(err: unknown): string | null {
 export class TabLedger {
   private readonly settlementFor: (mode: string) => SettlementAdapter;
 
+  private readonly afterBudgetRead?: () => Promise<void>;
+
   constructor(deps: TabLedgerDeps = {}) {
+    this.afterBudgetRead = deps.afterBudgetRead;
     this.settlementFor =
       deps.settlementFor ?? ((mode: string) => getSettlementAdapter(mode as "local" | "arc-testnet"));
   }
@@ -452,6 +465,20 @@ export class TabLedger {
     input: SettleInput
   ): Promise<{ kind: "final"; result: SettleResult } | { kind: "reserved"; settlement: ReservedSettlement }> {
     assertIds(input.workspaceId, input.counterpartyId);
+    // The same spend lock the order reservation takes (src/orders/reservation.ts). Every settle in a workspace, across all of
+    // its counterparties, decides the daily budget one at a time, so two settles cannot both see room for the same cents.
+    const lock = await acquireAdvisoryLock(spendLockKey(input.workspaceId), SPEND_LOCK_WAIT_MS);
+    if (!lock) throw new TabError("SPEND_LOCK_BUSY", "The workspace spend is being decided by another request. Retry later.");
+    try {
+      return await this.reserveUnderSpendLock(input);
+    } finally {
+      await lock.release();
+    }
+  }
+
+  private async reserveUnderSpendLock(
+    input: SettleInput
+  ): Promise<{ kind: "final"; result: SettleResult } | { kind: "reserved"; settlement: ReservedSettlement }> {
     const actor = input.actor ?? SYSTEM_ACTOR;
     const ws = input.workspaceId;
     const cpId = input.counterpartyId;
@@ -525,6 +552,7 @@ export class TabLedger {
       }
 
       const spent = await committedSpendTodayCents(client, ws);
+      if (this.afterBudgetRead) await this.afterBudgetRead();
       const dailyLimitCents = BigInt(workspace.budget_daily_limit_cents);
       if (spent + cents > dailyLimitCents) {
         await writeAudit(client, ws, actor, "tab.settlement_refused", PolicyDecision.DENY, {

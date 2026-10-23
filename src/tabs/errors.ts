@@ -7,7 +7,8 @@ export type TabErrorCode =
   | "INVALID_CHARGE"
   | "COUNTERPARTY_NOT_FOUND"
   | "COUNTERPARTY_NOT_VERIFIED"
-  | "IDEMPOTENCY_CONFLICT";
+  | "IDEMPOTENCY_CONFLICT"
+  | "SPEND_LOCK_BUSY";
 
 const HTTP_STATUS: Record<TabErrorCode, number> = {
   INVALID_CHARGE_AMOUNT: 400,
@@ -15,6 +16,7 @@ const HTTP_STATUS: Record<TabErrorCode, number> = {
   COUNTERPARTY_NOT_FOUND: 404,
   COUNTERPARTY_NOT_VERIFIED: 409,
   IDEMPOTENCY_CONFLICT: 409,
+  SPEND_LOCK_BUSY: 409,
 };
 
 export class TabError extends Error {
