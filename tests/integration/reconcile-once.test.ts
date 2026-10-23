@@ -301,7 +301,7 @@ describe("Reconcile exactly once", () => {
     expect(match.rows[0].match_status).toBe(MatchStatus.QUANTITY_DISCREPANCY);
   });
 
-  it("keeps the order settling with the payment recorded when the finalising step fails", async () => {
+  it("keeps the order settlement_submitted with the payment recorded when the finalising step fails", async () => {
     const { wsId, orderId, startingStock } = await confirmedOrder();
     await query(`
       CREATE OR REPLACE FUNCTION test_block_restock() RETURNS trigger AS $f$
@@ -320,12 +320,19 @@ describe("Reconcile exactly once", () => {
 
     const expectedHash = `0x${crypto.createHash("sha256").update(`idem_pay_${orderId}`).digest("hex")}`;
     const order = await query(`SELECT status, tx_hash FROM orders WHERE id = $1;`, [orderId]);
-    expect(order.rows[0].status).toBe("settling");
+    // ADR 0079: the transfer is stored as submitted before confirmation, and a failed finalising step releases the
+    // confirmation claim to settlement_submitted. The payment is still recorded and never repeated.
+    expect(order.rows[0].status).toBe("settlement_submitted");
     expect(order.rows[0].tx_hash).toBe(expectedHash);
     expect(await stockOf(wsId)).toBe(startingStock);
 
     const again = await runner.fulfillAndReconcile(orderId, wsId);
-    expect(again).toEqual({ status: MatchStatus.MATCHED, reconciled: false, hold: "RECONCILE_IN_PROGRESS" });
+    expect(again).toEqual({
+      status: MatchStatus.MATCHED,
+      reconciled: false,
+      txHash: expectedHash,
+      pending: "AWAITING_SETTLEMENT_CONFIRMATION",
+    });
     expect(settlement.transferCalls).toBe(1);
   });
 

@@ -566,3 +566,50 @@ Correction to row L2: the command was `cast wallet address --private-key "$ARC_S
 - Full local gate on a private database, run on the code before the last fix: 17 of 19 passed; the two failures (hosted MCP Origin and endpoint address, and the Connect an agent browser test) were one real bug (a loopback `APP_BASE_URL` from `.env.local` pinned the MCP origin). Fixed in `ef620ab` with a unit test; the affected unit, integration (35 tests) and browser (8 tests) suites pass after the fix. A complete gate rerun on `ef620ab` itself was NOT_RUN. Status: LOCAL_PASS for the affected suites, NOT_RUN for the full gate on the final commit.
 - Live, unauthenticated: `/health` 200, `/api/public-config` 200, `/app/connect-agent` 200, `POST /mcp` and `GET /mcp` answer 401 `UNAUTHENTICATED` (the Vercel rewrite reaches the endpoint) — LIVE_READ_PASS. CSP header allows only `https://auth.privy.io` beyond self.
 - NOT_RUN: `/mcp` with a real staff key and a real MCP client (Claude, Cursor); live email sending (email is off in production: no `BIND_EMAIL_*` variables set).
+
+## Live crash and timeout recovery on Arc testnet (2026-10-22), partial
+
+Owner scope: three scenarios, one 0.01 USDC payment each, testnet only (`scripts/live-recovery-arc.ts`, ADR 0079). Only the first scenario has
+been run, and its recovery has **not** been proven. Local database throughout; no mainnet, no new contract, no configuration change.
+
+| # | Check | Observed | Class |
+| :--- | :--- | :--- | :--- |
+| R1 | `crash-before-record`: payment sent, then the sending process killed with SIGKILL right after broadcast, before the hash was stored | One payment of 0.01 USDC: tx `0xd5e83b918cdd19f50eb6ad36de245963c54f96fe66e7c79235703f8a443c27fc`, block 68527844. Signer nonce 9 to 10. Vendor +0.01 USDC. One `SettlementExecuted` log for the order id. Signer balance 4844089273337643373 to 4831355073337643373 wei (0.01 payment plus gas). Contract `dailySpent` 0.02 USDC (both live payments fall in one window). Child exit signal SIGKILL with the kill marker recorded; before the restart the order was `settling` with no hash and the effect `started`. | VERIFIED_REMOTE |
+| R2 | First orchestrator run ended after the kill | Stopped as BLOCKED because the node refuses `eth_getLogs` spans over 100000 blocks ("max block range 100000"); the harness read logs from the deploy block (67155017) to the head in one request. Nothing was sent after the kill. | BLOCKED |
+| R3 | Product finding from R2: `ArcL1SettlementAdapter` recovery lookup (`findTransfer`) used the same single-range read, so it could not find a pending payment on this node | Fixed in commits 75cf69c (chunked, newest-first windows of at most 90000 blocks, `src/adapters/settlement/log-scan.ts`) with 19 unit tests against a stub that refuses spans over 100000 blocks. Not yet re-run live. | LOCAL_PASS |
+| R4 | `--resume` of the same scenario (sends nothing): guards read live | Chain id 5042002, owner equals the signer, vendor whitelisted, code present at the deploy block, `settledOrders(orderId)` = true, one log found, signer nonce stayed 10, vendor balance delta exactly 0.01 USDC. No second payment. | LIVE_READ_PASS |
+| R5 | Recovery adoption after the crash: order reaches `reconciled` with the on-chain hash and the same key repeated sends nothing | **Not proven.** The restart tick moved the order to `payment_hold`, but the retry was refused by the effects ledger with `EffectConflictError`: the stored request used the whitelisted vendor address, while the order's supplier row had since been reset to its simulated address. Cause: the integration test `supplier-payment-address-migration` drops and re-adds `suppliers.payment_address` on the shared local database, and the full integration runs of the build agents did that to this live fixture between the crash and the restart. The ledger refusing a changed request is correct behaviour; the fixture was contaminated by shared test infrastructure. The order stays `payment_hold`, effect `started`, no hash adopted. | BLOCKED |
+| R6 | `crash-before-confirm` | Not run. | NOT_RUN |
+| R7 | `timeout-retry` | Not run. | NOT_RUN |
+
+What the live run showed so far: a killed process leaves exactly one payment on chain (the contract refuses a second for the same order), the restart does not
+send again, and the harness refuses to send for an order already settled on chain. What it did not show: adoption of the pending payment and a clean
+`reconciled` record. The next steps are to repair the one fixture field, resume without a new payment, and run the other two scenarios against an
+isolated database that the other test suites cannot touch (a separate database for live runs). Each remaining scenario is one more 0.01 USDC payment.
+
+## Live crash and timeout recovery on Arc testnet (2026-10-22 and 2026-10-23), completed
+
+Follow-up to the partial section above, on the owner's go-ahead (option 1: repair the one local fixture row, resume without a new payment, run the other two
+scenarios on an isolated database). Total live spend: three payments of 0.01 USDC (one per scenario) plus gas. No mainnet, no new contract, no change to
+the contract's owner, limit or whitelist (read back after the runs: owner is the signer, `dailySpendLimit` 1e18, vendor whitelisted).
+
+Fixture repair (local database only, disclosed): the order's supplier row `payment_address` was set back to the whitelisted vendor
+`0xa8358AED200D6CB6C856F972D853C1be833006ea`, the value it had when the payment was sent. The stored request hash was then recomputed and matched the
+effect row. The resume markers in the state file were cleared so `--resume` could run again; the first resume's evidence is kept as it was. Scenarios 2
+and 3 ran on a separate database (`bind_live_recovery`) that no other test suite uses.
+
+| # | Check | Observed | Class |
+| :--- | :--- | :--- | :--- |
+| R8 | `crash-before-record`, resume (sends nothing) after the repair | Order `reconciled` with tx `0xd5e8…27fc` and block 68527844 from the on-chain log; `settlement_submitted_at`, `settlement_confirmed_at`, `settlement_confirmed_block` set; one `settlement.confirmed` audit; effect `completed` with attempts 1 (adopted, not re-sent); repeat of the same key returned `alreadyReconciled` and the signer nonce stayed 10; one `SettlementExecuted` log for the order id; vendor delta exactly 0.01 USDC. 21 of 21 checks pass. This supersedes R5. | VERIFIED_REMOTE |
+| R9 | `crash-before-confirm` (kill inside `confirm()`, after the hash was stored and `settlement.submitted` written) | Before the restart: order `settling` with hash, `settlement_submitted_at` set, `settlement_confirmed_at` null, no `settlement.confirmed` audit, effect `completed`. After two worker ticks: `reconciled`, tx `0x1113b9259e37650919ef379159d420dfead77601487dbc4be390b35970a78238`, block 68762038, receipt success, gas 76026. One log, nonce 10 to 11 (exactly one broadcast), vendor delta exactly 0.01 USDC, repeat sent nothing (nonce stayed 11). 23 of 23 checks pass. | VERIFIED_REMOTE |
+| R10 | `timeout-retry` (broadcast forwarded, then a timeout error; same key retried at once and again after mining) | Attempt 1 threw `SettlementTransportError` after exactly one broadcast (order `confirmed`, effect `failed`, as designed). The retries sent nothing further: tx `0xf5386cbbff55e08a2f785ec3c8d6e0b13dd9300e971630bbd8693f5e5d7b1cce`, block 68762071, receipt success, gas 72912; nonce 11 to 12; one log; vendor delta exactly 0.01 USDC; order `reconciled` with that hash. 11 checks pass. | VERIFIED_REMOTE |
+
+Balances at the end: signer 4808301844337643373 wei (nonce 12), vendor 0.091 USDC in total across all live settlements to it, contract `dailySpent` 0.02 USDC.
+
+Limits of this evidence:
+- In R10 the retry found the first transfer already mined (one broadcast only). The in-flight case, where a second broadcast races the first and reverts with
+  `OrderAlreadySettled`, was **not** observed live; its fix (ADR 0079, adopting the first confirmed transfer) is covered by integration tests against a spy adapter
+  and a real database only.
+- Each scenario was run once. The recovery lookup trusts the adapter's log read by order id; it does not check payer, supplier or amount (known follow-up from the review).
+- The harness and its guards were rehearsed offline (local simulator) and reviewed, then exercised live only in these runs. Crash recovery of a real business
+  payment account is out of scope until the owner approves one and who holds its funds.

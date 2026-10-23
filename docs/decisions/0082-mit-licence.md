@@ -1,4 +1,4 @@
-# ADR 0078: The repository is MIT licensed
+# ADR 0082: The repository is MIT licensed
 
 ## Status
 Accepted

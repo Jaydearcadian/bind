@@ -217,4 +217,4 @@ This project is a hackathon vertical slice. There is no mainnet deployment, no l
 
 ## Licence
 
-MIT, see [`LICENSE`](LICENSE) and [`docs/decisions/0078-mit-licence.md`](docs/decisions/0078-mit-licence.md).
+MIT, see [`LICENSE`](LICENSE) and [`docs/decisions/0082-mit-licence.md`](docs/decisions/0082-mit-licence.md).
