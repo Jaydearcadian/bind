@@ -3,7 +3,7 @@ import { acquireAdvisoryLock } from "../db/advisory-lock.js";
 import { EffectConflictError, EffectInDoubtError, runEffect } from "../effects/ledger.js";
 import { EffectClass } from "../policy/effect-classifier.js";
 import { PolicyDecision } from "../policy/engine.js";
-import { SettlementRejectedError } from "../adapters/settlement/errors.js";
+import { SettlementPayerMismatchError, SettlementRejectedError } from "../adapters/settlement/errors.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import type { SettlementAdapter, TransferRequest, TransferResult } from "../adapters/settlement/types.js";
 import { effectiveSettlementMode } from "../demo/policy.js";
@@ -138,6 +138,7 @@ export interface ReservedSettlement {
 }
 
 export type ExecuteOutcome =
+  | { kind: "busy" }
   | { kind: "submitted"; txHash: string }
   | { kind: "held"; hold: string }
   | { kind: "cancelled"; code: string }
@@ -278,6 +279,28 @@ function normaliseDescription(value: unknown): string {
 /** Re-throws an unexpected error with only its type logged: an adapter error can carry transport detail. */
 function logOutcomeUnknown(event: string, settlementId: string, err: unknown): void {
   log.warn(event, { settlementId, errorName: err instanceof Error ? err.name : "unknown" });
+}
+
+/**
+ * Adapter refusals that are raised strictly BEFORE the adapter can have sent anything, so a cancel and a reversal on the
+ * first attempt are safe. Read from src/adapters/settlement/arc-l1.ts, transferUSDC:
+ * - INVALID_REQUEST: the recipient address, the order id or the match hash is malformed. Checked before any chain call.
+ * - SUB_CENT_AMOUNT_NOT_SUPPORTED: assertPayableCentAmount, the first line, before any settings check or RPC call.
+ * - PAYER_MISMATCH: the payer is not the configured signer (SettlementPayerMismatchError), thrown before the pre-flight.
+ * Not in this set, on purpose: OrderAlreadySettled and UNKNOWN_REVERT (both decoded from the chain, so the transfer may
+ * have moved money), any other decoded revert name, and transport errors. Those hold the clear.
+ */
+export const PRE_SEND_REJECTION_CODES: ReadonlySet<string> = new Set([
+  "INVALID_REQUEST",
+  "SUB_CENT_AMOUNT_NOT_SUPPORTED",
+  "PAYER_MISMATCH",
+]);
+
+/** The rejection code of an adapter refusal, or null for any other error. */
+function rejectionCodeOf(err: unknown): string | null {
+  if (err instanceof SettlementRejectedError) return err.code;
+  if (err instanceof SettlementPayerMismatchError) return "PAYER_MISMATCH";
+  return null;
 }
 
 export class TabLedger {
@@ -547,12 +570,27 @@ export class TabLedger {
   }
 
   /**
-   * Sends the transfer of a pending settlement through the effects ledger, then records it as submitted. Nothing is sent
-   * while the workspace is paused, and nothing is sent for a settlement that is not pending. A transfer the adapter
-   * rejects before sending cancels the settlement with one reversal. An unknown outcome leaves the settlement pending and
-   * the error is thrown: the ledger then decides on the next attempt (replay, adopt, or in doubt), and never sends twice.
+   * Sends the transfer of a pending settlement through the effects ledger, then records it as submitted.
+   *
+   * Under the settlement's execution lock, so the gate check, the cancel and a send can never interleave. The rules that
+   * keep money safe:
+   * - A settlement is cancelled (and its clear reversed) only when nothing can have been sent: this is the first attempt
+   *   (no effect row existed before this call) AND the adapter refused with a code in PRE_SEND_REJECTION_CODES.
+   * - A gate that fails after an effect row exists is a hold, not a cancel: a send may already have happened.
+   * - Every other rejection, and every unknown outcome, is a hold with the clear kept.
+   * - Nothing is sent while the workspace is paused, and nothing is sent for a settlement that is not pending.
    */
   async executeSettlement(settlementId: string): Promise<ExecuteOutcome> {
+    const lock = await acquireAdvisoryLock(`tab_exec:${settlementId}`, 0);
+    if (!lock) return { kind: "busy" };
+    try {
+      return await this.executeLocked(settlementId);
+    } finally {
+      await lock.release();
+    }
+  }
+
+  private async executeLocked(settlementId: string): Promise<ExecuteOutcome> {
     const row = (
       await query(
         `SELECT t.id, t.workspace_id, t.counterparty_id, t.amount_cents::text AS amount_cents, t.status,
@@ -569,6 +607,12 @@ export class TabLedger {
     if (row.status !== "pending") return { kind: "not_pending", status: row.status };
     if (row.agents_paused === true) return { kind: "paused" };
 
+    // Whether an effect row exists is read before anything else in this call. No row means runEffect has never been
+    // entered for this settlement, so nothing can have been sent: that is the only state in which a cancel is safe.
+    const priorEffect =
+      (await query(`SELECT status, attempts FROM effects WHERE idempotency_key = $1;`, [ledgerKeys.effect(row.workspace_id, row.id)]))
+        .rows[0] ?? null;
+
     const gate =
       row.verified !== true
         ? "SUPPLIER_NOT_VERIFIED"
@@ -578,9 +622,14 @@ export class TabLedger {
             ? "WORKSPACE_SETTLEMENT_ADDRESS_MISSING"
             : null;
     if (gate) {
-      // The gate failed after the clear, before anything was sent: the clear is reversed, so the balance is not lost.
-      await this.cancelPending(row.id, gate);
-      return { kind: "cancelled", code: gate };
+      if (priorEffect === null) {
+        await this.cancelPending(row.id, gate);
+        return { kind: "cancelled", code: gate };
+      }
+      // An earlier attempt was entered and may have sent. The gate is not evidence that nothing moved, so the clear is
+      // kept and the settlement is held. The reconcile of that outcome is a required follow-up (see the ADR addendum).
+      await this.hold(row.id, ["pending"], "SETTLEMENT_OUTCOME_UNKNOWN", null, { gate, priorEffectStatus: priorEffect.status });
+      return { kind: "held", hold: "SETTLEMENT_OUTCOME_UNKNOWN" };
     }
 
     const amountCents = BigInt(row.amount_cents);
@@ -619,10 +668,16 @@ export class TabLedger {
         }
       ));
     } catch (err) {
-      if (err instanceof SettlementRejectedError) {
-        // The adapter refused before anything was sent (ADR 0078 and the contract's own checks).
-        await this.cancelPending(row.id, err.code);
-        return { kind: "cancelled", code: err.code };
+      const code = rejectionCodeOf(err);
+      if (code !== null) {
+        if (priorEffect === null && PRE_SEND_REJECTION_CODES.has(code)) {
+          // The first attempt was refused before anything was sent (see PRE_SEND_REJECTION_CODES): safe to reverse.
+          await this.cancelPending(row.id, code);
+          return { kind: "cancelled", code };
+        }
+        // Any other refusal, or any refusal after an earlier attempt: the outcome is not known to be "not sent".
+        await this.hold(row.id, ["pending"], "SETTLEMENT_REJECTED", null, { code, retry: priorEffect !== null });
+        return { kind: "held", hold: "SETTLEMENT_REJECTED" };
       }
       if (err instanceof EffectInDoubtError) {
         // An earlier attempt may have moved the money and the adapter cannot show it. Held; never sent again here.

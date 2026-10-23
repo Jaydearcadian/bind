@@ -21,6 +21,10 @@ import {
  */
 
 const created: string[] = [];
+
+afterAll(async () => {
+  await closePool();
+});
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 async function ws(label: string, opts?: Parameters<typeof newTabWorkspace>[1]): Promise<string> {
@@ -50,10 +54,6 @@ describe("tab settlements recover after a crash, and never pay twice (PostgreSQL
   afterEach(async () => {
     setEffectFault(null);
     await removeWorkspaces(created.splice(0));
-  });
-
-  afterAll(async () => {
-    await closePool();
   });
 
   it("a crash after the clear committed and before the send: recovery pays exactly once", async () => {
@@ -262,5 +262,86 @@ describe("tab settlements recover after a crash, and never pay twice (PostgreSQL
     expect(report.errors.filter((e) => e.step === "tab_settlements")).toEqual([]);
     expect(spy.moved.size).toBe(1);
     expect((await settlementsOf(w, cp))[0].status).toBe("confirmed");
+  });
+});
+
+/**
+ * Regression tests for the double-payment findings (review of the tab ledger). Each one fails on the code before the
+ * fix: a cancel or a reversal after a transfer that may have been sent is the bug.
+ */
+describe("tab settlements never reverse a payment that may have been sent (regression)", () => {
+  beforeAll(async () => {
+    await runMigrations();
+  });
+
+  afterEach(async () => {
+    setEffectFault(null);
+    await removeWorkspaces(created.splice(0));
+  });
+
+  it("a supplier gate that flips after a possibly-sent transfer neither cancels nor reverses it, and nothing is paid again", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    const w = await ws("gate-flip");
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: 20_000n, idempotencyKey: "gf-1", description: "Dish" });
+    // The adapter sends and returns, but the result is lost: the effect row stays started, the settlement stays pending.
+    setEffectFault({ point: "after_call_before_complete", match: (spec) => spec.operation === "settlement.transfer_usdc" && spec.workspaceId === w });
+    await expect(ledger.settleTab({ workspaceId: w, counterpartyId: cp })).rejects.toThrow(/injected fault/);
+    expect(spy.moved.size).toBe(1);
+
+    // The payee's verification is withdrawn before the worker looks at the pending settlement.
+    await query(`UPDATE suppliers SET verified = FALSE WHERE id = $1;`, [cp]);
+    await runTabSettlementStep(due(ledger));
+    await runTabSettlementStep(due(ledger));
+
+    expect(spy.calls).toHaveLength(1);
+    expect(spy.duplicateCalls).toBe(0);
+    expect(await auditCount(w, "tab.settlement_cancelled")).toBe(0);
+    expect((await query(`SELECT COUNT(*)::int AS n FROM tab_entries WHERE workspace_id = $1 AND kind = 'reversal';`, [w])).rows[0].n).toBe(0);
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(0n);
+
+    // Verification restored: the cleared balance is gone, so a later settle has nothing to pay.
+    await query(`UPDATE suppliers SET verified = TRUE WHERE id = $1;`, [cp]);
+    expect((await ledger.settleTab({ workspaceId: w, counterpartyId: cp })).outcome).toBe("below_threshold");
+    expect(spy.calls).toHaveLength(1);
+  });
+
+  it("a retry rejected with UNKNOWN_REVERT after a failed broadcast holds the clear and never reverses it", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    const w = await ws("unknown-revert");
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: 20_000n, idempotencyKey: "ur-1", description: "Dish" });
+    // First attempt: the broadcast fails before anything is sent. The effect row is failed; nothing moved.
+    spy.throwBeforeSendNext = true;
+    await expect(ledger.settleTab({ workspaceId: w, counterpartyId: cp })).rejects.toThrow(/before the transfer/);
+    expect(spy.moved.size).toBe(0);
+
+    // The retry is refused with a revert whose outcome is ambiguous.
+    const { SettlementRejectedError } = await import("../../src/adapters/settlement/errors.js");
+    spy.rejectNext = new SettlementRejectedError("UNKNOWN_REVERT");
+    const tick = await runTabSettlementStep(due(ledger));
+
+    expect(tick).toMatchObject({ cancelled: 0, held: 1 });
+    expect(await auditCount(w, "tab.settlement_cancelled")).toBe(0);
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(0n);
+    expect((await settlementsOf(w, cp))[0]).toMatchObject({ status: "held", hold_reason: "SETTLEMENT_REJECTED" });
+  });
+
+  it("a revert that means the order was already paid (OrderAlreadySettled) is held, never cancelled, on the first attempt", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    const w = await ws("already-settled");
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: 20_000n, idempotencyKey: "as-1", description: "Dish" });
+    const { SettlementRejectedError } = await import("../../src/adapters/settlement/errors.js");
+    spy.rejectNext = new SettlementRejectedError("OrderAlreadySettled");
+
+    const result = await ledger.settleTab({ workspaceId: w, counterpartyId: cp });
+
+    expect(result).toMatchObject({ outcome: "settlement", status: "held", holdReason: "SETTLEMENT_REJECTED" });
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(0n);
+    expect(await auditCount(w, "tab.settlement_cancelled")).toBe(0);
   });
 });

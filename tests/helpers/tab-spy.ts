@@ -52,6 +52,8 @@ export class TabSpy implements SettlementAdapter {
   rejectNext: SettlementRejectedError | null = null;
   /** When true, the next transfer moves money and then throws a plain error, so the result is lost. */
   throwAfterSendNext = false;
+  /** When true, the next transfer throws a plain error before anything is sent (a transport failure before broadcast). */
+  throwBeforeSendNext = false;
   /**
    * When false, the lookup is unavailable: findTransfer throws for an order that moved money, as the adapter contract
    * requires (it never answers null for a transfer it cannot rule out). An order that never moved is always null.
@@ -78,6 +80,10 @@ export class TabSpy implements SettlementAdapter {
       const err = this.rejectNext;
       this.rejectNext = null;
       throw err;
+    }
+    if (this.throwBeforeSendNext) {
+      this.throwBeforeSendNext = false;
+      throw new Error("transport failed before the transfer was sent");
     }
     const previous = this.moved.get(req.orderId);
     if (previous) {
