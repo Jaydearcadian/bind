@@ -586,3 +586,30 @@ What the live run showed so far: a killed process leaves exactly one payment on 
 send again, and the harness refuses to send for an order already settled on chain. What it did not show: adoption of the pending payment and a clean
 `reconciled` record. The next steps are to repair the one fixture field, resume without a new payment, and run the other two scenarios against an
 isolated database that the other test suites cannot touch (a separate database for live runs). Each remaining scenario is one more 0.01 USDC payment.
+
+## Live crash and timeout recovery on Arc testnet (2026-10-22 and 2026-10-23), completed
+
+Follow-up to the partial section above, on the owner's go-ahead (option 1: repair the one local fixture row, resume without a new payment, run the other two
+scenarios on an isolated database). Total live spend: three payments of 0.01 USDC (one per scenario) plus gas. No mainnet, no new contract, no change to
+the contract's owner, limit or whitelist (read back after the runs: owner is the signer, `dailySpendLimit` 1e18, vendor whitelisted).
+
+Fixture repair (local database only, disclosed): the order's supplier row `payment_address` was set back to the whitelisted vendor
+`0xa8358AED200D6CB6C856F972D853C1be833006ea`, the value it had when the payment was sent. The stored request hash was then recomputed and matched the
+effect row. The resume markers in the state file were cleared so `--resume` could run again; the first resume's evidence is kept as it was. Scenarios 2
+and 3 ran on a separate database (`bind_live_recovery`) that no other test suite uses.
+
+| # | Check | Observed | Class |
+| :--- | :--- | :--- | :--- |
+| R8 | `crash-before-record`, resume (sends nothing) after the repair | Order `reconciled` with tx `0xd5e8…27fc` and block 68527844 from the on-chain log; `settlement_submitted_at`, `settlement_confirmed_at`, `settlement_confirmed_block` set; one `settlement.confirmed` audit; effect `completed` with attempts 1 (adopted, not re-sent); repeat of the same key returned `alreadyReconciled` and the signer nonce stayed 10; one `SettlementExecuted` log for the order id; vendor delta exactly 0.01 USDC. 21 of 21 checks pass. This supersedes R5. | VERIFIED_REMOTE |
+| R9 | `crash-before-confirm` (kill inside `confirm()`, after the hash was stored and `settlement.submitted` written) | Before the restart: order `settling` with hash, `settlement_submitted_at` set, `settlement_confirmed_at` null, no `settlement.confirmed` audit, effect `completed`. After two worker ticks: `reconciled`, tx `0x1113b9259e37650919ef379159d420dfead77601487dbc4be390b35970a78238`, block 68762038, receipt success, gas 76026. One log, nonce 10 to 11 (exactly one broadcast), vendor delta exactly 0.01 USDC, repeat sent nothing (nonce stayed 11). 23 of 23 checks pass. | VERIFIED_REMOTE |
+| R10 | `timeout-retry` (broadcast forwarded, then a timeout error; same key retried at once and again after mining) | Attempt 1 threw `SettlementTransportError` after exactly one broadcast (order `confirmed`, effect `failed`, as designed). The retries sent nothing further: tx `0xf5386cbbff55e08a2f785ec3c8d6e0b13dd9300e971630bbd8693f5e5d7b1cce`, block 68762071, receipt success, gas 72912; nonce 11 to 12; one log; vendor delta exactly 0.01 USDC; order `reconciled` with that hash. 11 checks pass. | VERIFIED_REMOTE |
+
+Balances at the end: signer 4808301844337643373 wei (nonce 12), vendor 0.091 USDC in total across all live settlements to it, contract `dailySpent` 0.02 USDC.
+
+Limits of this evidence:
+- In R10 the retry found the first transfer already mined (one broadcast only). The in-flight case, where a second broadcast races the first and reverts with
+  `OrderAlreadySettled`, was **not** observed live; its fix (ADR 0079, adopting the first confirmed transfer) is covered by integration tests against a spy adapter
+  and a real database only.
+- Each scenario was run once. The recovery lookup trusts the adapter's log read by order id; it does not check payer, supplier or amount (known follow-up from the review).
+- The harness and its guards were rehearsed offline (local simulator) and reviewed, then exercised live only in these runs. Crash recovery of a real business
+  payment account is out of scope until the owner approves one and who holds its funds.

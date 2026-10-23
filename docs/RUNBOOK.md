@@ -731,6 +731,11 @@ so the restart sends again in the simulator. The report records that as informat
 npx tsx scripts/live-recovery-arc.ts crash-before-record --adapter local-sim [--write-evidence <new-file>]
 ```
 
+**Use a dedicated database for live runs.** Do not point the harness at a database that other test suites use. The integration test
+`supplier-payment-address-migration` drops and re-adds `suppliers.payment_address`, which resets simulated suppliers' payee addresses. On the first live run it
+did this to the fixture between the crash and the restart, so the ledger rightly refused the retry (`EffectConflictError`, the request had changed). Create
+a separate database (for example `bind_live_recovery`), run the migrations on it, and set `DATABASE_URL` to it for all three scenarios.
+
 Known points a live run can show. `crash-before-confirm` leaves the order `settling` with its hash at the kill point, not
 `settlement_submitted`, because the confirm claim holds the row as `settling` (ADR 0079). The harness asserts the code's actual
 state and labels it. In `timeout-retry`, the second broadcast can revert with `OrderAlreadySettled`. The payment is still made
