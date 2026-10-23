@@ -1,7 +1,7 @@
 import { query } from "../db/client.js";
 import { MICRO_PER_CENT } from "./units.js";
 import { utcDayKey } from "../utils/utc-day.js";
-import { SYSTEM_ACTOR, tabLedger, type TabLedger } from "./ledger.js";
+import { tabLedger, type TabLedger } from "./ledger.js";
 
 /**
  * The tab steps of the worker (docs/decisions/0081). Three jobs, each bounded by a batch:
