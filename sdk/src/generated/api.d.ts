@@ -1352,6 +1352,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{id}/tabs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The tabs of the workspace: balance in micro-USDC and the whole cents a settlement would clear now.
+         * @description Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.
+         */
+        get: operations["listTabs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{id}/tabs/charges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a charge against a counterparty's tab, in micro-USDC (ADR 0081). Settled later in whole cents.
+         * @description Access: a workspace token of the owner or a staff member of the workspace in the path.
+         */
+        post: operations["recordTabCharge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{id}/tabs/{counterpartyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One tab: its balance, the latest entries and the latest settlements.
+         * @description Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.
+         */
+        get: operations["getTab"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{id}/tabs/{counterpartyId}/settle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Settle the whole cents of a tab now, through the same gates as an order payment (ADR 0081).
+         * @description Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.
+         */
+        post: operations["settleTab"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspaces/{id}/tokens": {
         parameters: {
             query?: never;
@@ -10557,6 +10637,589 @@ export interface operations {
             };
             /** @description Request body too large (over 256 kB). */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listTabs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One row per counterparty with entries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": ({
+                        balanceMicro: string;
+                        counterpartyId: string;
+                        entryCount: number;
+                        name: string;
+                        settleableCents: string;
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                };
+            };
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Owner role required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    recordTabCharge: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    amountMicro: string;
+                    counterpartyId: string;
+                    description: string;
+                    idempotencyKey: string;
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description The same key with the same data was already recorded. Nothing was added. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                poll?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        created: boolean;
+                        entry: {
+                            amountMicro: string;
+                            counterpartyId: string;
+                            createdAt: string;
+                            description: string;
+                            id: string;
+                            idempotencyKey: string;
+                            /** @enum {string} */
+                            kind: "charge" | "clear" | "reversal";
+                            settlementId: string | null;
+                            workspaceId: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The charge was recorded. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                poll?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        created: boolean;
+                        entry: {
+                            amountMicro: string;
+                            counterpartyId: string;
+                            createdAt: string;
+                            description: string;
+                            id: string;
+                            idempotencyKey: string;
+                            /** @enum {string} */
+                            kind: "charge" | "clear" | "reversal";
+                            settlementId: string | null;
+                            workspaceId: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The amount is not a positive whole number of micro-USDC within the 100 USDC limit (INVALID_CHARGE_AMOUNT), or a field is invalid (INVALID_CHARGE). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The counterparty is not found in your workspace (COUNTERPARTY_NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The counterparty is not verified (COUNTERPARTY_NOT_VERIFIED), or the key was used for a different charge (IDEMPOTENCY_CONFLICT). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Request body too large (over 256 kB). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getTab: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                counterpartyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tab. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        balanceMicro: string;
+                        counterpartyId: string;
+                        entries: ({
+                            amountMicro: string;
+                            counterpartyId: string;
+                            createdAt: string;
+                            description: string;
+                            id: string;
+                            idempotencyKey: string;
+                            /** @enum {string} */
+                            kind: "charge" | "clear" | "reversal";
+                            settlementId: string | null;
+                            workspaceId: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        settleableCents: string;
+                        settlements: ({
+                            amountCents: string;
+                            confirmedAt: string | null;
+                            confirmedBlock: number | null;
+                            counterpartyId: string;
+                            createdAt: string;
+                            holdReason: string | null;
+                            id: string;
+                            /** @enum {string} */
+                            status: "pending" | "submitted" | "confirmed" | "held" | "cancelled";
+                            submittedAt: string | null;
+                            txHash: string | null;
+                            updatedAt: string;
+                            workspaceId: string;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Owner role required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The counterparty is not found in your workspace (COUNTERPARTY_NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    settleTab: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: string;
+                counterpartyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the call did: nothing to settle, needs approval, refused, or a settlement with its status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                poll?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        amountCents?: string;
+                        balanceMicro?: string;
+                        holdReason?: string | null;
+                        /** @enum {string} */
+                        outcome: "below_threshold" | "needs_approval" | "refused" | "settlement";
+                        reason?: string;
+                        settlementId?: string;
+                        /** @enum {string} */
+                        status?: "pending" | "submitted" | "confirmed" | "held" | "cancelled";
+                        thresholdCents?: string;
+                        txHash?: string | null;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Owner role required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The counterparty is not found in your workspace (COUNTERPARTY_NOT_FOUND). */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

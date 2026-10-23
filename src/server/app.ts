@@ -106,7 +106,10 @@ import { checkReadiness } from "../observability/readiness.js";
 import { mountHostedMcp, UNWIRED_HOSTED_MCP, type HostedMcpOptions } from "./mcp-route.js";
 import { ROUTES } from "../api/registry.js";
 import { OwnerEmailError, listNotificationChannels, removeOwnerEmail, requestOwnerEmailVerification, verifyOwnerEmail } from "../notifications/owner-emails.js";
-import { OwnerEmailRequestBodySchema, OwnerEmailVerifyBodySchema } from "../api/schemas.js";
+import { OwnerEmailRequestBodySchema, OwnerEmailVerifyBodySchema, TabChargeBodySchema } from "../api/schemas.js";
+import { tabLedger, type TabActor, type SettleResult, type TabEntry, type TabSettlementRecord } from "../tabs/ledger.js";
+import { TabError } from "../tabs/errors.js";
+import { parseChargeAmountMicro } from "../tabs/units.js";
 import { API_VERSION, buildOpenApiDocument, serializeOpenApiDocument } from "../api/openapi.js";
 import {
   ApprovalDecisionBodySchema,
@@ -414,6 +417,71 @@ function requestSignatureValid(req: Request, secret: string): boolean {
   if (typeof signature !== "string") return false;
   if (typeof timestamp !== "string" || !/^\d{1,15}$/.test(timestamp)) return false;
   return verifySignature({ secret, timestamp: Number(timestamp), rawBody: raw, signature });
+}
+
+/** The audit actor of a tab write: the workspace token that made it, recorded by its role and label (never a body field). */
+function tabActorOf(req: Request): TabActor {
+  const actor = req.actor!;
+  return { type: actor.role === "owner" ? "owner" : "agent", id: `${actor.role}:${actor.label}` };
+}
+
+function sendTabError(res: Response, err: unknown): void {
+  if (err instanceof TabError) {
+    res.status(err.httpStatus).json({ error: err.message, code: err.code });
+    return;
+  }
+  throw err;
+}
+
+function entryJson(entry: TabEntry) {
+  return {
+    id: entry.id,
+    workspaceId: entry.workspaceId,
+    counterpartyId: entry.counterpartyId,
+    kind: entry.kind,
+    amountMicro: entry.amountMicro.toString(),
+    idempotencyKey: entry.idempotencyKey,
+    settlementId: entry.settlementId,
+    description: entry.description,
+    createdAt: entry.createdAt.toISOString(),
+  };
+}
+
+function settlementJson(row: TabSettlementRecord) {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    counterpartyId: row.counterpartyId,
+    amountCents: row.amountCents.toString(),
+    status: row.status,
+    txHash: row.txHash,
+    holdReason: row.holdReason,
+    submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
+    confirmedAt: row.confirmedAt ? row.confirmedAt.toISOString() : null,
+    confirmedBlock: row.confirmedBlock,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function settleResultJson(result: SettleResult) {
+  switch (result.outcome) {
+    case "below_threshold":
+      return { outcome: result.outcome, balanceMicro: result.balanceMicro.toString() };
+    case "needs_approval":
+      return { outcome: result.outcome, amountCents: result.amountCents.toString(), thresholdCents: result.thresholdCents.toString() };
+    case "refused":
+      return { outcome: result.outcome, reason: result.reason, balanceMicro: result.balanceMicro.toString() };
+    case "settlement":
+      return {
+        outcome: result.outcome,
+        settlementId: result.settlementId,
+        status: result.status,
+        amountCents: result.amountCents.toString(),
+        txHash: result.txHash,
+        holdReason: result.holdReason,
+      };
+  }
 }
 
 export function createApp(options: CreateAppOptions = {}): express.Express {
@@ -1246,6 +1314,82 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   });
 
   // Suppliers
+  // Tabs (docs/decisions/0081). A charge is an obligation, so staff and owner tokens may record one. Reading a tab and
+  // settling it are owner actions. Every route scopes to the workspace in the path; a counterparty of another workspace is
+  // COUNTERPARTY_NOT_FOUND. Amounts are decimal strings of micro-USDC.
+  app.post("/api/workspaces/:id/tabs/charges", ...workspaceMember, async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const raw = req.body ?? {};
+    if (typeof raw === "object" && raw !== null && "amountMicro" in raw && typeof (raw as { amountMicro: unknown }).amountMicro !== "string") {
+      res.status(400).json({ error: "amountMicro must be a decimal string of whole micro-USDC", code: "INVALID_CHARGE_AMOUNT" });
+      return;
+    }
+    const parsed = TabChargeBodySchema.safeParse(raw);
+    if (!parsed.success) {
+      res.status(400).json({ error: "The charge is missing a field or a field is invalid", code: "INVALID_CHARGE" });
+      return;
+    }
+    try {
+      const amountMicro = parseChargeAmountMicro(parsed.data.amountMicro);
+      const result = await tabLedger.accrueCharge({
+        workspaceId: id,
+        counterpartyId: parsed.data.counterpartyId,
+        amountMicro,
+        idempotencyKey: parsed.data.idempotencyKey,
+        description: parsed.data.description,
+        actor: tabActorOf(req),
+      });
+      res.status(result.created ? 201 : 200).json({ created: result.created, entry: entryJson(result.entry) });
+    } catch (err) {
+      sendTabError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/tabs", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      const tabs = await tabLedger.listTabs(req.params.id);
+      res.json(
+        tabs.map((tab) => ({
+          counterpartyId: tab.counterpartyId,
+          name: tab.name,
+          entryCount: tab.entryCount,
+          balanceMicro: tab.balanceMicro.toString(),
+          settleableCents: tab.settleableCents.toString(),
+        }))
+      );
+    } catch (err) {
+      sendTabError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/tabs/:counterpartyId", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      const detail = await tabLedger.tabDetail(req.params.id, req.params.counterpartyId);
+      res.json({
+        counterpartyId: detail.counterpartyId,
+        balanceMicro: detail.balanceMicro.toString(),
+        settleableCents: detail.settleableCents.toString(),
+        entries: detail.entries.map(entryJson),
+        settlements: detail.settlements.map(settlementJson),
+      });
+    } catch (err) {
+      sendTabError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/tabs/:counterpartyId/settle", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      const result = await tabLedger.settleTab({
+        workspaceId: req.params.id,
+        counterpartyId: req.params.counterpartyId,
+        actor: tabActorOf(req),
+      });
+      res.json(settleResultJson(result));
+    } catch (err) {
+      sendTabError(res, err);
+    }
+  });
+
   app.get("/api/workspaces/:id/suppliers", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const suppRes = await query(

@@ -1007,3 +1007,80 @@ export const OwnerEmailVerifiedSchema = z
   .passthrough();
 
 export const OwnerEmailRemovedSchema = z.object({ id: z.string(), removed: z.literal(true) }).passthrough();
+
+/**
+ * Tab ledger (docs/decisions/0081). Amounts cross the API as decimal strings of micro-USDC, never JSON numbers. The
+ * charge body's amount is checked by the route (INVALID_CHARGE_AMOUNT), so a number reaches the route and is refused there.
+ */
+export const TabChargeBodySchema = z.object({
+  counterpartyId: z.string().min(1).max(64),
+  // Bounded only so a very long string is refused by the route as INVALID_CHARGE_AMOUNT, never as a shape error.
+  amountMicro: z.string().max(64),
+  idempotencyKey: z.string().min(1).max(128),
+  description: z.string().min(1).max(200),
+});
+
+const TabEntrySchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  counterpartyId: z.string(),
+  kind: z.enum(["charge", "clear", "reversal"]),
+  amountMicro: z.string(),
+  idempotencyKey: z.string(),
+  settlementId: z.string().nullable(),
+  description: z.string(),
+  createdAt: z.string(),
+});
+
+const TabSettlementRowSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  counterpartyId: z.string(),
+  amountCents: z.string(),
+  status: z.enum(["pending", "submitted", "confirmed", "held", "cancelled"]),
+  txHash: z.string().nullable(),
+  holdReason: z.string().nullable(),
+  submittedAt: z.string().nullable(),
+  confirmedAt: z.string().nullable(),
+  confirmedBlock: z.number().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+/** POST /api/workspaces/:id/tabs/charges: created true (201) or the same charge already recorded (200). */
+export const TabChargeResultSchema = z.object({ created: z.boolean(), entry: TabEntrySchema });
+
+/** GET /api/workspaces/:id/tabs: one row per counterparty that has entries. */
+export const TabSummarySchema = z.object({
+  counterpartyId: z.string(),
+  name: z.string(),
+  entryCount: z.number(),
+  balanceMicro: z.string(),
+  settleableCents: z.string(),
+});
+
+/** GET /api/workspaces/:id/tabs/:counterpartyId: the balance, the latest entries and settlements. */
+export const TabDetailSchema = z.object({
+  counterpartyId: z.string(),
+  balanceMicro: z.string(),
+  settleableCents: z.string(),
+  entries: z.array(TabEntrySchema),
+  settlements: z.array(TabSettlementRowSchema),
+});
+
+/**
+ * POST /api/workspaces/:id/tabs/:counterpartyId/settle. `outcome` says what the call did: nothing to settle (below_threshold),
+ * the amount needs approval, the workspace refused it (paused or over the daily budget), or a settlement was recorded with
+ * its status now.
+ */
+export const TabSettleResultSchema = z.object({
+  outcome: z.enum(["below_threshold", "needs_approval", "refused", "settlement"]),
+  balanceMicro: z.string().optional(),
+  reason: z.string().optional(),
+  amountCents: z.string().optional(),
+  thresholdCents: z.string().optional(),
+  settlementId: z.string().optional(),
+  status: z.enum(["pending", "submitted", "confirmed", "held", "cancelled"]).optional(),
+  txHash: z.string().nullable().optional(),
+  holdReason: z.string().nullable().optional(),
+});

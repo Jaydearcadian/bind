@@ -934,6 +934,46 @@
    "stability": "stable",
    "flags": [],
    "note": "One approval."
+  },
+  {
+   "operationId": "recordTabCharge",
+   "exposure": "public_api",
+   "effect": "data_entry",
+   "irreversible": false,
+   "economic": true,
+   "stability": "preview",
+   "flags": [],
+   "note": "Records an obligation against a counterparty's tab in micro-USDC (ADR 0081). Pays nothing; a settlement is a separate owner action. Repeating the key with the same data adds nothing."
+  },
+  {
+   "operationId": "listTabs",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "getTab",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [],
+   "note": ""
+  },
+  {
+   "operationId": "settleTab",
+   "exposure": "public_api",
+   "effect": "commercial_commitment",
+   "irreversible": true,
+   "economic": true,
+   "stability": "preview",
+   "flags": [],
+   "note": "Clears whole cents of a tab and sends a USDC transfer through the settlement adapter (ADR 0081). A submitted transfer is not a confirmed settlement (ADR 0079). Owner only; never exposed to agents."
   }
  ]
 }
