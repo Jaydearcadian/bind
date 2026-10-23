@@ -4,7 +4,7 @@
   "description": "Typed, dependency-free client for the Bind API (docs/decisions/0036). Private: not published.",
   "private": true,
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

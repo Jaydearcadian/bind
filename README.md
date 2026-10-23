@@ -214,3 +214,7 @@ Key source:
 7. Decide on the on-chain daily-limit behaviour (a fixed window, and the refund case in [`docs/CONTRACT_SCOPE.md`](docs/CONTRACT_SCOPE.md) section 7) before any contract change or deployment. A deployed contract cannot be changed in place.
 
 This project is a hackathon vertical slice. There is no mainnet deployment, no live-money transfer, and no real commercial commitment.
+
+## Licence
+
+MIT, see [`LICENSE`](LICENSE) and [`docs/decisions/0078-mit-licence.md`](docs/decisions/0078-mit-licence.md).
