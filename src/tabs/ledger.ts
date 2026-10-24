@@ -161,6 +161,47 @@ export type ConfirmOutcome =
   | { kind: "in_progress" }
   | { kind: "current"; status: TabSettlementStatus };
 
+/** What reconcileHeld did. Only `adopted` moved anything: it re-opened the settlement with a hash and ran the confirmation. */
+export type ReconcileOutcome =
+  | { kind: "not_found" }
+  | { kind: "busy" }
+  | { kind: "current"; status: TabSettlementStatus }
+  | { kind: "no_clear" }
+  | { kind: "lookup_unavailable"; holdReason: string | null }
+  | { kind: "nothing_found"; holdReason: string | null }
+  | { kind: "lookup_unconfirmed"; holdReason: string | null }
+  | { kind: "hash_conflict"; holdReason: string | null }
+  | {
+      kind: "adopted";
+      source: "stored" | "effect" | "lookup";
+      txHash: string;
+      status: TabSettlementStatus;
+      holdReason: string | null;
+      confirm: ConfirmOutcome["kind"];
+    };
+
+const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
+
+function isTxHash(value: unknown): value is string {
+  return typeof value === "string" && TX_HASH_PATTERN.test(value);
+}
+
+/** Which proof allowed a restore (see cancelHeldAndRestore). */
+export type RestoreProof = "NO_EFFECT_ROW" | "DEFINITIVE_REVERT" | "UNKNOWN_NOT_SETTLED_ACKNOWLEDGED";
+
+/** What cancelHeldAndRestore did. `replayed` is true when the settlement was already cancelled: nothing was written. */
+export type RestoreOutcome =
+  | { kind: "not_found" }
+  | { kind: "busy" }
+  | { kind: "cancelled"; proof: RestoreProof; amountCents: bigint; replayed: false }
+  | { kind: "already_cancelled"; proof: string | null; amountCents: bigint; replayed: true }
+  | { kind: "not_held"; status: TabSettlementStatus }
+  | { kind: "no_clear" }
+  | { kind: "refused"; code: "NOT_PROVABLY_UNSENT"; reason: string };
+
+/** The age an unknown outcome's effect row must reach before a restore may use proof (iii). */
+export const RESTORE_MIN_AGE_MS = 30 * 60 * 1000;
+
 export interface TabLedgerDeps {
   /** The adapter for a settlement mode. Defaults to the configured adapter, exactly as orders use it. */
   settlementFor?: (mode: string) => SettlementAdapter;
@@ -348,6 +389,38 @@ function rejectionCodeOf(err: unknown): string | null {
   if (err instanceof SettlementRejectedError) return err.code;
   if (err instanceof SettlementPayerMismatchError) return "PAYER_MISMATCH";
   return null;
+}
+
+/** The lookup must answer null. A transfer found, or a lookup that throws, refuses. Never read as "not found". */
+async function lookupForRestore(
+  adapter: SettlementAdapter,
+  orderId: string,
+  unavailable: string
+): Promise<{ kind: "ok" } | { kind: "refused"; reason: string }> {
+  let found: TransferResult | null;
+  try {
+    found = await adapter.findTransfer!({ orderId });
+  } catch {
+    return { kind: "refused", reason: unavailable };
+  }
+  if (found !== null) return { kind: "refused", reason: "a transfer for the order was found" };
+  return { kind: "ok" };
+}
+
+/** The contract must say the order is not settled. True refuses; a read that throws refuses. */
+async function settledForRestore(
+  adapter: SettlementAdapter,
+  orderId: string,
+  unavailable: string
+): Promise<{ kind: "ok" } | { kind: "refused"; reason: string }> {
+  let settled: boolean;
+  try {
+    settled = await adapter.isOrderSettled!(orderId);
+  } catch {
+    return { kind: "refused", reason: unavailable };
+  }
+  if (settled !== false) return { kind: "refused", reason: "the order is settled on the contract" };
+  return { kind: "ok" };
 }
 
 export class TabLedger {
@@ -795,11 +868,296 @@ export class TabLedger {
     }
 
     const recorded = await this.recordSubmitted(row.id, transfer.txHash);
-    if (!recorded) {
-      // The transfer was sent, so the money moved, and the row is no longer pending. This is surfaced, never retried.
-      throw new Error(`Tab settlement '${row.id}' changed while its transfer was sent; it needs review.`);
-    }
+    if (!recorded) return this.unrecordedHash(row.id, transfer.txHash);
     return { kind: "submitted", txHash: transfer.txHash };
+  }
+
+  /**
+   * The transfer was sent, so the money moved, but the settlement is no longer pending: another caller holds it (a busy
+   * lock, see docs/decisions/0081). The hash is not lost. The effect row completed with it, and an audit row names it here.
+   * Nothing is retried and nothing is thrown: the caller gets the held state and reconcileHeld adopts the hash.
+   */
+  private async unrecordedHash(settlementId: string, txHash: string): Promise<ExecuteOutcome> {
+    return withTransaction(async (client) => {
+      const cur = (
+        await client.query(`SELECT workspace_id, counterparty_id, status, hold_reason FROM tab_settlements WHERE id = $1 FOR UPDATE;`, [
+          settlementId,
+        ])
+      ).rows[0];
+      if (!cur) throw new Error(`Tab settlement '${settlementId}' is not found.`);
+      await writeAudit(client, cur.workspace_id, SYSTEM_ACTOR, "tab.settlement_hash_unrecorded", PolicyDecision.DENY, {
+        settlementId,
+        counterpartyId: cur.counterparty_id,
+        currentStatus: cur.status,
+        holdReason: cur.hold_reason ?? null,
+      }, txHash);
+      if (cur.status === "held") return { kind: "held" as const, hold: cur.hold_reason ?? "SETTLEMENT_OUTCOME_UNKNOWN" };
+      return { kind: "not_pending" as const, status: cur.status as TabSettlementStatus };
+    });
+  }
+
+  /**
+   * Reconciles one held settlement that owns a clear (docs/decisions/0081, items a and b). It finds the hash of the transfer,
+   * moves the settlement to submitted with that hash, and runs the normal confirmation, so `confirmed` is only ever set from
+   * the adapter's confirm(). It never sends (transferUSDC is not called) and it never cancels or reverses a clear.
+   *
+   * Where the hash comes from, in order: the settlement's own tx_hash (a hold after a failed confirmation, which is asked
+   * again), the effect row's external_ref (the hash of the call that was made), then the adapter's findTransfer for the order
+   * id. A lookup that throws, answers null, or answers a transfer that is not confirmed leaves the settlement held. Under the
+   * settlement's execution lock; a busy lock is reported, not waited for. Running it again is a no-op once it has moved on.
+   */
+  async reconcileHeld(settlementId: string): Promise<ReconcileOutcome> {
+    const lock = await acquireAdvisoryLock(`tab_exec:${settlementId}`, 0);
+    if (!lock) return { kind: "busy" };
+    try {
+      return await this.reconcileLocked(settlementId);
+    } finally {
+      await lock.release();
+    }
+  }
+
+  private async reconcileLocked(settlementId: string): Promise<ReconcileOutcome> {
+    const row = await this.settlementWithMode(settlementId);
+    if (!row) return { kind: "not_found" };
+    if (row.status !== "held") return { kind: "current", status: row.status as TabSettlementStatus };
+    const clears = await query(`SELECT 1 FROM tab_entries WHERE settlement_id = $1 AND kind = 'clear' LIMIT 1;`, [settlementId]);
+    if (clears.rowCount !== 1) return { kind: "no_clear" };
+
+    const holdReason: string | null = row.hold_reason ?? null;
+    const effect =
+      (await query(`SELECT external_ref FROM effects WHERE idempotency_key = $1;`, [ledgerKeys.effect(row.workspace_id, settlementId)]))
+        .rows[0] ?? null;
+    const effectHash: string | null = isTxHash(effect?.external_ref) ? effect.external_ref : null;
+    const adapter = this.settlementFor(effectiveSettlementMode(row));
+
+    let hash: string;
+    let source: "stored" | "effect" | "lookup";
+    if (row.tx_hash) {
+      if (effectHash !== null && effectHash.toLowerCase() !== String(row.tx_hash).toLowerCase()) {
+        return { kind: "hash_conflict", holdReason };
+      }
+      hash = row.tx_hash;
+      source = "stored";
+    } else if (effectHash !== null) {
+      hash = effectHash;
+      source = "effect";
+    } else {
+      if (!adapter.findTransfer) return { kind: "lookup_unavailable", holdReason };
+      let found: TransferResult | null;
+      try {
+        found = await adapter.findTransfer({ orderId: tabAdapterOrderId(settlementId) });
+      } catch (err) {
+        logOutcomeUnknown("tab.settlement.reconcile_lookup_failed", settlementId, err);
+        return { kind: "lookup_unavailable", holdReason };
+      }
+      if (found === null) return { kind: "nothing_found", holdReason };
+      if (found.status !== "confirmed" || !isTxHash(found.txHash)) return { kind: "lookup_unconfirmed", holdReason };
+      hash = found.txHash;
+      source = "lookup";
+    }
+
+    // Adoption: held to submitted with this hash, guarded on the state read above. The hold reason is cleared; the confirmation
+    // below decides the next state. A settlement re-opened from its own hash is audited as such, not as an adoption.
+    const adopted = await withTransaction(async (client) => {
+      const upd = await client.query(
+        `UPDATE tab_settlements
+         SET status = 'submitted', tx_hash = $2, submitted_at = COALESCE(submitted_at, NOW()), hold_reason = NULL, updated_at = NOW()
+         WHERE id = $1 AND status = 'held' AND (tx_hash IS NULL OR tx_hash = $2)
+         RETURNING workspace_id, counterparty_id;`,
+        [settlementId, hash]
+      );
+      if (upd.rowCount !== 1) return false;
+      await writeAudit(
+        client,
+        upd.rows[0].workspace_id,
+        SYSTEM_ACTOR,
+        source === "stored" ? "tab.settlement_reopened" : "tab.settlement_hash_adopted",
+        PolicyDecision.ALLOW,
+        { settlementId, counterpartyId: upd.rows[0].counterparty_id, source, previousHoldReason: holdReason },
+        hash
+      );
+      return true;
+    });
+    if (!adopted) return { kind: "current", status: (await this.loadSettlement(settlementId))?.status ?? "held" };
+
+    const confirmed = await this.confirmSettlement(settlementId);
+    const final = await this.loadSettlement(settlementId);
+    if (!final) throw new Error(`Tab settlement '${settlementId}' is not found after reconcile.`);
+    return {
+      kind: "adopted",
+      source,
+      txHash: hash,
+      status: final.status,
+      holdReason: final.holdReason,
+      confirm: confirmed.kind,
+    };
+  }
+
+  private async settlementWithMode(settlementId: string) {
+    return (
+      (
+        await query(
+          `SELECT t.id, t.workspace_id, t.counterparty_id, t.status, t.tx_hash, t.hold_reason, t.amount_cents::text AS amount_cents,
+                  w.settlement_mode, w.is_demo
+           FROM tab_settlements t JOIN workspaces w ON w.id = t.workspace_id WHERE t.id = $1;`,
+          [settlementId]
+        )
+      ).rows[0] ?? null
+    );
+  }
+
+  /**
+   * Cancels a held settlement that owns a clear, and restores the clear with exactly one reversal entry (docs/decisions/0081,
+   * item a). The owner's action. It is refused unless one of three proofs holds, each checked by this code and not by a model:
+   *
+   * (i) NO_EFFECT_ROW: no effect row exists, so runEffect was never entered for the settlement and nothing was sent.
+   * (ii) DEFINITIVE_REVERT: the stored hash's confirmation reports failed with REVERTED, findTransfer finds no confirmed
+   *      transfer for the order id, and isOrderSettled is false. A reverted transaction moved nothing.
+   * (iii) UNKNOWN_NOT_SETTLED_ACKNOWLEDGED: the outcome is unknown (SETTLEMENT_OUTCOME_UNKNOWN), no hash is recorded anywhere,
+   *      the effect row was last updated at least 30 minutes ago, findTransfer finds nothing, isOrderSettled is false, and the
+   *      owner acknowledged the residual risk. The residual: a transaction still in a mempool, not yet mined, has no log and
+   *      no settled order yet. If it mines later it would move money that this restore has already given back. The 30 minute
+   *      window and the owner's acknowledgement are the only guards against that. It is stated in docs/CONTRACT_SCOPE.md.
+   *
+   * Any other state is refused with NOT_PROVABLY_UNSENT, and the refusal is audited. A lookup or read that throws refuses: it
+   * is never read as "not found" or "not settled". Under the settlement's execution lock, so no send can interleave.
+   * Repeating the call on a cancelled settlement returns the stored result and writes nothing more.
+   */
+  async cancelHeldAndRestore(
+    settlementId: string,
+    opts: { actor: TabActor; acknowledgeNotSent: boolean }
+  ): Promise<RestoreOutcome> {
+    const lock = await acquireAdvisoryLock(`tab_exec:${settlementId}`, 0);
+    if (!lock) return { kind: "busy" };
+    try {
+      return await this.restoreLocked(settlementId, opts);
+    } finally {
+      await lock.release();
+    }
+  }
+
+  private async restoreLocked(
+    settlementId: string,
+    opts: { actor: TabActor; acknowledgeNotSent: boolean }
+  ): Promise<RestoreOutcome> {
+    const row = await this.settlementWithMode(settlementId);
+    if (!row) return { kind: "not_found" };
+    const amountCents = BigInt(row.amount_cents);
+    if (row.status === "cancelled") {
+      return { kind: "already_cancelled", proof: row.hold_reason ?? null, amountCents, replayed: true };
+    }
+    if (row.status !== "held") return { kind: "not_held", status: row.status as TabSettlementStatus };
+    const clears = await query(`SELECT 1 FROM tab_entries WHERE settlement_id = $1 AND kind = 'clear' LIMIT 1;`, [settlementId]);
+    if (clears.rowCount !== 1) return { kind: "no_clear" };
+
+    const effect =
+      (
+        await query(`SELECT status, external_ref, updated_at FROM effects WHERE idempotency_key = $1;`, [
+          ledgerKeys.effect(row.workspace_id, settlementId),
+        ])
+      ).rows[0] ?? null;
+    const adapter = this.settlementFor(effectiveSettlementMode(row));
+    const verdict = await this.proveRestore(settlementId, row, effect, opts.acknowledgeNotSent, adapter);
+    if (verdict.kind === "refused") {
+      await withTransaction(async (client) => {
+        await writeAudit(client, row.workspace_id, opts.actor, "tab.settlement_restore_refused", PolicyDecision.DENY, {
+          settlementId,
+          counterpartyId: row.counterparty_id,
+          code: "NOT_PROVABLY_UNSENT",
+          reason: verdict.reason,
+          holdReason: row.hold_reason ?? null,
+        }, row.tx_hash ?? null);
+      });
+      return { kind: "refused", code: "NOT_PROVABLY_UNSENT", reason: verdict.reason };
+    }
+
+    const restored = await withTransaction(async (client) => {
+      const upd = await client.query(
+        `UPDATE tab_settlements SET status = 'cancelled', hold_reason = $2, updated_at = NOW()
+         WHERE id = $1 AND status = 'held' RETURNING workspace_id, counterparty_id;`,
+        [settlementId, verdict.proof]
+      );
+      if (upd.rowCount !== 1) throw new Error(`Tab settlement '${settlementId}' changed while it was restored; it needs review.`);
+      // The reversal's key is one per settlement, so a second reversal for it cannot be written at all.
+      await client.query(
+        `INSERT INTO tab_entries (id, workspace_id, counterparty_id, kind, amount_micro, idempotency_key, settlement_id, description, created_at)
+         VALUES ($1, $2, $3, 'reversal', $4, $5, $6, $7, NOW());`,
+        [
+          newId("tabent"),
+          row.workspace_id,
+          row.counterparty_id,
+          centsToMicro(amountCents).toString(),
+          ledgerKeys.reversal(settlementId),
+          settlementId,
+          `Restore of ${settlementId}: ${verdict.proof}`,
+        ]
+      );
+      await writeAudit(client, row.workspace_id, opts.actor, "tab.settlement_restored", PolicyDecision.ALLOW, {
+        settlementId,
+        counterpartyId: row.counterparty_id,
+        proof: verdict.proof,
+        priorHoldReason: row.hold_reason ?? null,
+        amountCents: amountCents.toString(),
+        acknowledgeNotSent: opts.acknowledgeNotSent,
+      }, row.tx_hash ?? null);
+      return true;
+    });
+    if (!restored) return { kind: "busy" };
+    return { kind: "cancelled", proof: verdict.proof, amountCents, replayed: false };
+  }
+
+  /** The restore proof for a held settlement that owns a clear, or the reason it is refused. Reads only; sends nothing. */
+  private async proveRestore(
+    settlementId: string,
+    row: { tx_hash: string | null; hold_reason: string | null },
+    effect: { external_ref: string | null; updated_at: Date } | null,
+    acknowledgeNotSent: boolean,
+    adapter: SettlementAdapter
+  ): Promise<{ kind: "proved"; proof: RestoreProof } | { kind: "refused"; reason: string }> {
+    const orderId = tabAdapterOrderId(settlementId);
+    // (i) Nothing was ever entered for this settlement, so nothing can have been sent. No adapter call is needed.
+    if (effect === null) return { kind: "proved", proof: "NO_EFFECT_ROW" };
+    if (typeof adapter.isOrderSettled !== "function" || typeof adapter.findTransfer !== "function") {
+      return { kind: "refused", reason: "the settlement adapter cannot prove the order is unsettled" };
+    }
+
+    if (row.tx_hash) {
+      // (ii) The stored hash, asked again: a reverted transaction moved nothing.
+      let outcome: TransferResult;
+      try {
+        outcome = await adapter.confirm(row.tx_hash);
+      } catch {
+        return { kind: "refused", reason: "the stored transaction could not be read" };
+      }
+      if (!(outcome.status === "failed" && outcome.failureCode === "REVERTED")) {
+        return { kind: "refused", reason: "the stored transaction is not reported as reverted" };
+      }
+      const lookup = await lookupForRestore(adapter, orderId, "a transfer for the order could not be looked up");
+      if (lookup.kind === "refused") return lookup;
+      const settled = await settledForRestore(adapter, orderId, "the order could not be read on the contract");
+      if (settled.kind === "refused") return settled;
+      return { kind: "proved", proof: "DEFINITIVE_REVERT" };
+    }
+
+    // (iii) An unknown outcome with no hash recorded anywhere, judged by the lookup, the contract and the owner.
+    if (row.hold_reason !== "SETTLEMENT_OUTCOME_UNKNOWN") {
+      return { kind: "refused", reason: "the hold is not an unknown outcome" };
+    }
+    if (effect.external_ref !== null && effect.external_ref !== undefined) {
+      return { kind: "refused", reason: "a transaction hash is recorded for the effect; reconcile it first" };
+    }
+    if (!acknowledgeNotSent) {
+      return { kind: "refused", reason: "the owner has not acknowledged the residual risk (acknowledgeNotSent)" };
+    }
+    const ageMs = Date.now() - new Date(effect.updated_at).getTime();
+    if (!(ageMs >= RESTORE_MIN_AGE_MS)) {
+      return { kind: "refused", reason: "the effect was last updated less than 30 minutes ago" };
+    }
+    const lookup = await lookupForRestore(adapter, orderId, "a transfer for the order could not be looked up");
+    if (lookup.kind === "refused") return lookup;
+    const settled = await settledForRestore(adapter, orderId, "the order could not be read on the contract");
+    if (settled.kind === "refused") return settled;
+    return { kind: "proved", proof: "UNKNOWN_NOT_SETTLED_ACKNOWLEDGED" };
   }
 
   /**
