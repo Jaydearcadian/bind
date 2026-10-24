@@ -629,3 +629,16 @@ and no payment were made for this work.
 
 Known limits: held tab settlements keep their clear and have no exit route yet; above-threshold balances settle only in threshold-sized chunks; the replenishment
 pre-check still uses the database's local day and does not count tab spend; with N persistently failing tabs a batch of N can still be filled by them.
+
+## Tab ledger: the two live-use blockers (ADR 0081 items a and b), built 2026-10-24
+
+Evidence class for everything here: LOCAL_PASS (local Postgres, spy adapter, local simulator). No live Arc, no Anvil, no real key, no payment.
+
+| # | Check | Command | Observed | Class |
+| :--- | :--- | :--- | :--- | :--- |
+| H1 | Merged branch | `NODE_ENV=test DATABASE_URL=<local> npx vitest run tests/unit tests/integration`; `npx tsc --noEmit` | 155 files passed, 1 skipped (the Anvil suite), 1729 tests passed, 10 skipped; typecheck clean | LOCAL_PASS |
+| H2 | Lost-hash adoption: a payment sent whose hash was not recorded (busy lock, concurrent hold) is adopted from the effect record or the lookup, then confirmed through the adapter, with exactly one transfer | `tests/integration/tab-held-reconcile.test.ts` | Passing | LOCAL_PASS |
+| H3 | Exit for held settlements: worker adoption (never cancels), owner-only list and resolve routes, cancel-and-restore only under three proofs and an owner acknowledgement, exactly one reversal, repeat is a no-op, a refused attempt changes nothing; the duplicate-reverted case (first transfer paid, stored hash is the reverted duplicate) is refused | `tests/integration/tab-held-restore.test.ts`, `tab-held-worker.test.ts`, `tab-held-api.test.ts`, `tab-fuzz.test.ts` (held variant), `tests/unit/arc-is-order-settled.test.ts`, `held-responses.test.ts` | Passing. 24 mutation checks on a scratch copy, each caught by at least one failing test; backoff bounds the audit rows of a never-resolving hold to 6 attempts in 3 days | LOCAL_PASS |
+| H4 | Arc `isOrderSettled` and the held-settlement reads against the real contract | None run | Not run. Item (c) of ADR 0081, a live Arc run of the tab path, is still required before any live use. | NOT_RUN |
+
+Residuals: proof (iii) cannot exclude a transaction still in a mempool after 30 minutes, so it needs the owner's acknowledgement; the local simulator forgets payments on a process restart, so its proofs can restore a simulated payment after a restart (simulated money only).
