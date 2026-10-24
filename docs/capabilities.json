@@ -2,18 +2,18 @@
   "version": 1,
   "source": "docs/openapi.json + docs/ecosystem/exposure.json + sdk/src/client.ts + mcp/src/tools.ts. Generated: do not edit by hand.",
   "counts": {
-    "operations": 93,
+    "operations": 95,
     "mcpTools": 17,
-    "exposure:public_api": 82,
+    "exposure:public_api": 84,
     "exposure:internal_service": 7,
     "exposure:protocol_primitive": 4,
     "effect:owner_decision": 10,
     "effect:owner_configuration": 18,
-    "effect:commercial_commitment": 5,
+    "effect:commercial_commitment": 6,
     "effect:operational": 3,
     "effect:credential": 10,
     "effect:data_entry": 3,
-    "effect:read": 41,
+    "effect:read": 42,
     "effect:external_request": 3
   },
   "capabilities": [
@@ -1116,6 +1116,30 @@
       }
     },
     {
+      "id": "listHeldTabSettlements",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/tabs/settlements",
+      "summary": "The held tab settlements of the workspace, oldest change first, at most 50. Read only (docs/decisions/0081).",
+      "tag": "Tabs",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "The held tab settlements of a workspace (ADR 0081). Read only. Owner only; never exposed to agents.",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
       "id": "listInventory",
       "method": "GET",
       "route": "/api/workspaces/{id}/inventory",
@@ -1816,6 +1840,30 @@
       "note": "Deletes this demo workspace and its data. A demo is a throwaway sandbox, so no real data is lost, and no idempotency key is taken: the answer cannot be replayed once the workspace is gone. Returns a new demo with a new token. Refused for a workspace that is not a demo. docs/decisions/0057.",
       "idempotency": {
         "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "resolveTabSettlement",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/tabs/settlements/{settlementId}/resolve",
+      "summary": "Resolve a held tab settlement: reconcile (adopt and confirm a transfer the ledger or the chain can show) or cancel_and_restore (restore its clear only when it is provably unsent).",
+      "tag": "Tabs",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "commercial_commitment",
+      "irreversible": true,
+      "economic": true,
+      "stability": "preview",
+      "flags": [],
+      "note": "Reconciles a held tab settlement (adopts and confirms a transfer it can show; never sends) or cancels it and restores its clear only when provably unsent (ADR 0081). Restoring is irreversible for the balance. Owner only; never exposed to agents.",
+      "idempotency": {
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {

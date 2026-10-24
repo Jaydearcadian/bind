@@ -81,7 +81,8 @@ export class TabSpy implements SettlementAdapter {
   holdSendNext: Promise<void> | null = null;
 
   private readonly sentHashes = new Set<string>();
-  private readonly revertedHashes = new Set<string>();
+  /** Hashes the spy made revert: the stored hash of a settlement that a restore may cancel under proof (ii). */
+  readonly revertedHashes = new Set<string>();
 
   /**
    * Pass `settledRead: "absent"` to build an adapter with no isOrderSettled, as a third-party adapter may be. The method

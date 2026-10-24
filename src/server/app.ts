@@ -106,8 +106,15 @@ import { checkReadiness } from "../observability/readiness.js";
 import { mountHostedMcp, UNWIRED_HOSTED_MCP, type HostedMcpOptions } from "./mcp-route.js";
 import { ROUTES } from "../api/registry.js";
 import { OwnerEmailError, listNotificationChannels, removeOwnerEmail, requestOwnerEmailVerification, verifyOwnerEmail } from "../notifications/owner-emails.js";
-import { OwnerEmailRequestBodySchema, OwnerEmailVerifyBodySchema, TabChargeBodySchema } from "../api/schemas.js";
-import { tabLedger, type TabActor, type SettleResult, type TabEntry, type TabSettlementRecord } from "../tabs/ledger.js";
+import { OwnerEmailRequestBodySchema, OwnerEmailVerifyBodySchema, TabChargeBodySchema, TabResolveBodySchema } from "../api/schemas.js";
+import {
+  tabLedger,
+  type TabActor,
+  type HeldSettlementRow,
+  type SettleResult,
+  type TabEntry,
+  type TabSettlementRecord,
+} from "../tabs/ledger.js";
 import { TabError } from "../tabs/errors.js";
 import { parseChargeAmountMicro } from "../tabs/units.js";
 import { API_VERSION, buildOpenApiDocument, serializeOpenApiDocument } from "../api/openapi.js";
@@ -461,6 +468,21 @@ function settlementJson(row: TabSettlementRecord) {
     confirmedBlock: row.confirmedBlock,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function heldSettlementJson(row: HeldSettlementRow) {
+  return {
+    id: row.id,
+    counterpartyId: row.counterpartyId,
+    amountCents: row.amountCents.toString(),
+    status: "held" as const,
+    holdReason: row.holdReason,
+    txHash: row.txHash,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    hasEffect: row.hasEffect,
+    effectStatus: row.effectStatus,
   };
 }
 
@@ -1363,6 +1385,91 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       sendTabError(res, err);
     }
   });
+
+  // Held tab settlements (docs/decisions/0081, items a and b). Owner only; every read and write is inside the workspace in the path.
+  // `reconcile` only adopts and confirms a hash it can show; `cancel_and_restore` restores a clear only when it is provably
+  // unsent and answers 409 NOT_PROVABLY_UNSENT otherwise. Declared before the counterparty route, which would match "settlements".
+  app.get("/api/workspaces/:id/tabs/settlements", ...workspaceOwner, async (req: Request, res: Response) => {
+    if (req.query.status !== undefined && req.query.status !== "held") {
+      res.status(400).json({ error: "status must be held", code: "INVALID_STATUS" });
+      return;
+    }
+    try {
+      const rows = await tabLedger.listHeldSettlements(req.params.id);
+      res.json(rows.map(heldSettlementJson));
+    } catch (err) {
+      sendTabError(res, err);
+    }
+  });
+
+  app.post(
+    "/api/workspaces/:id/tabs/settlements/:settlementId/resolve",
+    ...workspaceOwner,
+    async (req: Request, res: Response) => {
+      const { id, settlementId } = req.params;
+      const raw = req.body ?? {};
+      const action = typeof raw === "object" && raw !== null ? (raw as { action?: unknown }).action : undefined;
+      if (action !== "reconcile" && action !== "cancel_and_restore") {
+        res.status(400).json({ error: "action must be reconcile or cancel_and_restore", code: "INVALID_ACTION" });
+        return;
+      }
+      const parsed = TabResolveBodySchema.safeParse(raw);
+      if (!parsed.success) {
+        res.status(400).json({ error: "acknowledgeNotSent must be true or false when it is given", code: "INVALID_RESOLVE" });
+        return;
+      }
+      try {
+        const row = await tabLedger.loadSettlement(settlementId, id);
+        if (!row) {
+          res.status(404).json({ error: "The settlement is not found in your workspace.", code: "SETTLEMENT_NOT_FOUND" });
+          return;
+        }
+        if (action === "reconcile") {
+          const outcome = await tabLedger.reconcileHeld(settlementId, tabActorOf(req));
+          if (outcome.kind === "busy") {
+            res.status(409).json({ error: "The settlement is being processed by another request. Retry later.", code: "SETTLEMENT_BUSY" });
+            return;
+          }
+          res.json({ action, outcome });
+          return;
+        }
+        const outcome = await tabLedger.cancelHeldAndRestore(settlementId, {
+          actor: tabActorOf(req),
+          acknowledgeNotSent: parsed.data.acknowledgeNotSent === true,
+        });
+        switch (outcome.kind) {
+          case "cancelled":
+          case "already_cancelled":
+            res.json({
+              action,
+              outcome: { kind: outcome.kind, proof: outcome.proof, amountCents: outcome.amountCents.toString(), replayed: outcome.replayed },
+            });
+            return;
+          case "refused":
+            res.status(409).json({
+              error: "The settlement cannot be restored: it may already have been sent. Nothing was changed.",
+              code: "NOT_PROVABLY_UNSENT",
+              reason: outcome.reason,
+            });
+            return;
+          case "busy":
+            res.status(409).json({ error: "The settlement is being processed by another request. Retry later.", code: "SETTLEMENT_BUSY" });
+            return;
+          case "not_held":
+            res.status(409).json({ error: "Only a held settlement can be restored.", code: "SETTLEMENT_NOT_HELD", status: outcome.status });
+            return;
+          case "no_clear":
+            res.status(409).json({ error: "The settlement holds no balance, so there is nothing to restore.", code: "SETTLEMENT_OWNS_NO_BALANCE" });
+            return;
+          case "not_found":
+            res.status(404).json({ error: "The settlement is not found in your workspace.", code: "SETTLEMENT_NOT_FOUND" });
+            return;
+        }
+      } catch (err) {
+        sendTabError(res, err);
+      }
+    }
+  );
 
   app.get("/api/workspaces/:id/tabs/:counterpartyId", ...workspaceOwner, async (req: Request, res: Response) => {
     try {

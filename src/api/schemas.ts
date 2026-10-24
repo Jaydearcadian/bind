@@ -1069,6 +1069,39 @@ export const TabDetailSchema = z.object({
 });
 
 /**
+ * POST /api/workspaces/:id/tabs/settlements/:settlementId/resolve (docs/decisions/0081). `reconcile` finds and confirms the
+ * hash of a held settlement; `cancel_and_restore` restores its clear only when it is provably unsent. Owner only.
+ */
+export const TabResolveBodySchema = z.object({
+  action: z.enum(["reconcile", "cancel_and_restore"]),
+  acknowledgeNotSent: z.boolean().optional(),
+});
+
+/** GET /api/workspaces/:id/tabs/settlements?status=held: one row per held settlement, oldest change first (at most 50). */
+export const TabHeldSettlementSchema = z.object({
+  id: z.string(),
+  counterpartyId: z.string(),
+  amountCents: z.string(),
+  status: z.literal("held"),
+  holdReason: z.string().nullable(),
+  txHash: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  hasEffect: z.boolean(),
+  effectStatus: z.string().nullable(),
+});
+
+/**
+ * The answer to a resolve. `outcome.kind` names what happened: for `reconcile`, `adopted` (with its source, hash and final
+ * status) or one of the reasons nothing was adopted (`lookup_unavailable`, `nothing_found`, ...); for `cancel_and_restore`,
+ * `cancelled` or `already_cancelled`. A refusal is a 409 NOT_PROVABLY_UNSENT, not a body.
+ */
+export const TabResolveResultSchema = z.object({
+  action: z.enum(["reconcile", "cancel_and_restore"]),
+  outcome: z.object({ kind: z.string() }).passthrough(),
+});
+
+/**
  * POST /api/workspaces/:id/tabs/:counterpartyId/settle. `outcome` says what the call did: nothing to settle (below_threshold),
  * the amount needs approval, the workspace refused it (paused or over the daily budget), or a settlement was recorded with
  * its status now.

@@ -974,6 +974,26 @@
    "stability": "preview",
    "flags": [],
    "note": "Clears whole cents of a tab and sends a USDC transfer through the settlement adapter (ADR 0081). A submitted transfer is not a confirmed settlement (ADR 0079). Owner only; never exposed to agents."
+  },
+  {
+   "operationId": "listHeldTabSettlements",
+   "exposure": "public_api",
+   "effect": "read",
+   "irreversible": false,
+   "economic": false,
+   "stability": "preview",
+   "flags": [],
+   "note": "The held tab settlements of a workspace (ADR 0081). Read only. Owner only; never exposed to agents."
+  },
+  {
+   "operationId": "resolveTabSettlement",
+   "exposure": "public_api",
+   "effect": "commercial_commitment",
+   "irreversible": true,
+   "economic": true,
+   "stability": "preview",
+   "flags": [],
+   "note": "Reconciles a held tab settlement (adopts and confirms a transfer it can show; never sends) or cancels it and restores its clear only when provably unsent (ADR 0081). Restoring is irreversible for the balance. Owner only; never exposed to agents."
   }
  ]
 }

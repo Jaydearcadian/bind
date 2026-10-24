@@ -1392,6 +1392,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{id}/tabs/settlements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The held tab settlements of the workspace, oldest change first, at most 50. Read only (docs/decisions/0081).
+         * @description Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.
+         */
+        get: operations["listHeldTabSettlements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{id}/tabs/settlements/{settlementId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve a held tab settlement: reconcile (adopt and confirm a transfer the ledger or the chain can show) or cancel_and_restore (restore its clear only when it is provably unsent).
+         * @description Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.
+         */
+        post: operations["resolveTabSettlement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspaces/{id}/tabs/{counterpartyId}": {
         parameters: {
             query?: never;
@@ -10947,6 +10987,269 @@ export interface operations {
                 };
             };
             /** @description The counterparty is not verified (COUNTERPARTY_NOT_VERIFIED), or the key was used for a different charge (IDEMPOTENCY_CONFLICT). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Request body too large (over 256 kB). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listHeldTabSettlements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One row per held settlement, with its hold reason and whether an effect row exists. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": ({
+                        amountCents: string;
+                        counterpartyId: string;
+                        createdAt: string;
+                        effectStatus: string | null;
+                        hasEffect: boolean;
+                        holdReason: string | null;
+                        id: string;
+                        /** @enum {string} */
+                        status: "held";
+                        txHash: string | null;
+                        updatedAt: string;
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                };
+            };
+            /** @description The status filter is not held (INVALID_STATUS). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Owner role required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    resolveTabSettlement: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: string;
+                settlementId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    acknowledgeNotSent?: boolean;
+                    /** @enum {string} */
+                    action: "reconcile" | "cancel_and_restore";
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description The outcome. reconcile: adopted, or why nothing was adopted. cancel_and_restore: cancelled, or already_cancelled on a repeat. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                poll?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        /** @enum {string} */
+                        action: "reconcile" | "cancel_and_restore";
+                        outcome: {
+                            kind: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The action is not reconcile or cancel_and_restore (INVALID_ACTION), or acknowledgeNotSent is not a boolean (INVALID_RESOLVE). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Owner role required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The settlement is not found in your workspace (SETTLEMENT_NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description A restore is refused as not provably unsent (NOT_PROVABLY_UNSENT), the settlement is not held (SETTLEMENT_NOT_HELD), owns no balance (SETTLEMENT_OWNS_NO_BALANCE), or is being processed (SETTLEMENT_BUSY). */
             409: {
                 headers: {
                     [name: string]: unknown;

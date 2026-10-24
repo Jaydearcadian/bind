@@ -113,6 +113,9 @@ const OWNER_ROUTES: Array<[string, string]> = [
   ["GET", "/api/workspaces/:id/tabs"],
   ["GET", "/api/workspaces/:id/tabs/:counterpartyId"],
   ["POST", "/api/workspaces/:id/tabs/:counterpartyId/settle"],
+  // Held tab settlements (ADR 0081): listing and resolving them are owner actions; a staff token is 403.
+  ["GET", "/api/workspaces/:id/tabs/settlements"],
+  ["POST", "/api/workspaces/:id/tabs/settlements/:settlementId/resolve"],
   ["POST", "/api/workspaces/:id/suppliers"],
   ["POST", "/api/workspaces/:id/agents"],
   ["POST", "/api/workspaces/:id/surfaces"],

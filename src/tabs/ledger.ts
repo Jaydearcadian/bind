@@ -70,6 +70,19 @@ export interface TabEntry {
   createdAt: Date;
 }
 
+/** One held settlement, as the operator's list shows it (docs/decisions/0081). */
+export interface HeldSettlementRow {
+  id: string;
+  counterpartyId: string;
+  amountCents: bigint;
+  holdReason: string | null;
+  txHash: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  hasEffect: boolean;
+  effectStatus: string | null;
+}
+
 export interface TabSettlementRecord {
   id: string;
   workspaceId: string;
@@ -551,6 +564,35 @@ export class TabLedger {
 
   // ---- Settlement -------------------------------------------------------------------------------------------------
 
+  /**
+   * The held settlements of one workspace, oldest change first, bounded. For the operator's list: the row, and whether an
+   * effect row exists for it and in which state. Workspace-scoped; nothing of another workspace is read.
+   */
+  async listHeldSettlements(workspaceId: string, limit = 50): Promise<HeldSettlementRow[]> {
+    assertWorkspaceId(workspaceId);
+    const res = await query(
+      `SELECT t.id, t.counterparty_id, t.amount_cents::text AS amount_cents, t.hold_reason, t.tx_hash, t.created_at, t.updated_at,
+              (e.id IS NOT NULL) AS has_effect, e.status AS effect_status
+       FROM tab_settlements t
+       LEFT JOIN effects e ON e.idempotency_key = t.workspace_id || ':tab_settle:' || t.id
+       WHERE t.workspace_id = $1 AND t.status = 'held'
+       ORDER BY t.updated_at ASC, t.id ASC
+       LIMIT $2;`,
+      [workspaceId, Math.min(Math.max(limit, 1), 100)]
+    );
+    return res.rows.map((row) => ({
+      id: row.id,
+      counterpartyId: row.counterparty_id,
+      amountCents: BigInt(row.amount_cents),
+      holdReason: row.hold_reason ?? null,
+      txHash: row.tx_hash ?? null,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      hasEffect: row.has_effect === true,
+      effectStatus: row.effect_status ?? null,
+    }));
+  }
+
   /** Reads one settlement row, scoped to its workspace when one is given. */
   async loadSettlement(settlementId: string, workspaceId?: string): Promise<TabSettlementRecord | null> {
     const res = await query(
@@ -906,17 +948,17 @@ export class TabLedger {
    * id. A lookup that throws, answers null, or answers a transfer that is not confirmed leaves the settlement held. Under the
    * settlement's execution lock; a busy lock is reported, not waited for. Running it again is a no-op once it has moved on.
    */
-  async reconcileHeld(settlementId: string): Promise<ReconcileOutcome> {
+  async reconcileHeld(settlementId: string, actor: TabActor = SYSTEM_ACTOR): Promise<ReconcileOutcome> {
     const lock = await acquireAdvisoryLock(`tab_exec:${settlementId}`, 0);
     if (!lock) return { kind: "busy" };
     try {
-      return await this.reconcileLocked(settlementId);
+      return await this.reconcileLocked(settlementId, actor);
     } finally {
       await lock.release();
     }
   }
 
-  private async reconcileLocked(settlementId: string): Promise<ReconcileOutcome> {
+  private async reconcileLocked(settlementId: string, actor: TabActor): Promise<ReconcileOutcome> {
     const row = await this.settlementWithMode(settlementId);
     if (!row) return { kind: "not_found" };
     if (row.status !== "held") return { kind: "current", status: row.status as TabSettlementStatus };
@@ -970,7 +1012,7 @@ export class TabLedger {
       await writeAudit(
         client,
         upd.rows[0].workspace_id,
-        SYSTEM_ACTOR,
+        actor,
         source === "stored" ? "tab.settlement_reopened" : "tab.settlement_hash_adopted",
         PolicyDecision.ALLOW,
         { settlementId, counterpartyId: upd.rows[0].counterparty_id, source, previousHoldReason: holdReason },
