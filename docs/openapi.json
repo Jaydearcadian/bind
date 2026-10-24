@@ -16695,6 +16695,1217 @@
         "x-bind-access": "owner"
       }
     },
+    "/api/workspaces/{id}/tabs": {
+      "get": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "listTabs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "balanceMicro": {
+                        "type": "string"
+                      },
+                      "counterpartyId": {
+                        "type": "string"
+                      },
+                      "entryCount": {
+                        "type": "number"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "settleableCents": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "counterpartyId",
+                      "name",
+                      "entryCount",
+                      "balanceMicro",
+                      "settleableCents"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "One row per counterparty with entries."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Owner role required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The tabs of the workspace: balance in micro-USDC and the whole cents a settlement would clear now.",
+        "tags": [
+          "Tabs"
+        ],
+        "x-bind-access": "owner"
+      }
+    },
+    "/api/workspaces/{id}/tabs/charges": {
+      "post": {
+        "description": "Access: a workspace token of the owner or a staff member of the workspace in the path.",
+        "operationId": "recordTabCharge",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "amountMicro": {
+                    "maxLength": 64,
+                    "type": "string"
+                  },
+                  "counterpartyId": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "description": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "idempotencyKey": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "counterpartyId",
+                  "amountMicro",
+                  "idempotencyKey",
+                  "description"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "poll": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "entry": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "amountMicro": {
+                          "type": "string"
+                        },
+                        "counterpartyId": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "idempotencyKey": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "enum": [
+                            "charge",
+                            "clear",
+                            "reversal"
+                          ],
+                          "type": "string"
+                        },
+                        "settlementId": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "workspaceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "counterpartyId",
+                        "kind",
+                        "amountMicro",
+                        "idempotencyKey",
+                        "settlementId",
+                        "description",
+                        "createdAt"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "created",
+                    "entry"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The same key with the same data was already recorded. Nothing was added."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "poll": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "entry": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "amountMicro": {
+                          "type": "string"
+                        },
+                        "counterpartyId": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "idempotencyKey": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "enum": [
+                            "charge",
+                            "clear",
+                            "reversal"
+                          ],
+                          "type": "string"
+                        },
+                        "settlementId": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "workspaceId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "counterpartyId",
+                        "kind",
+                        "amountMicro",
+                        "idempotencyKey",
+                        "settlementId",
+                        "description",
+                        "createdAt"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "created",
+                    "entry"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The charge was recorded."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The amount is not a positive whole number of micro-USDC within the 25 USDC limit (INVALID_CHARGE_AMOUNT), or a field is invalid (INVALID_CHARGE)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The counterparty is not found in your workspace (COUNTERPARTY_NOT_FOUND)."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The counterparty is not verified (COUNTERPARTY_NOT_VERIFIED), or the key was used for a different charge (IDEMPOTENCY_CONFLICT)."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body too large (over 256 kB)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Record a charge against a counterparty's tab, in micro-USDC (ADR 0081). Settled later in whole cents.",
+        "tags": [
+          "Tabs"
+        ],
+        "x-bind-access": "member"
+      }
+    },
+    "/api/workspaces/{id}/tabs/{counterpartyId}": {
+      "get": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "getTab",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "counterpartyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "balanceMicro": {
+                      "type": "string"
+                    },
+                    "counterpartyId": {
+                      "type": "string"
+                    },
+                    "entries": {
+                      "items": {
+                        "additionalProperties": true,
+                        "properties": {
+                          "amountMicro": {
+                            "type": "string"
+                          },
+                          "counterpartyId": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "idempotencyKey": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "charge",
+                              "clear",
+                              "reversal"
+                            ],
+                            "type": "string"
+                          },
+                          "settlementId": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "workspaceId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "workspaceId",
+                          "counterpartyId",
+                          "kind",
+                          "amountMicro",
+                          "idempotencyKey",
+                          "settlementId",
+                          "description",
+                          "createdAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "settleableCents": {
+                      "type": "string"
+                    },
+                    "settlements": {
+                      "items": {
+                        "additionalProperties": true,
+                        "properties": {
+                          "amountCents": {
+                            "type": "string"
+                          },
+                          "confirmedAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "confirmedBlock": {
+                            "nullable": true,
+                            "type": "number"
+                          },
+                          "counterpartyId": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "holdReason": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "submitted",
+                              "confirmed",
+                              "held",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "submittedAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "txHash": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          },
+                          "workspaceId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "workspaceId",
+                          "counterpartyId",
+                          "amountCents",
+                          "status",
+                          "txHash",
+                          "holdReason",
+                          "submittedAt",
+                          "confirmedAt",
+                          "confirmedBlock",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "counterpartyId",
+                    "balanceMicro",
+                    "settleableCents",
+                    "entries",
+                    "settlements"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The tab."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Owner role required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The counterparty is not found in your workspace (COUNTERPARTY_NOT_FOUND)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "One tab: its balance, the latest entries and the latest settlements.",
+        "tags": [
+          "Tabs"
+        ],
+        "x-bind-access": "owner"
+      }
+    },
+    "/api/workspaces/{id}/tabs/{counterpartyId}/settle": {
+      "post": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "settleTab",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "counterpartyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "poll": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
+                    "amountCents": {
+                      "type": "string"
+                    },
+                    "balanceMicro": {
+                      "type": "string"
+                    },
+                    "holdReason": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "enum": [
+                        "below_threshold",
+                        "needs_approval",
+                        "refused",
+                        "settlement",
+                        "already_attempted"
+                      ],
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "settlementId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "submitted",
+                        "confirmed",
+                        "held",
+                        "cancelled"
+                      ],
+                      "type": "string"
+                    },
+                    "thresholdCents": {
+                      "type": "string"
+                    },
+                    "txHash": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "utcDay": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "outcome"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "What the call did: nothing to settle, needs approval, refused, or a settlement with its status."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Owner role required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The counterparty is not found in your workspace (COUNTERPARTY_NOT_FOUND)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Settle the whole cents of a tab now, through the same gates as an order payment (ADR 0081).",
+        "tags": [
+          "Tabs"
+        ],
+        "x-bind-access": "owner"
+      }
+    },
     "/api/workspaces/{id}/tokens": {
       "get": {
         "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
