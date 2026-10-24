@@ -75,6 +75,8 @@ describe("a lost hash is adopted, not held (busy lock, regression)", () => {
     expect(outcome).toMatchObject({ kind: "adopted", source: "effect", txHash: hash, status: "confirmed" });
     expect(spy.calls).toHaveLength(1);
     expect(spy.moved.size).toBe(1);
+    // The adopted hash went through the adapter's confirm(): confirmed is only ever set from it (ADR 0079).
+    expect(spy.confirmCalls).toContain(hash);
     const [done] = await settlementsOf(w, cp);
     expect(done.status).toBe("confirmed");
     expect(done.tx_hash).toBe(hash);

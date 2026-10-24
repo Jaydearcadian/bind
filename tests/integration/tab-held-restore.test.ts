@@ -155,6 +155,40 @@ describe("restore refusals: a settlement is restored only when it is provably un
     expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(0n);
   });
 
+  it("(ii) a stored hash that failed with anything other than a revert is not restored", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    const w = await newTabWorkspace("r-ii-event");
+    created.push(w);
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: CHARGE_MICRO, idempotencyKey: "r-ii-e-c", description: "Dish" });
+    // The stored hash was sent but its confirmation found no SettlementExecuted event, and nothing moved (the send reverted
+    // on chain without a revert reason the contract recognises). Not a REVERTED outcome, so it is not provably unsent.
+    spy.revertSendNext = true;
+    spy.confirmFailureCode = "EVENT_MISSING";
+    const held = await ledger.settleTab({ workspaceId: w, counterpartyId: cp });
+    if (held.outcome !== "settlement") throw new Error("expected a settlement");
+    expect(held).toMatchObject({ status: "held", holdReason: "SETTLEMENT_FAILED" });
+
+    const outcome = await ledger.cancelHeldAndRestore(held.settlementId, { actor: ACTOR, acknowledgeNotSent: true });
+    expect(refused(outcome)).toBe(true);
+    expect(await reversalCount(w, held.settlementId)).toBe(0);
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(0n);
+  });
+
+  it("(iii) a transfer that moved is never restored while its lookup is down, however old and acknowledged (regression)", async () => {
+    const { spy, ledger, w, cp, settlementId } = await heldUnknown({ fault: "after_call_before_complete", label: "r-moved-down" });
+    await ageEffect(w, settlementId, 240);
+    spy.lookupDown = true;
+    expect(spy.moved.size).toBe(1);
+
+    const outcome = await ledger.cancelHeldAndRestore(settlementId, { actor: ACTOR, acknowledgeNotSent: true });
+    expect(refused(outcome)).toBe(true);
+    expect(await reversalCount(w, settlementId)).toBe(0);
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(0n);
+    expect(spy.moved.size).toBe(1);
+  });
+
   it("(ii) a stored hash whose lookup finds a transfer, or throws, is refused", async () => {
     for (const mode of ["found", "throws"] as const) {
       const spy = new TabSpy();

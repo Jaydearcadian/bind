@@ -65,6 +65,8 @@ export class TabSpy implements SettlementAdapter {
   lookupDown = false;
   /** When true, isOrderSettled throws (the contract read is down). */
   settledReadDown = false;
+  /** The failure code confirm() reports when confirmMode is "failed". REVERTED by default; EVENT_MISSING is the other case. */
+  confirmFailureCode = "REVERTED";
   /** When set, isOrderSettled answers this instead of what the spy moved (a contract that disagrees with the spy). */
   settledOverride: boolean | null = null;
   /** Every isOrderSettled call, by order id. */
@@ -174,9 +176,9 @@ export class TabSpy implements SettlementAdapter {
       submittedAuditRows: audit.rows[0].n,
     });
     if (!this.sentHashes.has(txHash)) return this.result(txHash, "submitted");
-    if (this.revertedHashes.has(txHash)) return this.result(txHash, "failed", "REVERTED");
+    if (this.revertedHashes.has(txHash)) return this.result(txHash, "failed", this.confirmFailureCode);
     if (this.confirmMode === "throws") throw new Error("confirm: rpc unreachable");
-    if (this.confirmMode === "failed") return this.result(txHash, "failed", "REVERTED");
+    if (this.confirmMode === "failed") return this.result(txHash, "failed", this.confirmFailureCode);
     if (this.confirmMode === "submitted") return this.result(txHash, "submitted");
     return this.result(txHash, "confirmed");
   }

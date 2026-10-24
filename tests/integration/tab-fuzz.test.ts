@@ -189,6 +189,27 @@ async function runSequence(seed: number, steps: number, held = false): Promise<v
             await ledger.executeSettlement(pending.rows[0].id).catch(() => undefined);
             await query(`UPDATE suppliers SET verified = TRUE WHERE workspace_id = $1 AND id = $2;`, [w, cp]);
           }
+        } else if (sub < 0.92) {
+          // A transfer moves, its result is lost, the lookup is down, and the owner tries to restore it after 31 minutes. It must
+          // be refused (moved): this is the state a restore that ignored the lookup would reverse.
+          await query(`UPDATE suppliers SET verified = TRUE WHERE workspace_id = $1 AND id = $2;`, [w, cp]);
+          await wholeCentCharge(ledger, w, cp, `fz-mv-${seed}-${(keyCounter += 1)}`);
+          setEffectFault({ point: "after_call_before_complete", match: (spec) => spec.workspaceId === w });
+          await ledger.settleTab({ workspaceId: w, counterpartyId: cp }).catch(() => undefined);
+          setEffectFault(null);
+          const pending = await query(
+            `SELECT id FROM tab_settlements WHERE workspace_id = $1 AND counterparty_id = $2 AND status = 'pending' ORDER BY created_at DESC LIMIT 1;`,
+            [w, cp]
+          );
+          if (pending.rows.length > 0) {
+            await query(`UPDATE suppliers SET verified = FALSE WHERE workspace_id = $1 AND id = $2;`, [w, cp]);
+            await ledger.executeSettlement(pending.rows[0].id).catch(() => undefined);
+            await query(`UPDATE suppliers SET verified = TRUE WHERE workspace_id = $1 AND id = $2;`, [w, cp]);
+            spy.lookupDown = true;
+            await ageEffect(w, pending.rows[0].id, 31);
+            await ledger.cancelHeldAndRestore(pending.rows[0].id, { actor: FUZZ_OWNER, acknowledgeNotSent: true });
+            spy.lookupDown = false;
+          }
         } else {
           // The worker runs: resume, confirm, reconcile held, end-of-day batch.
           await runTabSettlementStep({
