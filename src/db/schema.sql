@@ -622,6 +622,8 @@ CREATE TABLE IF NOT EXISTS tab_settlements (
 );
 CREATE INDEX IF NOT EXISTS idx_tab_settlements_status ON tab_settlements (status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_tab_settlements_tab ON tab_settlements (workspace_id, counterparty_id, created_at);
+-- Reconcile attempts on a held settlement (docs/decisions/0081): the backoff step of the next attempt of a SETTLEMENT_FAILED hold.
+ALTER TABLE tab_settlements ADD COLUMN IF NOT EXISTS reconcile_attempts INTEGER NOT NULL DEFAULT 0;
 
 -- Append-only: the code never updates or deletes a row. Balance(counterparty) = sum(charge) - sum(clear) + sum(reversal), in micro-USDC.
 -- idempotency_key is namespaced by kind ('charge:<client key>', 'clear:<settlement id>', 'reversal:<settlement id>'), so a client

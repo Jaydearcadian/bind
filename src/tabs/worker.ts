@@ -27,7 +27,10 @@ export interface TabWorkerOptions {
   staleAfterMs: number;
   /** A submitted settlement is confirmed by (b) once its last poll is this old. */
   confirmAfterMs: number;
-  /** A held settlement is reconciled by (d) once its last change is this old. Default 5 minutes. */
+  /**
+   * The base backoff step of (d): a held settlement is reconciled once its last change is this old. A SETTLEMENT_FAILED hold
+   * then waits 3, 12, 72 and 288 times the base for its successive attempts (see RECONCILE_STEP_FACTORS). Default 5 minutes.
+   */
   reconcileAfterMs?: number;
   /** At most this many held settlements are reconciled per tick by (d). Default 5. */
   reconcileBatchSize?: number;
@@ -50,6 +53,13 @@ export interface TabWorkerCounts {
 
 const DEFAULT_RECONCILE_AFTER_MS = 5 * 60 * 1000;
 const DEFAULT_RECONCILE_BATCH = 5;
+/**
+ * The backoff steps of a SETTLEMENT_FAILED hold, as multiples of the base step. With the default base these are 5 minutes,
+ * 15 minutes, an hour, 6 hours and a day. The last step repeats. An attempt is counted on the settlement, so the next attempt
+ * waits the next step: the reopen and re-hold audit rows of an attempt are written once per step, not once per tick.
+ * SETTLEMENT_OUTCOME_UNKNOWN holds keep the base step.
+ */
+const RECONCILE_STEP_FACTORS = [1, 3, 12, 72, 288];
 
 export function emptyTabCounts(): TabWorkerCounts {
   return { resumed: 0, confirmed: 0, held: 0, cancelled: 0, endOfDay: 0, reconciled: 0, failed: 0, errors: [] };
@@ -107,13 +117,19 @@ export async function runTabSettlementStep(opts: TabWorkerOptions): Promise<TabW
   // (d) Held settlements that own a clear. The ledger adopts a hash it can show and confirms it; a settlement it cannot resolve
   // stays held and is touched, so the next attempt waits its backoff. Nothing here cancels or reverses (ADR 0081).
   // SETTLEMENT_REQUEST_CONFLICT is not listed: a changed request is a person's decision, not a retry's.
-  const reconcileBefore = new Date(opts.now.getTime() - (opts.reconcileAfterMs ?? DEFAULT_RECONCILE_AFTER_MS));
+  // A row is due when its last change is at least its step old. The step is the base for an UNKNOWN hold, and for a
+  // SETTLEMENT_FAILED hold the step of its attempt count (capped at the last one). The steps are passed as an array.
+  const base = opts.reconcileAfterMs ?? DEFAULT_RECONCILE_AFTER_MS;
+  const steps = RECONCILE_STEP_FACTORS.map((factor) => base * factor);
   const heldRows = await query(
     `SELECT t.id FROM tab_settlements t
-     WHERE t.status = 'held' AND t.hold_reason IN ('SETTLEMENT_OUTCOME_UNKNOWN', 'SETTLEMENT_FAILED') AND t.updated_at <= $1
+     WHERE t.status = 'held' AND t.hold_reason IN ('SETTLEMENT_OUTCOME_UNKNOWN', 'SETTLEMENT_FAILED')
+       AND t.updated_at <= $1::timestamptz - (($3::float8[])[
+             CASE WHEN t.hold_reason = 'SETTLEMENT_FAILED' THEN LEAST(t.reconcile_attempts, cardinality($3::float8[]) - 1) ELSE 0 END + 1
+           ] * INTERVAL '1 millisecond')
        AND EXISTS (SELECT 1 FROM tab_entries e WHERE e.settlement_id = t.id AND e.kind = 'clear')
      ORDER BY t.updated_at ASC, t.id ASC LIMIT $2;`,
-    [reconcileBefore, opts.reconcileBatchSize ?? DEFAULT_RECONCILE_BATCH]
+    [opts.now, opts.reconcileBatchSize ?? DEFAULT_RECONCILE_BATCH, steps]
   );
   for (const row of heldRows.rows) {
     try {
@@ -121,10 +137,13 @@ export async function runTabSettlementStep(opts: TabWorkerOptions): Promise<TabW
       if (outcome.kind === "adopted") {
         counts.reconciled += 1;
         if (outcome.status === "confirmed") counts.confirmed += 1;
-        else if (outcome.status === "held") counts.held += 1;
+        else if (outcome.status === "held") {
+          counts.held += 1;
+          await countReconcileAttempt(row.id);
+        }
       } else if (outcome.kind !== "busy" && outcome.kind !== "current") {
-        // Still unresolved: record the attempt on the row so the next one waits its backoff.
-        await query(`UPDATE tab_settlements SET updated_at = NOW() WHERE id = $1 AND status = 'held';`, [row.id]);
+        // Still unresolved: the attempt is counted and the row is touched, so the next one waits the step it has reached.
+        await countReconcileAttempt(row.id);
       }
     } catch (err) {
       counts.failed += 1;
@@ -173,6 +192,14 @@ export async function runTabSettlementStep(opts: TabWorkerOptions): Promise<TabW
     }
   }
   return counts;
+}
+
+/** Counts one attempt on a held settlement that stays held, and touches it: the backoff is measured from this change. */
+async function countReconcileAttempt(settlementId: string): Promise<void> {
+  await query(
+    `UPDATE tab_settlements SET reconcile_attempts = reconcile_attempts + 1, updated_at = NOW() WHERE id = $1 AND status = 'held';`,
+    [settlementId]
+  );
 }
 
 /**

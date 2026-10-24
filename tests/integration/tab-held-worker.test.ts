@@ -179,3 +179,100 @@ describe("the worker adopts a lost hash on its own, and never cancels (regressio
     expect((await query(`SELECT status FROM tab_settlements WHERE id = $1;`, [settlementId])).rows[0].status).toBe("confirmed");
   });
 });
+
+async function attemptsOf(settlementId: string): Promise<number> {
+  return (await query(`SELECT reconcile_attempts FROM tab_settlements WHERE id = $1;`, [settlementId])).rows[0].reconcile_attempts;
+}
+
+/** Audit rows about one settlement that a reopen or a re-hold writes. */
+async function reopenAuditRows(workspaceId: string, settlementId: string): Promise<number> {
+  return (
+    await query(
+      `SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action IN ('tab.settlement_reopened', 'tab.settlement_held')
+         AND evidence->>'settlementId' = $2;`,
+      [workspaceId, settlementId]
+    )
+  ).rows[0].n;
+}
+
+/**
+ * The database clock is real and the worker's `now` is simulated, so the test puts the row's last change where the simulated
+ * clock says it was. The worker's own touch (NOW()) is replaced by the simulated time after each attempt.
+ */
+async function setUpdatedAt(settlementId: string, at: Date): Promise<void> {
+  await query(`UPDATE tab_settlements SET updated_at = $2 WHERE id = $1;`, [settlementId, at]);
+}
+
+function simulatedTick(ledger: TabLedgerType, now: Date) {
+  return runTabSettlementStep({
+    staleAfterMs: 0,
+    confirmAfterMs: 0,
+    batchSize: 50,
+    now,
+    endOfDay: false,
+    settleOnThreshold: false,
+    reconcileAfterMs: 5 * 60 * 1000,
+    reconcileBatchSize: 1000,
+    ledger,
+  });
+}
+
+describe("the held backoff: a failed hold is attempted on a schedule, and its audit is bounded (regression)", () => {
+  it("a SETTLEMENT_FAILED hold that never resolves is attempted at 5m, 15m, 1h, 6h, then daily, not every tick", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    const w = await newTabWorkspace("w-backoff-failed");
+    created.push(w);
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: 40_000n, idempotencyKey: "w-bf-c", description: "Dish" });
+    // The send reverted with nothing moved, and its confirmation never finds the event: held FAILED, and it stays so.
+    spy.revertSendNext = true;
+    spy.confirmFailureCode = "EVENT_MISSING";
+    const held = await ledger.settleTab({ workspaceId: w, counterpartyId: cp });
+    if (held.outcome !== "settlement") throw new Error("expected a held settlement");
+    const id = held.settlementId;
+
+    const t0 = Date.now();
+    await setUpdatedAt(id, new Date(t0));
+    const confirmsBefore = spy.confirmCalls.length;
+    const auditBefore = await reopenAuditRows(w, id);
+    const attemptsAt: number[] = [];
+    // Ten-minute ticks over three simulated days: 432 ticks.
+    for (let minute = 10; minute <= 3 * 24 * 60; minute += 10) {
+      const sim = new Date(t0 + minute * 60_000);
+      const before = await attemptsOf(id);
+      await simulatedTick(ledger, sim);
+      if ((await attemptsOf(id)) > before) {
+        attemptsAt.push(minute);
+        await setUpdatedAt(id, sim);
+      }
+    }
+
+    // Each step is the last times three, twelve, seventy-two and two hundred eighty-eight: 5m, 15m, 1h, 6h, then a day.
+    expect(attemptsAt).toEqual([10, 30, 90, 450, 1890, 3330]);
+    expect(spy.confirmCalls.length - confirmsBefore).toBe(attemptsAt.length);
+    // One reopen and one re-hold audit per attempt, so the audit grows with the steps, not with the ticks.
+    expect((await reopenAuditRows(w, id)) - auditBefore).toBe(2 * attemptsAt.length);
+    expect(spy.calls).toHaveLength(1);
+    const [row] = await settlementsOf(w, cp);
+    expect(row).toMatchObject({ status: "held", hold_reason: "SETTLEMENT_FAILED" });
+    expect((await tabSums(w, cp)).reversals).toBe(0n);
+  }, 180_000);
+
+  it("an UNKNOWN hold keeps the base cadence: it is looked at again every base step", async () => {
+    const { ledger, settlementId } = await heldUnknown({ fault: "before_call", label: "w-unknown-cadence" });
+    const t0 = Date.now();
+    await setUpdatedAt(settlementId, new Date(t0));
+    const attemptsAt: number[] = [];
+    for (const minute of [10, 20, 30]) {
+      const sim = new Date(t0 + minute * 60_000);
+      const before = await attemptsOf(settlementId);
+      await simulatedTick(ledger, sim);
+      if ((await attemptsOf(settlementId)) > before) {
+        attemptsAt.push(minute);
+        await setUpdatedAt(settlementId, sim);
+      }
+    }
+    expect(attemptsAt).toEqual([10, 20, 30]);
+  });
+});
