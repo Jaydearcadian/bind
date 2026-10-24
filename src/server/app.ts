@@ -117,6 +117,7 @@ import {
 } from "../tabs/ledger.js";
 import { TabError } from "../tabs/errors.js";
 import { parseChargeAmountMicro } from "../tabs/units.js";
+import { restoreAnswer } from "../tabs/held-responses.js";
 import { API_VERSION, buildOpenApiDocument, serializeOpenApiDocument } from "../api/openapi.js";
 import {
   ApprovalDecisionBodySchema,
@@ -1437,34 +1438,8 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
           actor: tabActorOf(req),
           acknowledgeNotSent: parsed.data.acknowledgeNotSent === true,
         });
-        switch (outcome.kind) {
-          case "cancelled":
-          case "already_cancelled":
-            res.json({
-              action,
-              outcome: { kind: outcome.kind, proof: outcome.proof, amountCents: outcome.amountCents.toString(), replayed: outcome.replayed },
-            });
-            return;
-          case "refused":
-            res.status(409).json({
-              error: "The settlement cannot be restored: it may already have been sent. Nothing was changed.",
-              code: "NOT_PROVABLY_UNSENT",
-              reason: outcome.reason,
-            });
-            return;
-          case "busy":
-            res.status(409).json({ error: "The settlement is being processed by another request. Retry later.", code: "SETTLEMENT_BUSY" });
-            return;
-          case "not_held":
-            res.status(409).json({ error: "Only a held settlement can be restored.", code: "SETTLEMENT_NOT_HELD", status: outcome.status });
-            return;
-          case "no_clear":
-            res.status(409).json({ error: "The settlement holds no balance, so there is nothing to restore.", code: "SETTLEMENT_OWNS_NO_BALANCE" });
-            return;
-          case "not_found":
-            res.status(404).json({ error: "The settlement is not found in your workspace.", code: "SETTLEMENT_NOT_FOUND" });
-            return;
-        }
+        const answer = restoreAnswer(outcome);
+        res.status(answer.status).json(answer.body);
       } catch (err) {
         sendTabError(res, err);
       }

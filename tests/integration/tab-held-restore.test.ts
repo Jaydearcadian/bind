@@ -349,3 +349,100 @@ describe("restore allowed cases: one reversal, the balance restored, and a later
     expect((await tabSums(w, cp)).reversals).toBe(CHARGE_MICRO);
   });
 });
+
+describe("a restore is bound to the state its proof examined (regression)", () => {
+  beforeAll(async () => {
+    await runMigrations();
+  });
+
+  /**
+   * A ledger whose restore runs `change` between the proof and the write: the window the write guard must close. The
+   * change is made by the test directly in the database, as a concurrent writer that does not take the execution lock would.
+   */
+  function ledgerChangingAfterProof(spy: TabSpy, change: (settlementId: string) => Promise<void>): TabLedger {
+    return new TabLedger({ settlementFor: () => spy, afterRestoreProof: ({ settlementId }) => change(settlementId) });
+  }
+
+  it("(ii) the row is confirmed between the proof and the write: changed, no cancel, no reversal", async () => {
+    const spy = new TabSpy();
+    const seed = new TabLedger({ settlementFor: () => spy });
+    const w = await newTabWorkspace("g-ii-confirmed");
+    created.push(w);
+    const cp = await newCounterparty(w);
+    await seed.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: CHARGE_MICRO, idempotencyKey: "g-ii-c", description: "Dish" });
+    spy.revertSendNext = true;
+    const held = await seed.settleTab({ workspaceId: w, counterpartyId: cp });
+    if (held.outcome !== "settlement") throw new Error("expected a settlement");
+
+    const ledger = ledgerChangingAfterProof(spy, (id) =>
+      query(`UPDATE tab_settlements SET status = 'confirmed', confirmed_at = NOW() WHERE id = $1;`, [id]).then(() => undefined)
+    );
+    const outcome = await ledger.cancelHeldAndRestore(held.settlementId, { actor: ACTOR, acknowledgeNotSent: true });
+    expect(outcome).toEqual({ kind: "changed" });
+    expect((await settlementsOf(w, cp))[0].status).toBe("confirmed");
+    expect(await reversalCount(w, held.settlementId)).toBe(0);
+    expect((await seed.tabBalance(w, cp)).balanceMicro).toBe(0n);
+  });
+
+  it("(ii) the row is submitted between the proof and the write: changed, no cancel, no reversal", async () => {
+    const spy = new TabSpy();
+    const seed = new TabLedger({ settlementFor: () => spy });
+    const w = await newTabWorkspace("g-ii-submitted");
+    created.push(w);
+    const cp = await newCounterparty(w);
+    await seed.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: CHARGE_MICRO, idempotencyKey: "g-is-c", description: "Dish" });
+    spy.revertSendNext = true;
+    const held = await seed.settleTab({ workspaceId: w, counterpartyId: cp });
+    if (held.outcome !== "settlement") throw new Error("expected a settlement");
+
+    const ledger = ledgerChangingAfterProof(spy, (id) =>
+      query(`UPDATE tab_settlements SET status = 'submitted' WHERE id = $1;`, [id]).then(() => undefined)
+    );
+    expect(await ledger.cancelHeldAndRestore(held.settlementId, { actor: ACTOR, acknowledgeNotSent: true })).toEqual({ kind: "changed" });
+    expect((await settlementsOf(w, cp))[0].status).toBe("submitted");
+    expect(await reversalCount(w, held.settlementId)).toBe(0);
+  });
+
+  it("(ii) a different hash is recorded between the proof and the write: changed, the stored hash is not cancelled away", async () => {
+    const spy = new TabSpy();
+    const seed = new TabLedger({ settlementFor: () => spy });
+    const w = await newTabWorkspace("g-ii-hash");
+    created.push(w);
+    const cp = await newCounterparty(w);
+    await seed.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: CHARGE_MICRO, idempotencyKey: "g-ih-c", description: "Dish" });
+    spy.revertSendNext = true;
+    const held = await seed.settleTab({ workspaceId: w, counterpartyId: cp });
+    if (held.outcome !== "settlement") throw new Error("expected a settlement");
+    const other = `0x${"ce".repeat(32)}`;
+
+    const ledger = ledgerChangingAfterProof(spy, (id) =>
+      query(`UPDATE tab_settlements SET tx_hash = $2 WHERE id = $1;`, [id, other]).then(() => undefined)
+    );
+    expect(await ledger.cancelHeldAndRestore(held.settlementId, { actor: ACTOR, acknowledgeNotSent: true })).toEqual({ kind: "changed" });
+    expect(await settlementsOf(w, cp)).toEqual([expect.objectContaining({ status: "held", tx_hash: other })]);
+    expect(await reversalCount(w, held.settlementId)).toBe(0);
+  });
+
+  it("(iii) a hash recorded between the proof and the write: changed, nothing cancelled", async () => {
+    const { spy, w, cp, settlementId } = await heldUnknown({ fault: "before_call", label: "g-iii-hash" });
+    await ageEffect(w, settlementId, 60);
+    const ledger = ledgerChangingAfterProof(spy, (id) =>
+      query(`UPDATE tab_settlements SET tx_hash = $2 WHERE id = $1;`, [id, `0x${"df".repeat(32)}`]).then(() => undefined)
+    );
+    expect(await ledger.cancelHeldAndRestore(settlementId, { actor: ACTOR, acknowledgeNotSent: true })).toEqual({ kind: "changed" });
+    expect((await settlementsOf(w, cp))[0].status).toBe("held");
+    expect(await reversalCount(w, settlementId)).toBe(0);
+  });
+
+  it("(iii) the row is submitted between the proof and the write: changed, nothing cancelled", async () => {
+    const { spy, w, cp, settlementId } = await heldUnknown({ fault: "before_call", label: "g-iii-status" });
+    await ageEffect(w, settlementId, 60);
+    const ledger = ledgerChangingAfterProof(spy, (id) =>
+      query(`UPDATE tab_settlements SET status = 'submitted' WHERE id = $1;`, [id]).then(() => undefined)
+    );
+    expect(await ledger.cancelHeldAndRestore(settlementId, { actor: ACTOR, acknowledgeNotSent: true })).toEqual({ kind: "changed" });
+    expect((await settlementsOf(w, cp))[0].status).toBe("submitted");
+    expect(await reversalCount(w, settlementId)).toBe(0);
+    expect(spy.moved.size).toBe(0);
+  });
+});

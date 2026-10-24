@@ -210,7 +210,9 @@ export type RestoreOutcome =
   | { kind: "already_cancelled"; proof: string | null; amountCents: bigint; replayed: true }
   | { kind: "not_held"; status: TabSettlementStatus }
   | { kind: "no_clear" }
-  | { kind: "refused"; code: "NOT_PROVABLY_UNSENT"; reason: string };
+  | { kind: "refused"; code: "NOT_PROVABLY_UNSENT"; reason: string }
+  /** The row changed between the proof and the write (a status or a hash). Nothing was cancelled or reversed. */
+  | { kind: "changed" };
 
 /** The age an unknown outcome's effect row must reach before a restore may use proof (iii). */
 export const RESTORE_MIN_AGE_MS = 30 * 60 * 1000;
@@ -223,6 +225,11 @@ export interface TabLedgerDeps {
    * budget race test uses it to hold every reserve at the same point. Not set in production.
    */
   afterBudgetRead?: (at: { workspaceId: string; counterpartyId: string }) => Promise<void>;
+  /**
+   * Test seam, never set in production: runs after a restore's proof is established and before its write. The restore
+   * tests use it to change the row in that window and assert that nothing is cancelled or reversed.
+   */
+  afterRestoreProof?: (at: { settlementId: string }) => Promise<void>;
 }
 
 /** How long a reserve waits for the workspace spend lock. A busy lock is refused, never skipped. */
@@ -441,8 +448,11 @@ export class TabLedger {
 
   private readonly afterBudgetRead?: (at: { workspaceId: string; counterpartyId: string }) => Promise<void>;
 
+  private readonly afterRestoreProof?: (at: { settlementId: string }) => Promise<void>;
+
   constructor(deps: TabLedgerDeps = {}) {
     this.afterBudgetRead = deps.afterBudgetRead;
+    this.afterRestoreProof = deps.afterRestoreProof;
     this.settlementFor =
       deps.settlementFor ?? ((mode: string) => getSettlementAdapter(mode as "local" | "arc-testnet"));
   }
@@ -1113,13 +1123,17 @@ export class TabLedger {
       return { kind: "refused", code: "NOT_PROVABLY_UNSENT", reason: verdict.reason };
     }
 
+    if (this.afterRestoreProof) await this.afterRestoreProof({ settlementId });
+
     const restored = await withTransaction(async (client) => {
+      // The write is bound to the state the proof examined: still held, with the same hash (none, for proof iii). A row that
+      // changed in between matches nothing, returns false before any reversal is written, and the transaction writes nothing.
       const upd = await client.query(
         `UPDATE tab_settlements SET status = 'cancelled', hold_reason = $2, updated_at = NOW()
-         WHERE id = $1 AND status = 'held' RETURNING workspace_id, counterparty_id;`,
-        [settlementId, verdict.proof]
+         WHERE id = $1 AND status = 'held' AND tx_hash IS NOT DISTINCT FROM $3 RETURNING workspace_id, counterparty_id;`,
+        [settlementId, verdict.proof, row.tx_hash ?? null]
       );
-      if (upd.rowCount !== 1) throw new Error(`Tab settlement '${settlementId}' changed while it was restored; it needs review.`);
+      if (upd.rowCount !== 1) return false;
       // The reversal's key is one per settlement, so a second reversal for it cannot be written at all.
       await client.query(
         `INSERT INTO tab_entries (id, workspace_id, counterparty_id, kind, amount_micro, idempotency_key, settlement_id, description, created_at)
@@ -1144,7 +1158,7 @@ export class TabLedger {
       }, row.tx_hash ?? null);
       return true;
     });
-    if (!restored) return { kind: "busy" };
+    if (!restored) return { kind: "changed" };
     return { kind: "cancelled", proof: verdict.proof, amountCents, replayed: false };
   }
 
