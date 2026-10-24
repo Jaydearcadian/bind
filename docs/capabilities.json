@@ -1119,7 +1119,7 @@
       "id": "listHeldTabSettlements",
       "method": "GET",
       "route": "/api/workspaces/{id}/tabs/settlements",
-      "summary": "The held tab settlements of the workspace, oldest change first, at most 50. Read only (docs/decisions/0081).",
+      "summary": "The held tab settlements of the workspace, oldest change first, limited to 50. Read only (docs/decisions/0081).",
       "tag": "Tabs",
       "authorization": "owner",
       "exposure": "public_api",

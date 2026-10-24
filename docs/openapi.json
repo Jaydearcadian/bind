@@ -17510,7 +17510,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "The held tab settlements of the workspace, oldest change first, at most 50. Read only (docs/decisions/0081).",
+        "summary": "The held tab settlements of the workspace, oldest change first, limited to 50. Read only (docs/decisions/0081).",
         "tags": [
           "Tabs"
         ],

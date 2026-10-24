@@ -948,7 +948,7 @@ export const ROUTES: RouteSpec[] = [
     path: "/api/workspaces/:id/tabs/settlements",
     access: "owner",
     tags: ["Tabs"],
-    summary: "The held tab settlements of the workspace, oldest change first, at most 50. Read only (docs/decisions/0081).",
+    summary: "The held tab settlements of the workspace, oldest change first, limited to 50. Read only (docs/decisions/0081).",
     responses: {
       200: ok("One row per held settlement, with its hold reason and whether an effect row exists.", list(TabHeldSettlementSchema)),
       400: err("The status filter is not held (INVALID_STATUS)."),

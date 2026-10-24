@@ -1400,7 +1400,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The held tab settlements of the workspace, oldest change first, at most 50. Read only (docs/decisions/0081).
+         * The held tab settlements of the workspace, oldest change first, limited to 50. Read only (docs/decisions/0081).
          * @description Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.
          */
         get: operations["listHeldTabSettlements"];
