@@ -55,9 +55,73 @@ Decisions taken during the build, and the review revisions to them (conservative
 
 Tests (all `LOCAL_PASS`): `tests/unit/tab-units.test.ts` (12); `tests/integration/tab-ledger.test.ts` (37, including the four-counterparty budget race and the far-offset UTC day); `tests/integration/tab-recovery.test.ts` (17, including the gate-flip, UNKNOWN_REVERT, OrderAlreadySettled, racing batches, crash-after-attempt, starvation and refusal-audit regressions); `tests/integration/tab-fuzz.test.ts` (4, seeded, with a path-coverage check); `tests/integration/tab-api.test.ts` (14). Existing tests changed: `tests/integration/api-contract.test.ts` (a tab seeding and one path value added), `tests/integration/auth-tenancy.test.ts` (route table entries added), and in `tests/integration/tab-api.test.ts` the limit expectations moved to 25 USDC. No existing assertion of an order, a worker or a commitment test was changed.
 
-**REQUIRED BEFORE ANY LIVE ARC RUN OF THE TAB PATH** (none of these is built):
-- (a) An operator route, or a worker re-reconcile, for `held` tab settlements. A held settlement keeps its clear and has no exit today; a confirm-time failure such as `EVENT_MISSING` holds forever.
-- (b) The busy-lock case where the original caller's `recordSubmitted` loses the hash. The hash survives in `effects.external_ref`; the worker should adopt it rather than hold.
-- (c) A live Arc run of the tab path, on the testnet, with the evidence recorded in `docs/RELEASE_EVIDENCE.md`.
+## Held settlements (addendum, 2026-10-24)
 
-Not done: a live Arc run; an operator route to resolve a held tab; a load test; the Anvil suite (not run here); the replenishment pre-check's `CURRENT_DATE`.
+A held settlement keeps its clear, because a payment may have gone out. Nothing in this addendum sends a payment, and nothing
+reverses a clear unless one of the three proofs below holds. `LOCAL_PASS` only; the live Arc path is `NOT_RUN` (see item c).
+
+**Reconcile (item b, the lost hash).** When the original caller's `recordSubmitted` loses the race, the caller no longer throws.
+The hash it received is kept: the effect row holds it (`external_ref`), and an audit row `tab.settlement_hash_unrecorded`
+names it. The caller gets `held`.
+
+`TabLedger.reconcileHeld` (under the settlement's execution lock, zero wait) takes the hash from, in order: the settlement's own
+`tx_hash` (a hold after a failed confirmation, which is asked again); the effect row's `external_ref`; the adapter's
+`findTransfer` for the order id. A lookup that throws leaves the settlement held (`lookup_unavailable`); a null answer leaves it
+held (`nothing_found`, which does not prove nothing was sent); a transfer that is not confirmed leaves it held. A hash that
+disagrees with the effect row is a `hash_conflict`, not a guess. An adopted hash moves the settlement to `submitted` (audit
+`tab.settlement_hash_adopted`, with the source), and then the normal confirmation runs. `confirmed` is only ever set from the
+adapter's `confirm()`. A reverted confirmation goes through the duplicate rule above. Nothing here calls `transferUSDC`.
+
+**Restore (item a, the exit).** `TabLedger.cancelHeldAndRestore` cancels a held settlement that owns a clear and writes exactly
+one reversal (`reversal:<settlement>`, unique per workspace), in one transaction guarded on `held`. It runs only when one of three
+proofs is established by code, under the execution lock:
+
+- (i) `NO_EFFECT_ROW`: no effect row exists, so the transfer was never entered and nothing was sent. No adapter call is made. The
+  current code cannot leave a held settlement without an effect row, so this proof is pinned with a state set by hand.
+- (ii) `DEFINITIVE_REVERT`: the stored hash's `confirm()` reports `failed` with `REVERTED` (not any other failure code),
+  `findTransfer` returns null for the order id, and `isOrderSettled` is false. A reverted transaction moved nothing. This proof has
+  no age window (stated: the owner reviews this choice, see the residuals).
+- (iii) `UNKNOWN_NOT_SETTLED_ACKNOWLEDGED`: the hold is `SETTLEMENT_OUTCOME_UNKNOWN`, no hash is recorded anywhere, the effect row
+  was last updated at least 30 minutes ago, `findTransfer` returns null, `isOrderSettled` is false, and the request carries
+  `acknowledgeNotSent: true`.
+
+Every other state is refused with `NOT_PROVABLY_UNSENT` (409), the refusal is audited (`tab.settlement_restore_refused`), and
+nothing changes. A lookup or read that throws refuses; it is never read as "not found" or "not settled". An adapter without
+`isOrderSettled` refuses unless proof (i) applies. A held settlement that owns no clear has nothing to restore (409
+`SETTLEMENT_OWNS_NO_BALANCE`). A repeat on a cancelled settlement returns the stored result and writes nothing.
+`SETTLEMENT_REJECTED` and `SETTLEMENT_REQUEST_CONFLICT` holds are not restorable by this action: they fail closed.
+
+**Residuals, stated.** (iii): a transaction still in a mempool, not yet mined, has no log and no settled order when it is checked.
+If it mines after the 30-minute window it would pay an order whose clear has already been given back, and the next settlement uses
+a new order id, so the contract would not stop it. The 30-minute window and the owner's acknowledgement are the only guards. (ii)
+has no such window, so the same in-flight case is not excluded by time; the proof relies on the stored hash having reverted and on
+the lookup and the contract reading unsettled at the moment of the check. Both are the owner's to accept, and neither is verified
+against a live chain.
+
+**Worker (step d).** Up to five held settlements per tick (`reconcileBatchSize`), held `SETTLEMENT_OUTCOME_UNKNOWN` or
+`SETTLEMENT_FAILED`, that own a clear and were last changed at least five minutes ago (`reconcileAfterMs`). The worker adopts and
+confirms, and touches an unresolved row so it waits its backoff. It never cancels or reverses. It runs while the workspace is
+paused, as order confirmation does (ADR 0023): it reads and confirms, and it cannot pay.
+
+**API (owner only; not MCP tools).** `GET /api/workspaces/:id/tabs/settlements` (held only, at most 50, oldest change first) and
+`POST /api/workspaces/:id/tabs/settlements/:settlementId/resolve` with `action` `reconcile` or `cancel_and_restore` (and
+`acknowledgeNotSent` for the latter). The list's field is `counterpartyId`, as the other tab routes name it. Exposure: resolve is
+`commercial_commitment`, irreversible, owner only, preview; list is `read`. Both are in the registry, the generated OpenAPI, SDK
+and capability files, and `IDEMPOTENT_ROUTES` (resolve). A foreign settlement answers the same 404 as a missing one.
+
+**Tests.** `tests/integration/tab-held-reconcile.test.ts`, `tab-held-restore.test.ts`, `tab-held-worker.test.ts`,
+`tab-held-api.test.ts`, and the held variant of `tab-fuzz.test.ts` (three more seeds; its invariants are that a settlement whose
+transfer moved is never reversed, a reversal exists only for a cancelled settlement that owned a clear, and the balance is charges
+minus clears plus reversals). `tests/unit/arc-is-order-settled.test.ts` pins the Arc read against a stub transport and the local
+simulator's parity. The busy-lock regression was red before the fix. Guards were checked by mutation on a scratch copy (see the
+evidence note in `docs/CONTRACT_SCOPE.md`): each proof, the hash-conflict and effect-hash checks, the lock-free winner path, the
+worker's no-cancel rule, the owner-only list, the workspace scope, and the Arc read's failure behaviour were each removed in turn,
+and a test or the fuzz failed each time.
+
+**REQUIRED BEFORE ANY LIVE ARC RUN OF THE TAB PATH:**
+- (a) An operator route, or a worker re-reconcile, for `held` tab settlements. **Built (LOCAL_PASS).** See the addendum above.
+- (b) The busy-lock case where the original caller's `recordSubmitted` loses the hash. **Built (LOCAL_PASS).** The hash is kept and adopted.
+- (c) A live Arc run of the tab path, on the testnet, with the evidence recorded in `docs/RELEASE_EVIDENCE.md`. **NOT RUN, and still required.**
+
+Not done: a live Arc run (c); a load test; the Anvil suite (not run here); the replenishment pre-check's `CURRENT_DATE`; a mempool
+check for proof (iii) (no adapter can see the mempool); a restore for `SETTLEMENT_REJECTED` holds.
