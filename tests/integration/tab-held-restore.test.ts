@@ -155,6 +155,28 @@ describe("restore refusals: a settlement is restored only when it is provably un
     expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(0n);
   });
 
+  it("(ii) without acknowledgeNotSent a reverted hash is refused with NOT_PROVABLY_UNSENT, and the adapter is not asked", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    const w = await newTabWorkspace("r-ii-noack");
+    created.push(w);
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: CHARGE_MICRO, idempotencyKey: "r-ii-na-c", description: "Dish" });
+    spy.revertSendNext = true;
+    const held = await ledger.settleTab({ workspaceId: w, counterpartyId: cp });
+    if (held.outcome !== "settlement") throw new Error("expected a settlement");
+    const confirmsBefore = spy.confirmCalls.length;
+    const lookupsBefore = spy.settledCalls.length;
+
+    const outcome = await ledger.cancelHeldAndRestore(held.settlementId, { actor: ACTOR, acknowledgeNotSent: false });
+    expect(refused(outcome)).toBe(true);
+    expect(spy.confirmCalls.length).toBe(confirmsBefore);
+    expect(spy.settledCalls.length).toBe(lookupsBefore);
+    expect(await reversalCount(w, held.settlementId)).toBe(0);
+    expect((await settlementsOf(w, cp))[0].status).toBe("held");
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(0n);
+  });
+
   it("(ii) a stored hash that failed with anything other than a revert is not restored", async () => {
     const spy = new TabSpy();
     const ledger = new TabLedger({ settlementFor: () => spy });
@@ -288,7 +310,7 @@ describe("restore allowed cases: one reversal, the balance restored, and a later
     if (first.outcome !== "settlement") throw new Error("expected a settlement");
     expect(first).toMatchObject({ status: "held", holdReason: "SETTLEMENT_FAILED", txHash: expect.any(String) });
 
-    const outcome = await ledger.cancelHeldAndRestore(first.settlementId, { actor: ACTOR, acknowledgeNotSent: false });
+    const outcome = await ledger.cancelHeldAndRestore(first.settlementId, { actor: ACTOR, acknowledgeNotSent: true });
     expect(outcome).toMatchObject({ kind: "cancelled", proof: "DEFINITIVE_REVERT", replayed: false });
     expect(await reversalCount(w, first.settlementId)).toBe(1);
     expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(CHARGE_MICRO);

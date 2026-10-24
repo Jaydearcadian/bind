@@ -1178,7 +1178,11 @@ export class TabLedger {
     }
 
     if (row.tx_hash) {
-      // (ii) The stored hash, asked again: a reverted transaction moved nothing.
+      // (ii) The stored hash, asked again: a reverted transaction moved nothing. Every restore except proof (i) needs the
+      // owner's acknowledgement of the residual risk, so this is checked before any read of the adapter.
+      if (!acknowledgeNotSent) {
+        return { kind: "refused", reason: "the owner has not acknowledged the residual risk (acknowledgeNotSent)" };
+      }
       let outcome: TransferResult;
       try {
         outcome = await adapter.confirm(row.tx_hash);
