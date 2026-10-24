@@ -424,3 +424,118 @@ describe("the end-of-day batch and threshold mode, race-free and starvation-free
     expect(spy.calls).toHaveLength(0);
   });
 });
+
+describe("tab settlements: the rules at the send boundary, pinned (regression guards)", () => {
+  beforeAll(async () => {
+    await runMigrations();
+  });
+
+  afterEach(async () => {
+    setEffectFault(null);
+    await removeWorkspaces(created.splice(0));
+  });
+
+  it("a transport error before the send, then an INVALID_REQUEST refusal on the retry: held, clear kept, no reversal", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    const w = await ws("guard-retry");
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: 20_000n, idempotencyKey: "gr-1", description: "Dish" });
+    spy.throwBeforeSendNext = true;
+    await expect(ledger.settleTab({ workspaceId: w, counterpartyId: cp })).rejects.toThrow(/before the transfer/);
+    const [pending] = await settlementsOf(w, cp);
+    expect(pending.status).toBe("pending");
+    const balanceAfterFirstAttempt = (await ledger.tabBalance(w, cp)).balanceMicro;
+
+    const { SettlementRejectedError } = await import("../../src/adapters/settlement/errors.js");
+    spy.rejectNext = new SettlementRejectedError("INVALID_REQUEST");
+    const outcome = await ledger.executeSettlement(pending.id);
+
+    // The effect row exists (the first attempt entered runEffect), so the pre-send code is not enough to cancel.
+    expect(outcome).toMatchObject({ kind: "held", hold: "SETTLEMENT_REJECTED" });
+    expect((await query(`SELECT COUNT(*)::int AS n FROM tab_entries WHERE workspace_id = $1 AND kind = 'reversal';`, [w])).rows[0].n).toBe(0);
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(balanceAfterFirstAttempt);
+    expect(spy.moved.size).toBe(0);
+    expect((await settlementsOf(w, cp))[0]).toMatchObject({ status: "held", hold_reason: "SETTLEMENT_REJECTED" });
+  });
+
+  it("a completed effect and a gate that now fails: held with the clear kept, one transfer in total, no reversal", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    const w = await ws("guard-completed");
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: 20_000n, idempotencyKey: "gc-1", description: "Dish" });
+    const sent = await ledger.settleTab({ workspaceId: w, counterpartyId: cp });
+    expect(sent).toMatchObject({ outcome: "settlement", status: "confirmed" });
+    const id = sent.outcome === "settlement" ? sent.settlementId : "";
+    // The record was lost after the effect completed: the settlement is pending again, its effect row is completed.
+    await query(`UPDATE tab_settlements SET status = 'pending', tx_hash = NULL, submitted_at = NULL, confirmed_at = NULL, confirmed_block = NULL WHERE id = $1;`, [id]);
+    expect((await query(`SELECT status FROM effects WHERE idempotency_key = $1;`, [`${w}:tab_settle:${id}`])).rows[0].status).toBe("completed");
+    await query(`UPDATE suppliers SET verified = FALSE WHERE id = $1;`, [cp]);
+
+    const outcome = await ledger.executeSettlement(id);
+
+    expect(outcome).toMatchObject({ kind: "held", hold: "SETTLEMENT_OUTCOME_UNKNOWN" });
+    expect(spy.calls).toHaveLength(1);
+    expect(spy.moved.size).toBe(1);
+    expect((await query(`SELECT COUNT(*)::int AS n FROM tab_entries WHERE workspace_id = $1 AND kind = 'reversal';`, [w])).rows[0].n).toBe(0);
+    expect((await ledger.tabBalance(w, cp)).balanceMicro).toBe(0n);
+  });
+
+  it("a lookup that is unavailable leaves the settlement pending, and the retry after it returns finishes it exactly once", async () => {
+    const spy = new TabSpy();
+    const ledger = new TabLedger({ settlementFor: () => spy });
+    const w = await ws("guard-lookup");
+    const cp = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: cp, amountMicro: 20_000n, idempotencyKey: "gl-1", description: "Dish" });
+    // The transfer moved, the result was lost, and the lookup cannot answer.
+    spy.throwAfterSendNext = true;
+    spy.lookupAvailable = false;
+    await expect(ledger.settleTab({ workspaceId: w, counterpartyId: cp })).rejects.toThrow(/transport lost/);
+
+    // While the lookup is unavailable the worker can neither tell whether it was sent nor send again: it fails closed.
+    const whileDown = await runTabSettlementStep(due(ledger));
+    expect(whileDown).toMatchObject({ resumed: 0, cancelled: 0, failed: 1 });
+    const [stillPending] = await settlementsOf(w, cp);
+    expect(stillPending.status).toBe("pending");
+    expect(spy.calls).toHaveLength(1);
+    expect(spy.moved.size).toBe(1);
+    expect((await query(`SELECT COUNT(*)::int AS n FROM tab_entries WHERE workspace_id = $1 AND kind = 'reversal';`, [w])).rows[0].n).toBe(0);
+
+    // The lookup returns: the retry adopts the transfer that moved, confirms it, and nothing is sent again.
+    spy.lookupAvailable = true;
+    const restored = await runTabSettlementStep(due(ledger));
+    expect(restored).toMatchObject({ resumed: 1, confirmed: 1, failed: 0 });
+    await runTabSettlementStep(due(ledger));
+    expect(spy.calls).toHaveLength(1);
+    expect(spy.duplicateCalls).toBe(0);
+    expect((await settlementsOf(w, cp))[0].status).toBe("confirmed");
+  });
+
+  it("in end-of-day mode a tab whose attempt keeps failing does not hold the front of the batch", async () => {
+    const spy = new TabSpy();
+    // The first tab's reserve fails every time, after its attempt was written in the transaction that then rolls back.
+    // It is created first, so it is first in the id order; without a record of the failed attempt it would be first forever.
+    let blocked = "";
+    const ledger = new TabLedger({
+      settlementFor: () => spy,
+      afterBudgetRead: async ({ counterpartyId }) => {
+        if (counterpartyId === blocked) throw new Error("spend decision unavailable (test)");
+      },
+    });
+    const w = await ws("starve-eod");
+    blocked = await newCounterparty(w);
+    const other = await newCounterparty(w);
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: blocked, amountMicro: 20_000n, idempotencyKey: "se-1", description: "Dish" });
+    await ledger.accrueCharge({ workspaceId: w, counterpartyId: other, amountMicro: 20_000n, idempotencyKey: "se-2", description: "Dish" });
+
+    const first = await runTabSettlementStep({ ...due(ledger, { endOfDay: true }), batchSize: 1 });
+    const second = await runTabSettlementStep({ ...due(ledger, { endOfDay: true }), batchSize: 1 });
+
+    expect(first).toMatchObject({ endOfDay: 0, failed: 1 });
+    expect(second).toMatchObject({ endOfDay: 1, failed: 0 });
+    expect((await ledger.tabBalance(w, other)).balanceMicro).toBe(0n);
+    expect((await ledger.tabBalance(w, blocked)).balanceMicro).toBe(20_000n);
+  });
+});
+

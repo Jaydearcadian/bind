@@ -128,7 +128,26 @@ export async function runTabSettlementStep(opts: TabWorkerOptions): Promise<TabW
     } catch (err) {
       counts.failed += 1;
       counts.errors.push(boundedMessage(err));
+      // The attempt rolled back with the failed transaction, so it is recorded here, on its own, to rotate the batch order.
+      await recordFailedAttempt(row.workspace_id, row.counterparty_id);
     }
   }
   return counts;
+}
+
+/**
+ * Records that a tab was attempted and failed, outside any transaction, so the batch order moves past it (a failed reserve
+ * rolls back its own attempt record). A failure here is logged by the caller's error count; it never masks that error.
+ */
+async function recordFailedAttempt(workspaceId: string, counterpartyId: string): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO tab_attempts (workspace_id, counterparty_id, last_attempt_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (workspace_id, counterparty_id) DO UPDATE SET last_attempt_at = NOW();`,
+      [workspaceId, counterpartyId]
+    );
+  } catch {
+    // Ignored on purpose: the failure is already counted and reported.
+  }
 }
