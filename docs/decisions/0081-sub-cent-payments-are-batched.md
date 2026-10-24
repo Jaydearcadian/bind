@@ -80,10 +80,15 @@ proofs is established by code, under the execution lock:
   current code cannot leave a held settlement without an effect row, so this proof is pinned with a state set by hand.
 - (ii) `DEFINITIVE_REVERT`: the stored hash's `confirm()` reports `failed` with `REVERTED` (not any other failure code),
   `findTransfer` returns null for the order id, and `isOrderSettled` is false. A reverted transaction moved nothing. This proof has
-  no age window (stated: the owner reviews this choice, see the residuals).
+  no age window (stated: the owner reviews this choice, see the residuals). Like every proof except (i), it needs
+  `acknowledgeNotSent: true`; without it the answer is refused before the adapter is read.
 - (iii) `UNKNOWN_NOT_SETTLED_ACKNOWLEDGED`: the hold is `SETTLEMENT_OUTCOME_UNKNOWN`, no hash is recorded anywhere, the effect row
   was last updated at least 30 minutes ago, `findTransfer` returns null, `isOrderSettled` is false, and the request carries
   `acknowledgeNotSent: true`.
+
+The write is bound to the state the proof examined: the row must still be held, with the hash the proof read (none for proof
+(iii)). A row that changed between the proof and the write matches nothing; no reversal is written, and the answer is `changed`,
+a 409 `SETTLEMENT_BUSY`. A test-only seam (`afterRestoreProof`, never set in production) pins this.
 
 Every other state is refused with `NOT_PROVABLY_UNSENT` (409), the refusal is audited (`tab.settlement_restore_refused`), and
 nothing changes. A lookup or read that throws refuses; it is never read as "not found" or "not settled". An adapter without
@@ -98,10 +103,20 @@ has no such window, so the same in-flight case is not excluded by time; the proo
 the lookup and the contract reading unsettled at the moment of the check. Both are the owner's to accept, and neither is verified
 against a live chain.
 
-**Worker (step d).** Up to five held settlements per tick (`reconcileBatchSize`), held `SETTLEMENT_OUTCOME_UNKNOWN` or
-`SETTLEMENT_FAILED`, that own a clear and were last changed at least five minutes ago (`reconcileAfterMs`). The worker adopts and
-confirms, and touches an unresolved row so it waits its backoff. It never cancels or reverses. It runs while the workspace is
-paused, as order confirmation does (ADR 0023): it reads and confirms, and it cannot pay.
+**Worker (step d).** Up to five held settlements per tick (`reconcileBatchSize`): `SETTLEMENT_OUTCOME_UNKNOWN` or
+`SETTLEMENT_FAILED` holds that own a clear. A row is due once its last change is one backoff step old. The base step is
+`reconcileAfterMs` (default five minutes). An UNKNOWN hold keeps the base step. A `SETTLEMENT_FAILED` hold that does not resolve
+(for example `EVENT_MISSING`) is attempted on steps of the base times 1, 3, 12, 72 and 288: five minutes, fifteen minutes, an
+hour, six hours, then a day, repeated. Each attempt that leaves the hold in place is counted on the settlement
+(`reconcile_attempts`), so the next attempt waits the next step. The reopen and re-hold audit rows of an attempt are written once
+per step, so the audit grows with the steps, not with the ticks. (Before this backoff a failed hold was reopened every five
+minutes: about 576 audit rows and confirm calls a day.) The worker adopts and confirms; it never cancels or reverses. It runs
+while the workspace is paused, as order confirmation does (ADR 0023): it reads and confirms, and it cannot pay.
+
+**Local simulator restart.** `LocalSettlementSimulator` keeps its transfers in memory. A process restart forgets them, so
+`findTransfer` returns null and `isOrderSettled` returns false for a payment the simulator really made before the restart. Proofs
+(ii) and (iii) can then restore that simulated payment, with the owner's acknowledgement. This is simulated money only. It does
+not apply to Arc, where `findTransfer` and `isOrderSettled` read the chain after a restart.
 
 **API (owner only; not MCP tools).** `GET /api/workspaces/:id/tabs/settlements` (held only, at most 50, oldest change first) and
 `POST /api/workspaces/:id/tabs/settlements/:settlementId/resolve` with `action` `reconcile` or `cancel_and_restore` (and
@@ -109,7 +124,7 @@ paused, as order confirmation does (ADR 0023): it reads and confirms, and it can
 `commercial_commitment`, irreversible, owner only, preview; list is `read`. Both are in the registry, the generated OpenAPI, SDK
 and capability files, and `IDEMPOTENT_ROUTES` (resolve). A foreign settlement answers the same 404 as a missing one.
 
-**Tests.** `tests/integration/tab-held-reconcile.test.ts`, `tab-held-restore.test.ts`, `tab-held-worker.test.ts`,
+**Tests.** `tests/unit/held-responses.test.ts` (every restore outcome's answer, including `changed`). `tests/integration/tab-held-reconcile.test.ts`, `tab-held-restore.test.ts`, `tab-held-worker.test.ts`,
 `tab-held-api.test.ts`, and the held variant of `tab-fuzz.test.ts` (three more seeds; its invariants are that a settlement whose
 transfer moved is never reversed, a reversal exists only for a cancelled settlement that owned a clear, and the balance is charges
 minus clears plus reversals). `tests/unit/arc-is-order-settled.test.ts` pins the Arc read against a stub transport and the local
