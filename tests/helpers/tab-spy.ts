@@ -61,8 +61,37 @@ export class TabSpy implements SettlementAdapter {
   lookupAvailable = true;
   /** When set, findTransfer answers with this hash instead (a duplicate adoption), as CONFIRMED. */
   adoptHash: string | null = null;
+  /** When true, findTransfer throws for every order, including one that never moved (the lookup is down). */
+  lookupDown = false;
+  /** When true, isOrderSettled throws (the contract read is down). */
+  settledReadDown = false;
+  /** When set, isOrderSettled answers this instead of what the spy moved (a contract that disagrees with the spy). */
+  settledOverride: boolean | null = null;
+  /** Every isOrderSettled call, by order id. */
+  readonly settledCalls: string[] = [];
+  /**
+   * When true, the next transfer is recorded as sent and reverts on chain: nothing moves, and confirm() reports it
+   * failed with REVERTED. This is the "definitive failure" of a stored hash (docs/decisions/0081, restore rules).
+   */
+  revertSendNext = false;
+  /**
+   * When set, the next transfer waits for this promise after it is recorded as called and before it moves money. The
+   * busy-lock test uses it to hold one caller's send open while another caller runs.
+   */
+  holdSendNext: Promise<void> | null = null;
 
   private readonly sentHashes = new Set<string>();
+  private readonly revertedHashes = new Set<string>();
+
+  /**
+   * Pass `settledRead: "absent"` to build an adapter with no isOrderSettled, as a third-party adapter may be. The method
+   * is removed for that instance only, so the ledger must treat it as unavailable.
+   */
+  constructor(opts: { settledRead?: "absent" } = {}) {
+    if (opts.settledRead === "absent") {
+      (this as unknown as Record<string, unknown>).isOrderSettled = undefined;
+    }
+  }
 
   async getBalance(): Promise<bigint> {
     return 1_000_000_000n;
@@ -92,8 +121,19 @@ export class TabSpy implements SettlementAdapter {
       return this.result(previous.txHash, "submitted");
     }
     const txHash = `0x${crypto.createHash("sha256").update(`${req.idempotencyKey}:${this.calls.length}`).digest("hex")}`;
-    this.moved.set(req.orderId, { txHash, amountCents: req.amountCents, idempotencyKey: req.idempotencyKey });
     this.sentHashes.add(txHash);
+    if (this.revertSendNext) {
+      // Sent, mined, reverted: the hash is real, nothing moved, and confirm() says so.
+      this.revertSendNext = false;
+      this.revertedHashes.add(txHash);
+      return this.result(txHash, "submitted");
+    }
+    if (this.holdSendNext) {
+      const gate = this.holdSendNext;
+      this.holdSendNext = null;
+      await gate;
+    }
+    this.moved.set(req.orderId, { txHash, amountCents: req.amountCents, idempotencyKey: req.idempotencyKey });
     if (this.throwAfterSendNext) {
       this.throwAfterSendNext = false;
       throw new Error("transport lost after the transfer was sent");
@@ -102,11 +142,20 @@ export class TabSpy implements SettlementAdapter {
   }
 
   async findTransfer(req: { orderId: string }): Promise<TransferResult | null> {
+    if (this.lookupDown) throw new Error("lookup: rpc unreachable");
     if (this.adoptHash) return this.result(this.adoptHash, "confirmed");
     const moved = this.moved.get(req.orderId);
     if (!moved) return null;
     if (!this.lookupAvailable) throw new Error("lookup unavailable");
     return this.result(moved.txHash, "confirmed");
+  }
+
+  /** What the contract's settledOrders says: true exactly when a transfer for the order moved money (or the override says so). */
+  async isOrderSettled(orderId: string): Promise<boolean> {
+    this.settledCalls.push(orderId);
+    if (this.settledReadDown) throw new Error("settled read: rpc unreachable");
+    if (this.settledOverride !== null) return this.settledOverride;
+    return this.moved.has(orderId);
   }
 
   async confirm(txHash: string): Promise<TransferResult> {
@@ -124,6 +173,7 @@ export class TabSpy implements SettlementAdapter {
       submittedAuditRows: audit.rows[0].n,
     });
     if (!this.sentHashes.has(txHash)) return this.result(txHash, "submitted");
+    if (this.revertedHashes.has(txHash)) return this.result(txHash, "failed", "REVERTED");
     if (this.confirmMode === "throws") throw new Error("confirm: rpc unreachable");
     if (this.confirmMode === "failed") return this.result(txHash, "failed", "REVERTED");
     if (this.confirmMode === "submitted") return this.result(txHash, "submitted");

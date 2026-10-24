@@ -32,6 +32,12 @@ export interface SettlementAdapter {
    * Optional: an adapter without it cannot reconcile a transfer whose outcome is unknown.
    */
   findTransfer?(req: { orderId: string }): Promise<TransferResult | null>;
+  /**
+   * Whether the settlement contract has settled this order id (a read; it sends nothing). Throws when the answer is
+   * unknown, for example an RPC failure: it never answers false for that. Optional. The tab ledger needs it to restore a
+   * held settlement whose outcome is unknown (docs/decisions/0081). An adapter without it cannot restore one.
+   */
+  isOrderSettled?(orderId: string): Promise<boolean>;
   depositEscrow(req: TransferRequest, milestoneId: string): Promise<TransferResult>;
   releaseEscrow(milestoneId: string, toAddress: string): Promise<TransferResult>;
 }

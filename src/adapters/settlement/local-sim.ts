@@ -57,6 +57,11 @@ export class LocalSettlementSimulator implements SettlementAdapter {
     return result;
   }
 
+  /** True when a transfer was remembered for this order id: the memory the transfer itself was recorded in. */
+  async isOrderSettled(orderId: string): Promise<boolean> {
+    return this.transfersByOrder.has(orderId);
+  }
+
   /** The transfer remembered for this order id, or null. Only in-process memory: a restart forgets it. */
   async findTransfer(req: { orderId: string }): Promise<TransferResult | null> {
     return this.transfersByOrder.get(req.orderId) ?? null;

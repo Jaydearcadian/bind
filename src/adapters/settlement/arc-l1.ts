@@ -318,6 +318,30 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
     return this.#result(log.transactionHash, "confirmed", log.blockNumber === null ? {} : { blockNumber: Number(log.blockNumber) });
   }
 
+  /**
+   * Reads the contract's `settledOrders` mapping for the order id, as `transferUSDC` computes it. A read only: nothing is
+   * sent. The chain id is checked first, as the other reads do. Any failed read throws; a failure is never `false`.
+   */
+  async isOrderSettled(orderId: string): Promise<boolean> {
+    const contractAddress = this.#contractAddress();
+    await this.#assertChain();
+    let settled: unknown;
+    try {
+      settled = await this.#publicClient.readContract({
+        address: contractAddress,
+        abi: BIND_SETTLEMENT_ABI,
+        functionName: "settledOrders",
+        args: [keccak256(toHex(orderId))],
+      });
+    } catch (error) {
+      throw transportErrorFrom("settled order read", error, this.#secrets());
+    }
+    if (typeof settled !== "boolean") {
+      throw new SettlementTransportError("settled order read", "the contract returned no boolean");
+    }
+    return settled;
+  }
+
   async depositEscrow(_req: TransferRequest, _milestoneId: string): Promise<TransferResult> {
     throw new SettlementNotSupportedError("depositEscrow");
   }
