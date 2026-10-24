@@ -58,6 +58,8 @@ export interface TickReport {
     held: number;
     cancelled: number;
     endOfDay: number;
+    /** Held settlements the worker adopted or re-opened and confirmed (docs/decisions/0081, item a). Never cancelled here. */
+    reconciled: number;
     failed: number;
   };
   /** `skipped` is true when the sweep did not run: it is off, or its lock was busy. */
@@ -92,7 +94,7 @@ export interface TickOptions {
    * Tab settlements (docs/decisions/0081). `endOfDay` runs the once-a-UTC-day batch and is on by default. `settleOnThreshold`
    * settles a tab as soon as it holds one cent and is off by default. `ledger` is the tab ledger to use (tests inject one).
    */
-  tabs?: { endOfDay?: boolean; settleOnThreshold?: boolean; ledger?: TabLedger };
+  tabs?: { endOfDay?: boolean; settleOnThreshold?: boolean; ledger?: TabLedger; reconcileAfterMs?: number; reconcileBatchSize?: number };
 }
 
 export interface WorkerOptions extends TickOptions {
@@ -135,7 +137,7 @@ function emptyReport(): TickReport {
     recovery: { skipped: false, recovered: 0, failed: 0, inDoubt: 0 },
     settlementPoll: { skipped: false, polled: 0, finished: 0, pending: 0, held: 0, failed: 0 },
     stuckSettling: { skipped: false, toSubmitted: 0, toHold: 0, failed: 0 },
-    tabSettlements: { skipped: false, resumed: 0, confirmed: 0, held: 0, cancelled: 0, endOfDay: 0, failed: 0 },
+    tabSettlements: { skipped: false, resumed: 0, confirmed: 0, held: 0, cancelled: 0, endOfDay: 0, reconciled: 0, failed: 0 },
     restockSweep: { skipped: false, started: 0, failed: 0 },
     idempotencySweep: { skipped: false, removed: 0 },
     demoExpiry: { skipped: false, removed: 0, failed: 0 },
@@ -165,6 +167,8 @@ function resolved(opts: TickOptions) {
       endOfDay: opts.tabs?.endOfDay ?? true,
       settleOnThreshold: opts.tabs?.settleOnThreshold ?? false,
       ledger: opts.tabs?.ledger ?? tabLedger,
+      reconcileAfterMs: opts.tabs?.reconcileAfterMs,
+      reconcileBatchSize: opts.tabs?.reconcileBatchSize,
     },
   };
 }
@@ -209,12 +213,15 @@ async function tabSettlementsStep(cfg: Resolved, report: TickReport): Promise<vo
     batchSize: cfg.batchSize,
     now: cfg.now,
     ledger: cfg.tabs.ledger,
+    reconcileAfterMs: cfg.tabs.reconcileAfterMs,
+    reconcileBatchSize: cfg.tabs.reconcileBatchSize,
   });
   report.tabSettlements.resumed = counts.resumed;
   report.tabSettlements.confirmed = counts.confirmed;
   report.tabSettlements.held = counts.held;
   report.tabSettlements.cancelled = counts.cancelled;
   report.tabSettlements.endOfDay = counts.endOfDay;
+  report.tabSettlements.reconciled = counts.reconciled;
   report.tabSettlements.failed = counts.failed;
   for (const message of counts.errors) {
     report.errors.push({ step: "tab_settlements", error: redactText(message).slice(0, ERROR_LIMIT) });

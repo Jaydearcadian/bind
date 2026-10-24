@@ -10,9 +10,12 @@ import { tabLedger, type TabLedger } from "./ledger.js";
  *   (b) confirm settlements left `submitted`, one confirmation per settlement, after the confirmation interval.
  *   (c) settle tabs that are due: by default once per UTC day per counterparty (the end-of-day batch), or, when the
  *       settle-on-threshold option is set, every tick a tab holds at least one cent.
+ *   (d) reconcile held settlements that own a clear and may have been sent (docs/decisions/0081, item a). Adoption only:
+ *       the hash is found and confirmed through TabLedger.reconcileHeld. The worker never cancels or reverses.
  *
  * Nothing here calls a transfer except through TabLedger.executeSettlement, which runs the effects ledger. A paused
- * workspace is never sent to: its tabs are not picked for (c), and the ledger refuses (a) while it is paused.
+ * workspace is never sent to: its tabs are not picked for (c), and the ledger refuses (a) while it is paused. Step (d)
+ * runs while paused, as order confirmation does (ADR 0023): it only reads and confirms, and it never pays.
  */
 
 export interface TabWorkerOptions {
@@ -24,6 +27,10 @@ export interface TabWorkerOptions {
   staleAfterMs: number;
   /** A submitted settlement is confirmed by (b) once its last poll is this old. */
   confirmAfterMs: number;
+  /** A held settlement is reconciled by (d) once its last change is this old. Default 5 minutes. */
+  reconcileAfterMs?: number;
+  /** At most this many held settlements are reconciled per tick by (d). Default 5. */
+  reconcileBatchSize?: number;
   batchSize: number;
   now: Date;
   ledger?: TabLedger;
@@ -35,12 +42,17 @@ export interface TabWorkerCounts {
   held: number;
   cancelled: number;
   endOfDay: number;
+  /** Held settlements that step (d) adopted or re-opened. */
+  reconciled: number;
   failed: number;
   errors: string[];
 }
 
+const DEFAULT_RECONCILE_AFTER_MS = 5 * 60 * 1000;
+const DEFAULT_RECONCILE_BATCH = 5;
+
 export function emptyTabCounts(): TabWorkerCounts {
-  return { resumed: 0, confirmed: 0, held: 0, cancelled: 0, endOfDay: 0, failed: 0, errors: [] };
+  return { resumed: 0, confirmed: 0, held: 0, cancelled: 0, endOfDay: 0, reconciled: 0, failed: 0, errors: [] };
 }
 
 
@@ -86,6 +98,34 @@ export async function runTabSettlementStep(opts: TabWorkerOptions): Promise<TabW
       const outcome = await ledger.confirmSettlement(row.id);
       if (outcome.kind === "confirmed") counts.confirmed += 1;
       else if (outcome.kind === "held") counts.held += 1;
+    } catch (err) {
+      counts.failed += 1;
+      counts.errors.push(boundedMessage(err));
+    }
+  }
+
+  // (d) Held settlements that own a clear. The ledger adopts a hash it can show and confirms it; a settlement it cannot resolve
+  // stays held and is touched, so the next attempt waits its backoff. Nothing here cancels or reverses (ADR 0081).
+  // SETTLEMENT_REQUEST_CONFLICT is not listed: a changed request is a person's decision, not a retry's.
+  const reconcileBefore = new Date(opts.now.getTime() - (opts.reconcileAfterMs ?? DEFAULT_RECONCILE_AFTER_MS));
+  const heldRows = await query(
+    `SELECT t.id FROM tab_settlements t
+     WHERE t.status = 'held' AND t.hold_reason IN ('SETTLEMENT_OUTCOME_UNKNOWN', 'SETTLEMENT_FAILED') AND t.updated_at <= $1
+       AND EXISTS (SELECT 1 FROM tab_entries e WHERE e.settlement_id = t.id AND e.kind = 'clear')
+     ORDER BY t.updated_at ASC, t.id ASC LIMIT $2;`,
+    [reconcileBefore, opts.reconcileBatchSize ?? DEFAULT_RECONCILE_BATCH]
+  );
+  for (const row of heldRows.rows) {
+    try {
+      const outcome = await ledger.reconcileHeld(row.id);
+      if (outcome.kind === "adopted") {
+        counts.reconciled += 1;
+        if (outcome.status === "confirmed") counts.confirmed += 1;
+        else if (outcome.status === "held") counts.held += 1;
+      } else if (outcome.kind !== "busy" && outcome.kind !== "current") {
+        // Still unresolved: record the attempt on the row so the next one waits its backoff.
+        await query(`UPDATE tab_settlements SET updated_at = NOW() WHERE id = $1 AND status = 'held';`, [row.id]);
+      }
     } catch (err) {
       counts.failed += 1;
       counts.errors.push(boundedMessage(err));
