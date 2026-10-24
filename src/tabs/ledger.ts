@@ -10,6 +10,7 @@ import { effectiveSettlementMode } from "../demo/policy.js";
 import { spendStatusesSql } from "../orders/statuses.js";
 import { spendLockKey } from "../orders/reservation.js";
 import { UTC_DAY_START_SQL, utcDayStart } from "../utils/utc-day.js";
+import { TAB_SPEND_TODAY_CENTS_SQL } from "./spend-sql.js";
 import { newId } from "../utils/ids.js";
 import { log } from "../observability/logger.js";
 import { currentRequestId } from "../observability/request-context.js";
@@ -167,7 +168,7 @@ export interface TabLedgerDeps {
    * Test seam: runs inside a reserve transaction after the committed spend is read, before anything is written. The
    * budget race test uses it to hold every reserve at the same point. Not set in production.
    */
-  afterBudgetRead?: () => Promise<void>;
+  afterBudgetRead?: (at: { workspaceId: string; counterpartyId: string }) => Promise<void>;
 }
 
 /** How long a reserve waits for the workspace spend lock. A busy lock is refused, never skipped. */
@@ -196,14 +197,9 @@ async function balanceOf(db: Db, workspaceId: string, counterpartyId: string): P
  */
 export async function committedSpendTodayCents(db: Db, workspaceId: string): Promise<bigint> {
   const res = await db.query(
-    `SELECT (
-        COALESCE((SELECT SUM(total_price_cents) FROM orders
-                  WHERE workspace_id = $1 AND created_at >= ${UTC_DAY_START_SQL} AND status IN (${spendStatusesSql()})), 0)
-      + COALESCE((SELECT SUM(t.amount_cents) FROM tab_settlements t
-                  WHERE t.workspace_id = $1 AND t.created_at >= ${UTC_DAY_START_SQL}
-                    AND t.status IN ('pending', 'submitted', 'confirmed', 'held')
-                    AND EXISTS (SELECT 1 FROM tab_entries e WHERE e.settlement_id = t.id AND e.kind = 'clear')), 0)
-     )::text AS spent;`,
+    `SELECT ((SELECT COALESCE(SUM(total_price_cents), 0) FROM orders
+               WHERE workspace_id = $1 AND created_at >= ${UTC_DAY_START_SQL} AND status IN (${spendStatusesSql()}))
+             + ${TAB_SPEND_TODAY_CENTS_SQL})::text AS spent;`,
     [workspaceId]
   );
   return BigInt(res.rows[0].spent);
@@ -357,7 +353,7 @@ function rejectionCodeOf(err: unknown): string | null {
 export class TabLedger {
   private readonly settlementFor: (mode: string) => SettlementAdapter;
 
-  private readonly afterBudgetRead?: () => Promise<void>;
+  private readonly afterBudgetRead?: (at: { workspaceId: string; counterpartyId: string }) => Promise<void>;
 
   constructor(deps: TabLedgerDeps = {}) {
     this.afterBudgetRead = deps.afterBudgetRead;
@@ -623,7 +619,7 @@ export class TabLedger {
 
       // One lock covers the budget check and the write: the spend lock is held by the caller (reserveSettlement).
       const spent = await committedSpendTodayCents(client, ws);
-      if (this.afterBudgetRead) await this.afterBudgetRead();
+      if (this.afterBudgetRead) await this.afterBudgetRead({ workspaceId: ws, counterpartyId: cpId });
       const dailyLimitCents = BigInt(workspace.budget_daily_limit_cents);
       if (spent + chunk > dailyLimitCents) {
         await auditOncePerDay(client, ws, actor, "tab.settlement_refused", PolicyDecision.DENY, {

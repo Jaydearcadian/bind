@@ -1,6 +1,7 @@
 import { query } from "../db/client.js";
 import { spendStatusesSql } from "../orders/statuses.js";
 import { UTC_DAY_START_SQL } from "../utils/utc-day.js";
+import { TAB_SPEND_TODAY_CENTS_SQL } from "../tabs/spend-sql.js";
 import { PolicyEngine } from "./engine.js";
 import { PolicyDecision } from "./types.js";
 
@@ -193,13 +194,14 @@ export async function loadCommitmentFacts(input: CommitmentInput): Promise<Commi
   );
   // Spend counts orders from the spend-counting statuses today. The workflow's own order is excluded so a
   // re-check never counts the commitment it is deciding.
+  // Tab settlements that own a clear count too (ADR 0081), so order and tab spend are one daily sum on both sides.
   const spendRes = await query(
-    `SELECT COALESCE(SUM(total_price_cents), 0) AS spent
-     FROM orders
-     WHERE workspace_id = $1
-       AND created_at >= ${UTC_DAY_START_SQL}
-       AND status IN (${spendStatusesSql()})
-       AND id <> $2;`,
+    `SELECT ((SELECT COALESCE(SUM(total_price_cents), 0)
+              FROM orders
+              WHERE workspace_id = $1
+                AND created_at >= ${UTC_DAY_START_SQL}
+                AND status IN (${spendStatusesSql()})
+                AND id <> $2) + ${TAB_SPEND_TODAY_CENTS_SQL})::text AS spent;`,
     [input.workspaceId, `ord_${input.workflowId}`]
   );
 
