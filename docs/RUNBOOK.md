@@ -61,7 +61,7 @@ variable.
 | `NEBIUS_API_KEY`, `NEBIUS_MODEL` | For `arc-testnet` replenishment | An `arc-testnet` replenishment fails with `INVARIANT_10_BLOCKED`; local workspaces take the offline path | Read directly from `process.env` (`src/workflows/procurement.ts`). Default model `nousresearch/Hermes-4-405B`. |
 | `PARALLEL_API_KEY`, `TAVILY_API_KEY` | No | A deterministic offline reference is returned (`integrationMode: OFFLINE_DETERMINISTIC_FALLBACK`), not a live price | Read directly from `process.env` (`src/adapters/marketBenchmark.ts`). Do not treat that reference as a market price. |
 | `TYPESAFE_API_KEY`, `TYPESAFE_API_URL`, `TYPESAFE_JEV_MODEL` | No | The external scorer is not called | Read directly from `process.env` (`src/domain/jevScorer.ts`). |
-| `ENABLE_LIVE_CIRCLE_CLI`, `CIRCLE_AGENT_WALLET_ADDRESS` | No | The live Circle CLI is not used | Read by `src/adapters/circleAgentStack.ts`. |
+| `ENABLE_LIVE_CIRCLE_CLI`, `CIRCLE_AGENT_WALLET_ADDRESS` | No | The live Circle CLI is not used | Read by `src/adapters/circleAgentStack.ts`, for a read-only vendor allowlist query only. No value moves through the Circle CLI (ADR 0085). |
 | `SURFACE_PROVIDER_VERIFIED` | No | A surface binding cannot be stored as `verified` | Any non-empty value allows `verified`. Set it only after the provider is verified outside Bind (`src/adapters/socialSurface.ts`). |
 | `BIND_ARTIFACTS_DIR`, `WORKFLOW_ARTIFACTS_DIR`, `TEMPLATES_ARTIFACTS_DIR` | No | Files go under the working directory; on Vercel, `/tmp/bind-artifacts` | `src/utils/artifacts.ts`. Derived output only. |
 | `SETTLEMENT_MODE` | No | `local` | Read only as the default of `getSettlementAdapter()`, which no caller uses without an argument. The mode that counts is each workspace's `settlement_mode`. |
