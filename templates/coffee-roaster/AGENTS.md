@@ -12,11 +12,7 @@
 2. Never report `SIMULATED_SUPPLIER_ADAPTER` quotes as live EDI/API integrations.
 3. Keep Arc Testnet USDC settlement status strictly separated from physical warehouse receiving and 3-way match verification.
 
-## Circle Agent Stack on Arc L1 (`ARC-TESTNET`) Execution Rules
-1. **Dual-Layer Policy Enforcement:**
-   - Off-chain wallet limits on Circle Agent Stack require mainnet; therefore, on **Arc Testnet (`ARC-TESTNET`, Chain ID `5042002`)**, deterministic spending authority is enforced on-chain by **`BindSettlement.sol` (`0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29`)**.
-2. **Circle CLI Pre-Flight:**
-   - Query vendor whitelist status via `circle contract query "whitelistedVendors(address)(bool)" <vendor> --contract 0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29 --chain ARC-TESTNET`.
-3. **Circle CLI Settlement Execution:**
-   - Execute approved settlements via `circle wallet execute` targeting `0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29` on `--chain ARC-TESTNET`.
-   - Record the exact `circle` CLI command, the `decisionHash`, the LangSmith trace link, and the resulting Arcscan transaction hash in the decision record.
+## Settlement on Arc L1 (`ARC-TESTNET`) Rules
+1. **Policy Is Enforced Outside You:** On Arc Testnet (`ARC-TESTNET`, Chain ID `5042002`), spending authority is enforced by Bind's deterministic policy code and on-chain by **`BindSettlement.sol` (`0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29`)**. Your reasoning never authorizes a payment.
+2. **Vendor Allowlist Check:** Bind's code reads the vendor's whitelist status. You may report the result. You do not run any command to check it.
+3. **Settlement Is Not Yours to Run:** Settlement is performed only by Bind's settlement adapter, through the effects ledger and the commitment gate, after the policy decision. You never run, print or suggest a wallet, contract-write or payment command. Record the `decisionHash` and the workflow state; the settlement status comes from the ledger, not from you.

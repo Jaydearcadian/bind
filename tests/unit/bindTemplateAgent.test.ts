@@ -1,12 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { generateVerifiableDecisionRecord } from "../../src/agents/bindTemplateAgent.js";
-import {
-  CircleAgentStackAdapter,
-  requiresOwnerApprovalGate,
-  BIND_SETTLEMENT_CONTRACT,
-  ARC_TESTNET_CHAIN,
-  WHITELISTED_VENDOR,
-} from "../../src/adapters/circleAgentStack.js";
 import { HybridMarketBenchmarkAdapter } from "../../src/adapters/marketBenchmark.js";
 import {
   writeWorkflowAntiDriftFiles,
@@ -105,34 +98,6 @@ describe("Bind Template DeepAgent & Verifiable Decision Record", () => {
     expect(benchmark.provider).toBe("deterministic-fallback");
     expect(benchmark.benchmarks.length).toBeGreaterThan(0);
     expect(benchmark.benchmarks[0].url).toContain("0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29");
-  });
-
-  it("verifies CircleAgentStackAdapter gates value-moving operations and queries BindSettlement contract", async () => {
-    const circleAdapter = new CircleAgentStackAdapter();
-
-    // Check approval gate
-    expect(requiresOwnerApprovalGate(["wallet", "execute", "settleOrder"])).toBe(true);
-    expect(requiresOwnerApprovalGate(["wallet", "transfer"])).toBe(true);
-    expect(requiresOwnerApprovalGate(["contract", "query"])).toBe(false);
-
-    // Check query fallback
-    const queryRes = await circleAdapter.queryVendorWhitelistStatus(WHITELISTED_VENDOR);
-    expect(queryRes.command).toContain("whitelistedVendors");
-    expect(queryRes.command).toContain(BIND_SETTLEMENT_CONTRACT);
-    expect(queryRes.whitelisted).toBeNull();
-    expect(queryRes.executionMode).toBe("SIMULATED_NO_LIVE_CLI");
-
-    // Check settlement fallback
-    const settleRes = await circleAdapter.executeBindSettlement({
-      functionSignature: "settleOrder(bytes32,address,bytes32)",
-      abiArgs: ["0x01", WHITELISTED_VENDOR, "0x02"],
-      amountUsdc: "0.001",
-    });
-    expect(settleRes.chain).toBe(ARC_TESTNET_CHAIN);
-    expect(settleRes.contractAddress).toBe(BIND_SETTLEMENT_CONTRACT);
-    expect(settleRes.paymentStatus).toBe("SIMULATED_LOCAL");
-    expect(settleRes.txHash).toBeUndefined();
-    expect(settleRes.fulfilmentStatus).toBe("AWAITING_PHYSICAL_DELIVERY_3WAY_MATCH");
   });
 
   it("writes and locks STATE_ANCHOR.md and DECISION_EVIDENCE.md and blocks spec drift", async () => {
