@@ -515,11 +515,13 @@ describe.skipIf(!RUN_ARC)("[arc-anvil] Arc protocol differences", () => {
     const nonceBefore = await client.getTransactionCount({ address: ownerAddress() });
     const zeroBefore = await client.getBalance({ address: ZERO_ADDRESS });
 
-    // The contract reverts Unauthorized for a zero supplier. The adapter's pre-flight call sees that revert and refuses
-    // before any send, so this should be a SettlementRejectedError carrying the decoded name.
+    // ADR 0087: the adapter refuses a zero-address recipient itself, before any RPC call, with ZERO_ADDRESS_RECIPIENT.
+    // (Before that change the refusal came from the contract's own Unauthorized revert at the pre-flight call; the
+    // contract check is still there as a second line of defence, but the adapter now never gets that far.)
+    // The chain-effect assertions below are unchanged: no log, no nonce change, no balance change.
     const error = await rejectionOf(ctx.adapter.transferUSDC(settleRequest({ toAddress: ZERO_ADDRESS })));
     expect(error).toBeInstanceOf(SettlementRejectedError);
-    expect(error.code).toBe("Unauthorized");
+    expect(error.code).toBe("ZERO_ADDRESS_RECIPIENT");
 
     expect(await settlementLogs(ctx)).toHaveLength(0);
     expect(await client.getTransactionCount({ address: ownerAddress() })).toBe(nonceBefore);
