@@ -33,6 +33,8 @@ import type { EvidenceLoader, ReconcileResult } from "./settlement.js";
 export interface ProcurementRunnerDeps {
   settlementFor?: (mode: string) => SettlementAdapter;
   supplierFor?: (id: string) => SupplierAdapter;
+  /** How long a submitted transfer must be unseen before it may be called dropped (docs/decisions/0087). Default 120 seconds. */
+  droppedAfterMs?: number;
 }
 
 export type { ReconcileResult } from "./settlement.js";
@@ -92,7 +94,7 @@ export class ProcurementWorkflowRunner {
     this.settlementFor =
       deps.settlementFor ?? ((mode: string) => getSettlementAdapter(mode as "local" | "arc-testnet"));
     this.supplierFor = deps.supplierFor ?? getSupplierAdapter;
-    this.settlement = new OrderSettlementService({ settlementFor: this.settlementFor });
+    this.settlement = new OrderSettlementService({ settlementFor: this.settlementFor, droppedAfterMs: deps.droppedAfterMs });
   }
 
   /**

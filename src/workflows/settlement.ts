@@ -7,6 +7,7 @@ import { EffectClass } from "../policy/effect-classifier.js";
 import { EffectInDoubtError, runEffect } from "../effects/ledger.js";
 import type { SettlementAdapter, TransferResult } from "../adapters/settlement/types.js";
 import { SettlementRejectedError } from "../adapters/settlement/errors.js";
+import { DROPPED_AFTER_MS, assessDropped } from "../adapters/settlement/dropped.js";
 import { evaluateThreeWayMatch, MatchStatus } from "../accounting/three-way-match.js";
 import { recordIdempotentJournalEntry } from "../accounting/journal.js";
 import { writeWorkflowAntiDriftFiles } from "../agents/antiDriftWriter.js";
@@ -33,6 +34,8 @@ export type ReconcileHold =
   | "SETTLEMENT_REJECTED"
   | "SETTLEMENT_FAILED"
   | "SETTLEMENT_OUTCOME_UNKNOWN"
+  /** The node does not know the transfer and no lookup finds it (docs/decisions/0087, item 5). Never re-sent. */
+  | "SETTLEMENT_DROPPED"
   | "AGENTS_PAUSED";
 
 /** The statuses a settlement claim can take the order from; the claim restores the one it replaced. */
@@ -96,14 +99,15 @@ export type EvidenceLoader = (order: any) => Promise<
 type TransferOutcome =
   | { kind: "confirmed"; timestamp: Date; blockNumber?: number }
   | { kind: "failed"; failureCode?: string }
-  | { kind: "unconfirmed" };
+  /** `notFoundOnNode`: the adapter's evidence that the node does not know the hash (docs/decisions/0087, item 5). */
+  | { kind: "unconfirmed"; notFoundOnNode?: boolean };
 
 function outcomeOf(result: TransferResult): TransferOutcome {
   if (result.status === "confirmed") {
     return { kind: "confirmed", timestamp: result.timestamp, blockNumber: result.blockNumber };
   }
   if (result.status === "failed") return { kind: "failed", failureCode: result.failureCode };
-  return { kind: "unconfirmed" };
+  return result.notFoundOnNode === true ? { kind: "unconfirmed", notFoundOnNode: true } : { kind: "unconfirmed" };
 }
 
 /** The part of a pg client that the settlement writes use; the transaction helper passes a PoolClient. */
@@ -146,9 +150,11 @@ async function insertSettlementAudit(
 export class OrderSettlementService {
   private workflowEngine = new WorkflowEngine();
   private readonly settlementFor: (mode: string) => SettlementAdapter;
+  private readonly droppedAfterMs: number;
 
-  constructor(deps: { settlementFor: (mode: string) => SettlementAdapter }) {
+  constructor(deps: { settlementFor: (mode: string) => SettlementAdapter; droppedAfterMs?: number }) {
     this.settlementFor = deps.settlementFor;
+    this.droppedAfterMs = deps.droppedAfterMs ?? DROPPED_AFTER_MS;
   }
 
   /**
@@ -401,6 +407,38 @@ export class OrderSettlementService {
       }
     }
 
+    if (outcome.kind === "unconfirmed" && outcome.notFoundOnNode === true) {
+      // The node does not know the hash. Dropped only when every condition of the shared rule holds (docs/decisions/0087, item 5).
+      const verdict = await assessDropped(adapter, {
+        orderId: order.id,
+        ageMs: await this.submittedAgeMs(order.id),
+        afterMs: this.droppedAfterMs,
+        notFoundOnNode: true,
+      });
+      if (verdict.kind === "dropped") {
+        // Held with its hash. Nothing is sent again: an operator's settle replays the stored effect, and the hash is kept.
+        await this.holdClaim(order, "settlement.dropped", {
+          orderId: order.id,
+          hold: "SETTLEMENT_DROPPED",
+          txHash: order.tx_hash,
+        });
+        return { status: await this.matchStatusOf(order.id), reconciled: false, txHash: order.tx_hash, hold: "SETTLEMENT_DROPPED" };
+      }
+      if (verdict.kind === "found" && verdict.result.status === "confirmed") {
+        // The lookup found the transfer: adopt its hash (guarded), and finish from its confirmed outcome.
+        const found = verdict.result;
+        if (found.txHash.toLowerCase() !== String(order.tx_hash).toLowerCase()) {
+          const adopted = await this.writeAdoptedHash(order, found, "settlement.found_transfer_adopted");
+          if (!adopted) {
+            await this.releaseClaim(order.id, "settlement_submitted");
+            return this.awaitingResult(order.id, order.tx_hash);
+          }
+        }
+        settledHash = found.txHash;
+        outcome = { kind: "confirmed", timestamp: found.timestamp, blockNumber: found.blockNumber };
+      }
+    }
+
     if (outcome.kind === "failed") {
       await this.holdClaim(order, "settlement.failed", {
         orderId: order.id,
@@ -462,7 +500,17 @@ export class OrderSettlementService {
     const confirmed = found;
     if (confirmed.txHash.toLowerCase() === String(order.tx_hash).toLowerCase()) return null;
 
-    const adopted = await withTransaction(async (client) => {
+    const adopted = await this.writeAdoptedHash(order, confirmed, "settlement.reverted_duplicate_adopted");
+    return adopted ? confirmed : null;
+  }
+
+  /**
+   * Moves a claimed order's stored hash to a confirmed transfer the adapter found for the order, with the effect row's
+   * external ref and one audit row, in one transaction. Guarded on `settling` and on the hash read, so a row that changed
+   * between the read and the write is not touched. Returns false when the guard did not match.
+   */
+  private async writeAdoptedHash(order: any, confirmed: TransferResult, action: string): Promise<boolean> {
+    return withTransaction(async (client) => {
       const upd = await client.query(
         `UPDATE orders SET tx_hash = $2, updated_at = NOW() WHERE id = $1 AND status = 'settling' AND tx_hash = $3;`,
         [order.id, confirmed.txHash, order.tx_hash]
@@ -475,14 +523,25 @@ export class OrderSettlementService {
       await insertSettlementAudit(
         client,
         order.workspace_id,
-        "settlement.reverted_duplicate_adopted",
+        action,
         PolicyDecision.ALLOW,
         { orderId: order.id, revertedTxHash: order.tx_hash, adoptedTxHash: confirmed.txHash },
         confirmed.txHash
       );
       return true;
     });
-    return adopted ? confirmed : null;
+  }
+
+  /**
+   * The age of a submitted transfer, from the database clock, for the dropped rule. Null when the order has no submit time.
+   */
+  private async submittedAgeMs(orderId: string): Promise<number | null> {
+    const res = await query(
+      `SELECT EXTRACT(EPOCH FROM (NOW() - settlement_submitted_at)) * 1000 AS age_ms FROM orders WHERE id = $1;`,
+      [orderId]
+    );
+    const age = res.rows[0]?.age_ms;
+    return age === null || age === undefined ? null : Number(age);
   }
 
   private async matchStatusOf(orderId: string): Promise<MatchStatus> {
