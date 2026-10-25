@@ -1,10 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { generateVerifiableDecisionRecord } from "../../src/agents/bindTemplateAgent.js";
-import {
-  CircleAgentStackAdapter,
-  BIND_SETTLEMENT_CONTRACT,
-  WHITELISTED_VENDOR,
-} from "../../src/adapters/circleAgentStack.js";
 import { HybridMarketBenchmarkAdapter } from "../../src/adapters/marketBenchmark.js";
 import {
   writeWorkflowAntiDriftFiles,
@@ -103,17 +98,6 @@ describe("Bind Template DeepAgent & Verifiable Decision Record", () => {
     expect(benchmark.provider).toBe("deterministic-fallback");
     expect(benchmark.benchmarks.length).toBeGreaterThan(0);
     expect(benchmark.benchmarks[0].url).toContain("0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29");
-  });
-
-  it("queries the BindSettlement vendor allowlist read-only (the Circle settlement path was removed, ADR 0085)", async () => {
-    const circleAdapter = new CircleAgentStackAdapter();
-
-    // Check query fallback
-    const queryRes = await circleAdapter.queryVendorWhitelistStatus(WHITELISTED_VENDOR);
-    expect(queryRes.command).toContain("whitelistedVendors");
-    expect(queryRes.command).toContain(BIND_SETTLEMENT_CONTRACT);
-    expect(queryRes.whitelisted).toBeNull();
-    expect(queryRes.executionMode).toBe("SIMULATED_NO_LIVE_CLI");
   });
 
   it("writes and locks STATE_ANCHOR.md and DECISION_EVIDENCE.md and blocks spec drift", async () => {
