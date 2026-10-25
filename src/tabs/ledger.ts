@@ -6,6 +6,8 @@ import { PolicyDecision } from "../policy/engine.js";
 import { SettlementPayerMismatchError, SettlementRejectedError } from "../adapters/settlement/errors.js";
 import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import type { SettlementAdapter, TransferRequest, TransferResult } from "../adapters/settlement/types.js";
+import { DROPPED_AFTER_MS, assessDropped } from "../adapters/settlement/dropped.js";
+import { ZERO_ADDRESS_RECIPIENT } from "../adapters/settlement/errors.js";
 import { effectiveSettlementMode } from "../demo/policy.js";
 import { spendStatusesSql } from "../orders/statuses.js";
 import { spendLockKey } from "../orders/reservation.js";
@@ -200,7 +202,12 @@ function isTxHash(value: unknown): value is string {
 }
 
 /** Which proof allowed a restore (see cancelHeldAndRestore). */
-export type RestoreProof = "NO_EFFECT_ROW" | "DEFINITIVE_REVERT" | "UNKNOWN_NOT_SETTLED_ACKNOWLEDGED";
+export type RestoreProof =
+  | "NO_EFFECT_ROW"
+  | "DEFINITIVE_REVERT"
+  | "UNKNOWN_NOT_SETTLED_ACKNOWLEDGED"
+  /** Proof (iii) for a SETTLEMENT_DROPPED hold (docs/decisions/0087, item 5). Its own label, so the audit names the case. */
+  | "DROPPED_NOT_SETTLED_ACKNOWLEDGED";
 
 /** What cancelHeldAndRestore did. `replayed` is true when the settlement was already cancelled: nothing was written. */
 export type RestoreOutcome =
@@ -230,6 +237,11 @@ export interface TabLedgerDeps {
    * tests use it to change the row in that window and assert that nothing is cancelled or reversed.
    */
   afterRestoreProof?: (at: { settlementId: string }) => Promise<void>;
+  /**
+   * How long a submitted transfer must be unseen by the node before it may be called dropped (docs/decisions/0087, item 5).
+   * Default 120 seconds. Tests set it to 0 or to a larger window.
+   */
+  droppedAfterMs?: number;
 }
 
 /** How long a reserve waits for the workspace spend lock. A busy lock is refused, never skipped. */
@@ -360,13 +372,16 @@ function logOutcomeUnknown(event: string, settlementId: string, err: unknown): v
  * - INVALID_REQUEST: the recipient address, the order id or the match hash is malformed. Checked before any chain call.
  * - SUB_CENT_AMOUNT_NOT_SUPPORTED: assertPayableCentAmount, the first line, before any settings check or RPC call.
  * - PAYER_MISMATCH: the payer is not the configured signer (SettlementPayerMismatchError), thrown before the pre-flight.
+ * - ZERO_ADDRESS_RECIPIENT: the recipient is the zero address, refused before any settings check or RPC call (docs/decisions/0087, item 4).
  * Not in this set, on purpose: OrderAlreadySettled and UNKNOWN_REVERT (both decoded from the chain, so the transfer may
- * have moved money), any other decoded revert name, and transport errors. Those hold the clear.
+ * have moved money), any other decoded revert name, TRANSFER_FAILED_RECIPIENT (a revert, not proof that nothing was sent),
+ * and transport errors. Those hold the clear.
  */
 export const PRE_SEND_REJECTION_CODES: ReadonlySet<string> = new Set([
   "INVALID_REQUEST",
   "SUB_CENT_AMOUNT_NOT_SUPPORTED",
   "PAYER_MISMATCH",
+  ZERO_ADDRESS_RECIPIENT,
 ]);
 
 /**
@@ -450,9 +465,12 @@ export class TabLedger {
 
   private readonly afterRestoreProof?: (at: { settlementId: string }) => Promise<void>;
 
+  private readonly droppedAfterMs: number;
+
   constructor(deps: TabLedgerDeps = {}) {
     this.afterBudgetRead = deps.afterBudgetRead;
     this.afterRestoreProof = deps.afterRestoreProof;
+    this.droppedAfterMs = deps.droppedAfterMs ?? DROPPED_AFTER_MS;
     this.settlementFor =
       deps.settlementFor ?? ((mode: string) => getSettlementAdapter(mode as "local" | "arc-testnet"));
   }
@@ -1177,6 +1195,12 @@ export class TabLedger {
       return { kind: "refused", reason: "the settlement adapter cannot prove the order is unsettled" };
     }
 
+    if (row.hold_reason === "SETTLEMENT_DROPPED") {
+      // (iii) for a dropped transfer (docs/decisions/0087, item 5): same window, acknowledgement and reads as an unknown
+      // outcome, and the stored hash must still be one the node does not know, asked now.
+      return this.proveDroppedRestore(settlementId, row, effect, acknowledgeNotSent, adapter, orderId);
+    }
+
     if (row.tx_hash) {
       // (ii) The stored hash, asked again: a reverted transaction moved nothing. Every restore except proof (i) needs the
       // owner's acknowledgement of the residual risk, so this is checked before any read of the adapter.
@@ -1221,6 +1245,54 @@ export class TabLedger {
   }
 
   /**
+   * Proof (iii) for a SETTLEMENT_DROPPED hold (docs/decisions/0087, item 5). The hold keeps the hash, so the hash must be the one
+   * the effect recorded, and the node must still answer not found for it, now. Then the same rules as (iii): the owner's
+   * acknowledgement, the dropped hold made at least 30 minutes ago (measured from the hold, not the submission), findTransfer finds
+   * nothing and isOrderSettled is false. Any read that
+   * throws refuses. Reads only.
+   */
+  private async proveDroppedRestore(
+    settlementId: string,
+    row: { tx_hash: string | null },
+    effect: { external_ref: string | null; updated_at: Date },
+    acknowledgeNotSent: boolean,
+    adapter: SettlementAdapter,
+    orderId: string
+  ): Promise<{ kind: "proved"; proof: RestoreProof } | { kind: "refused"; reason: string }> {
+    if (!row.tx_hash) return { kind: "refused", reason: "a dropped settlement has no recorded hash" };
+    if (String(effect.external_ref ?? "").toLowerCase() !== row.tx_hash.toLowerCase()) {
+      return { kind: "refused", reason: "the recorded hash does not match the effect" };
+    }
+    if (!acknowledgeNotSent) {
+      return { kind: "refused", reason: "the owner has not acknowledged the residual risk (acknowledgeNotSent)" };
+    }
+    // The window runs from the drop, not from the submission: the latest SETTLEMENT_DROPPED hold audit row (a re-drop adds one).
+    const heldFor = await query(
+      `SELECT EXTRACT(EPOCH FROM (NOW() - MAX(created_at))) * 1000 AS age_ms FROM audit_logs
+       WHERE action = 'tab.settlement_held' AND evidence->>'settlementId' = $1 AND evidence->>'hold' = 'SETTLEMENT_DROPPED';`,
+      [settlementId]
+    );
+    const heldAge = heldFor.rows[0]?.age_ms;
+    if (heldAge === null || heldAge === undefined || !(Number(heldAge) >= RESTORE_MIN_AGE_MS)) {
+      return { kind: "refused", reason: "the dropped hold was made less than 30 minutes ago" };
+    }
+    let outcome: TransferResult;
+    try {
+      outcome = await adapter.confirm(row.tx_hash);
+    } catch {
+      return { kind: "refused", reason: "the stored transaction could not be read" };
+    }
+    if (outcome.notFoundOnNode !== true) {
+      return { kind: "refused", reason: "the node reports the stored transaction, so it is not dropped" };
+    }
+    const lookup = await lookupForRestore(adapter, orderId, "a transfer for the order could not be looked up");
+    if (lookup.kind === "refused") return lookup;
+    const settled = await settledForRestore(adapter, orderId, "the order could not be read on the contract");
+    if (settled.kind === "refused") return settled;
+    return { kind: "proved", proof: "DROPPED_NOT_SETTLED_ACKNOWLEDGED" };
+  }
+
+  /**
    * Confirms a submitted settlement. An advisory lock on the settlement is the claim: a second confirmer returns
    * `in_progress` without calling the adapter. The adapter is asked once. Only `confirmed` finishes the settlement.
    * A failed outcome holds it and keeps the clear. An unresolved outcome leaves it submitted.
@@ -1231,7 +1303,8 @@ export class TabLedger {
     try {
       const row = (
         await query(
-          `SELECT t.id, t.workspace_id, t.counterparty_id, t.status, t.tx_hash, w.settlement_mode, w.is_demo
+          `SELECT t.id, t.workspace_id, t.counterparty_id, t.status, t.tx_hash, w.settlement_mode, w.is_demo,
+                  EXTRACT(EPOCH FROM (NOW() - t.submitted_at)) * 1000 AS submitted_age_ms
            FROM tab_settlements t JOIN workspaces w ON w.id = t.workspace_id WHERE t.id = $1;`,
           [settlementId]
         )
@@ -1248,6 +1321,31 @@ export class TabLedger {
         if (adopted) {
           settledHash = adopted.txHash;
           outcome = { kind: "confirmed", timestamp: adopted.timestamp, blockNumber: adopted.blockNumber };
+        }
+      }
+
+      if (outcome.kind === "unconfirmed" && outcome.notFoundOnNode === true) {
+        // The node does not know the hash (docs/decisions/0087, item 5). Dropped only when every condition of the shared rule holds.
+        const ageMs = row.submitted_age_ms === null || row.submitted_age_ms === undefined ? null : Number(row.submitted_age_ms);
+        const verdict = await assessDropped(adapter, {
+          orderId: tabAdapterOrderId(settlementId),
+          ageMs,
+          afterMs: this.droppedAfterMs,
+          notFoundOnNode: true,
+        });
+        if (verdict.kind === "dropped") {
+          // Held with its hash and its clear. Never sent again; reconcileHeld may adopt it if a transfer appears.
+          await this.hold(settlementId, ["submitted"], "SETTLEMENT_DROPPED", row.tx_hash, { txHash: row.tx_hash });
+          return { kind: "held", hold: "SETTLEMENT_DROPPED" };
+        }
+        if (verdict.kind === "found" && verdict.result.status === "confirmed") {
+          const found = verdict.result;
+          if (found.txHash.toLowerCase() !== String(row.tx_hash).toLowerCase()) {
+            const adopted = await this.writeAdoptedHash(row, found, "tab.settlement_found_transfer_adopted");
+            if (!adopted) return { kind: "awaiting", txHash: row.tx_hash };
+          }
+          settledHash = found.txHash;
+          outcome = { kind: "confirmed", timestamp: found.timestamp, blockNumber: found.blockNumber };
         }
       }
 
@@ -1379,12 +1477,16 @@ export class TabLedger {
     adapter: SettlementAdapter,
     settlementId: string,
     txHash: string
-  ): Promise<{ kind: "confirmed"; timestamp: Date; blockNumber?: number } | { kind: "failed"; failureCode?: string } | { kind: "unconfirmed" }> {
+  ): Promise<
+    | { kind: "confirmed"; timestamp: Date; blockNumber?: number }
+    | { kind: "failed"; failureCode?: string }
+    | { kind: "unconfirmed"; notFoundOnNode?: boolean }
+  > {
     try {
       const result = await adapter.confirm(txHash);
       if (result.status === "confirmed") return { kind: "confirmed", timestamp: result.timestamp, blockNumber: result.blockNumber };
       if (result.status === "failed") return { kind: "failed", failureCode: result.failureCode };
-      return { kind: "unconfirmed" };
+      return result.notFoundOnNode === true ? { kind: "unconfirmed", notFoundOnNode: true } : { kind: "unconfirmed" };
     } catch (err) {
       logOutcomeUnknown("tab.settlement.outcome_unknown", settlementId, err);
       return { kind: "unconfirmed" };
@@ -1411,24 +1513,33 @@ export class TabLedger {
     if (found === null || found.status !== "confirmed") return null;
     if (found.txHash.toLowerCase() === String(row.tx_hash).toLowerCase()) return null;
 
-    const adopted = await withTransaction(async (client) => {
+    const adopted = await this.writeAdoptedHash(row, found, "tab.settlement_reverted_duplicate_adopted");
+    return adopted ? found : null;
+  }
+
+  /**
+   * Moves a submitted settlement's stored hash to a confirmed transfer the adapter found for its order, with the effect row's
+   * external ref and one audit row, in one transaction. Guarded on `submitted` and on the hash read. Returns false when the
+   * guard did not match, and writes nothing then.
+   */
+  private async writeAdoptedHash(row: { id: string; workspace_id: string; tx_hash: string }, found: TransferResult, action: string): Promise<boolean> {
+    return withTransaction(async (client) => {
       const upd = await client.query(
         `UPDATE tab_settlements SET tx_hash = $2, updated_at = NOW() WHERE id = $1 AND status = 'submitted' AND tx_hash = $3;`,
-        [row.id, found!.txHash, row.tx_hash]
+        [row.id, found.txHash, row.tx_hash]
       );
       if (upd.rowCount !== 1) return false;
       await client.query(`UPDATE effects SET external_ref = $2, updated_at = NOW() WHERE idempotency_key = $1;`, [
         ledgerKeys.effect(row.workspace_id, row.id),
-        found!.txHash,
+        found.txHash,
       ]);
-      await writeAudit(client, row.workspace_id, SYSTEM_ACTOR, "tab.settlement_reverted_duplicate_adopted", PolicyDecision.ALLOW, {
+      await writeAudit(client, row.workspace_id, SYSTEM_ACTOR, action, PolicyDecision.ALLOW, {
         settlementId: row.id,
         revertedTxHash: row.tx_hash,
-        adoptedTxHash: found!.txHash,
-      }, found!.txHash);
+        adoptedTxHash: found.txHash,
+      }, found.txHash);
       return true;
     });
-    return adopted ? found : null;
   }
 }
 

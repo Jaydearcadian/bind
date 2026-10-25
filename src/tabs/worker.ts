@@ -57,7 +57,8 @@ const DEFAULT_RECONCILE_BATCH = 5;
  * The backoff steps of a SETTLEMENT_FAILED hold, as multiples of the base step. With the default base these are 5 minutes,
  * 15 minutes, an hour, 6 hours and a day. The last step repeats. An attempt is counted on the settlement, so the next attempt
  * waits the next step: the reopen and re-hold audit rows of an attempt are written once per step, not once per tick.
- * SETTLEMENT_OUTCOME_UNKNOWN holds keep the base step.
+ * SETTLEMENT_OUTCOME_UNKNOWN holds keep the base step. A SETTLEMENT_DROPPED hold (docs/decisions/0087, item 5) uses the same steps as
+ * a failed one, so a transfer the node never knows does not write two audit rows every base step.
  */
 const RECONCILE_STEP_FACTORS = [1, 3, 12, 72, 288];
 
@@ -123,9 +124,9 @@ export async function runTabSettlementStep(opts: TabWorkerOptions): Promise<TabW
   const steps = RECONCILE_STEP_FACTORS.map((factor) => base * factor);
   const heldRows = await query(
     `SELECT t.id FROM tab_settlements t
-     WHERE t.status = 'held' AND t.hold_reason IN ('SETTLEMENT_OUTCOME_UNKNOWN', 'SETTLEMENT_FAILED')
+     WHERE t.status = 'held' AND t.hold_reason IN ('SETTLEMENT_OUTCOME_UNKNOWN', 'SETTLEMENT_FAILED', 'SETTLEMENT_DROPPED')
        AND t.updated_at <= $1::timestamptz - (($3::float8[])[
-             CASE WHEN t.hold_reason = 'SETTLEMENT_FAILED' THEN LEAST(t.reconcile_attempts, cardinality($3::float8[]) - 1) ELSE 0 END + 1
+             CASE WHEN t.hold_reason IN ('SETTLEMENT_FAILED', 'SETTLEMENT_DROPPED') THEN LEAST(t.reconcile_attempts, cardinality($3::float8[]) - 1) ELSE 0 END + 1
            ] * INTERVAL '1 millisecond')
        AND EXISTS (SELECT 1 FROM tab_entries e WHERE e.settlement_id = t.id AND e.kind = 'clear')
      ORDER BY t.updated_at ASC, t.id ASC LIMIT $2;`,

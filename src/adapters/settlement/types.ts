@@ -19,6 +19,13 @@ export interface TransferResult {
   blockNumber?: number;
   explorerUrl?: string;
   failureCode?: string;
+  /**
+   * Set only by the Arc adapter's confirm() on a `submitted` result: the node answered "transaction not found" for the hash
+   * (no receipt and no pending transaction). It is evidence, not a verdict. The services call a transfer dropped only after
+   * the age, findTransfer and isOrderSettled checks in src/adapters/settlement/dropped.ts (docs/decisions/0087, item 5).
+   * Never set on an error, and never by the local simulator.
+   */
+  notFoundOnNode?: boolean;
 }
 
 export interface SettlementAdapter {

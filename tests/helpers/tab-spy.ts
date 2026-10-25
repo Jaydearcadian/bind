@@ -67,6 +67,8 @@ export class TabSpy implements SettlementAdapter {
   settledReadDown = false;
   /** The failure code confirm() reports when confirmMode is "failed". REVERTED by default; EVENT_MISSING is the other case. */
   confirmFailureCode = "REVERTED";
+  /** When true, a `submitted` confirm answers notFoundOnNode (the node does not know the hash). Used with confirmMode "submitted". */
+  notFoundOnNode = false;
   /** When set, isOrderSettled answers this instead of what the spy moved (a contract that disagrees with the spy). */
   settledOverride: boolean | null = null;
   /** Every isOrderSettled call, by order id. */
@@ -81,6 +83,14 @@ export class TabSpy implements SettlementAdapter {
    * busy-lock test uses it to hold one caller's send open while another caller runs.
    */
   holdSendNext: Promise<void> | null = null;
+  /**
+   * When true, the next transfer is recorded as sent but never reaches the chain: nothing moves, the lookups find nothing, and
+   * confirm() answers `submitted` with notFoundOnNode (the node has no record of the hash). That is a dropped transfer
+   * (docs/decisions/0087, item 5).
+   */
+  dropNextSend = false;
+  /** Hashes of the transfers recorded as dropped. */
+  readonly droppedHashes = new Set<string>();
 
   private readonly sentHashes = new Set<string>();
   /** Hashes the spy made revert: the stored hash of a settlement that a restore may cancel under proof (ii). */
@@ -136,6 +146,12 @@ export class TabSpy implements SettlementAdapter {
       this.holdSendNext = null;
       await gate;
     }
+    if (this.dropNextSend) {
+      // Recorded as sent, and never mined: no money moves and no lookup can find it.
+      this.dropNextSend = false;
+      this.droppedHashes.add(txHash);
+      return this.result(txHash, "submitted");
+    }
     this.moved.set(req.orderId, { txHash, amountCents: req.amountCents, idempotencyKey: req.idempotencyKey });
     if (this.throwAfterSendNext) {
       this.throwAfterSendNext = false;
@@ -176,10 +192,11 @@ export class TabSpy implements SettlementAdapter {
       submittedAuditRows: audit.rows[0].n,
     });
     if (!this.sentHashes.has(txHash)) return this.result(txHash, "submitted");
+    if (this.droppedHashes.has(txHash)) return this.result(txHash, "submitted", undefined, true);
     if (this.revertedHashes.has(txHash)) return this.result(txHash, "failed", this.confirmFailureCode);
     if (this.confirmMode === "throws") throw new Error("confirm: rpc unreachable");
     if (this.confirmMode === "failed") return this.result(txHash, "failed", this.confirmFailureCode);
-    if (this.confirmMode === "submitted") return this.result(txHash, "submitted");
+    if (this.confirmMode === "submitted") return this.result(txHash, "submitted", undefined, this.notFoundOnNode);
     return this.result(txHash, "confirmed");
   }
 
@@ -198,7 +215,7 @@ export class TabSpy implements SettlementAdapter {
     return total;
   }
 
-  private result(txHash: string, status: SettlementStatus, failureCode?: string): TransferResult {
+  private result(txHash: string, status: SettlementStatus, failureCode?: string, notFoundOnNode = false): TransferResult {
     return {
       txHash,
       status,
@@ -207,6 +224,7 @@ export class TabSpy implements SettlementAdapter {
       simulated: true,
       blockNumber: status === "confirmed" ? BLOCK : undefined,
       ...(failureCode ? { failureCode } : {}),
+      ...(notFoundOnNode ? { notFoundOnNode: true } : {}),
     };
   }
 }
