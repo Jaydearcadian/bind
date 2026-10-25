@@ -81,7 +81,7 @@ Checked on commit `407533a` in this container, 2026-10-20 (UTC), with `.env.loca
 | In-process contract suite | four `vitest` files, see [`docs/CONTRACT_SCOPE.md`](docs/CONTRACT_SCOPE.md) section 6 | 4 files, 32 tests passed | LOCAL_PASS |
 | Browser E2E | `npm run test:e2e` | exits 1 with BLOCKED (UI orphaned) | BLOCKED |
 | Forge fmt, build, tests, coverage | `forge ...` in `contracts/` | 24 of 24 passed (unit, fuzz, reentrancy, invariants). Contract line coverage 100%, branch coverage 72.73% | LOCAL_PASS |
-| Anvil deployment and client suite | `tests/integration/anvil-settlement.test.ts` | 10 of 10 passed against a local Anvil (skipped unless `ANVIL_RPC_URL` is set) | LOCAL_PASS |
+| Anvil deployment and client suite | `tests/integration/anvil-settlement.test.ts` | 10 of 10 passed against a local Anvil on 2026-10-20 (historical; now 16 of 16 on local arc-anvil, ADR 0088; skipped unless `ANVIL_RPC_URL` is set) | LOCAL_PASS |
 | Slither | `slither . --fail-medium` in `contracts/` | no medium or high findings; 9 low, informational or optimization findings | LOCAL_PASS |
 | Live Arc reads and transactions | `scripts/verify-live-arc.ts` | not run (no token, no `cast`, no network) | NOT_RUN |
 | CI | `.github/workflows/quality-gates.yml` | dispatched once; no job got a runner (section 6) | BLOCKED |
