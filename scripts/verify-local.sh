@@ -122,14 +122,41 @@ rpc_chain_is_31337() {
   ' "$1"
 }
 
-# Starts a local Anvil on a port of its own (18545 unless ANVIL_PORT is set), runs the Anvil suite against it and
-# stops it. The suite is skipped without ANVIL_RPC_URL, so this function sets it.
+# The local node binary. ANVIL_BIN overrides it. Otherwise arc-anvil (the Arc-aware build, docs/decisions/0088) is preferred
+# when it is on PATH, then plain anvil. Prints the name, or nothing and returns 1 when neither is available.
+select_node_binary() {
+  if [ -n "${ANVIL_BIN:-}" ]; then printf '%s' "$ANVIL_BIN"; return 0; fi
+  if have arc-anvil; then printf '%s' arc-anvil; return 0; fi
+  if have anvil; then printf '%s' anvil; return 0; fi
+  return 1
+}
+
+# Starts a local node on a port of its own (18545 unless ANVIL_PORT is set), runs the Anvil suite against it and stops it.
+# The argument is the node binary. The suite is skipped without ANVIL_RPC_URL, so this function sets it.
+# With arc-anvil the node runs in Arc mode and ANVIL_EXPECT_ARC=1 is set, so the Arc-specific tests must run and fail if the
+# node is not in Arc mode. With plain anvil those tests are reported NOT RUN, and the run does not reproduce Arc behaviour
+# (a recorded caveat, not a failure). See docs/decisions/0088.
 start_anvil_and_test() {
-  local port="${ANVIL_PORT:-18545}" url pid log i status
+  local bin="$1" port="${ANVIL_PORT:-18545}" url pid log i status
+  local -a node_args
   url="http://127.0.0.1:$port"
+  case "$(basename "$bin")" in
+    arc-anvil*)
+      node_args=(--network arc --chain-id 31337 --host 127.0.0.1 --port "$port")
+      export ANVIL_EXPECT_ARC=1
+      printf 'INFO: starting %s (Arc mode, --network arc) on %s\n' "$bin" "$url"
+      ;;
+    *)
+      node_args=(--chain-id 31337 --host 127.0.0.1 --port "$port")
+      unset ANVIL_EXPECT_ARC
+      printf 'INFO: starting %s (plain standard-EVM node) on %s\n' "$bin" "$url"
+      printf 'CAVEAT: a plain-anvil run does NOT reproduce Arc behaviour (Arc base fee, native-value rules, system-emitter logs). The Arc-specific tests are NOT RUN here. This is recorded, not a failure. See docs/decisions/0088.\n'
+      ;;
+  esac
   log="$(mktemp "${TMPDIR:-/tmp}/bind-anvil.XXXXXX")" || return 1
-  anvil --chain-id 31337 --host 127.0.0.1 --port "$port" >"$log" 2>&1 &
+  "$bin" "${node_args[@]}" >"$log" 2>&1 &
   pid=$!
+  printf 'INFO: %s started with pid %s; the script stops it by that pid when the suite ends\n' "$bin" "$pid"
   for i in $(seq 1 40); do
     rpc_chain_is_31337 "$url" && break
     sleep 1
@@ -246,8 +273,8 @@ else
 
   if [ -n "${ANVIL_RPC_URL:-}" ]; then
     run 'anvil integration' npx vitest run tests/integration/anvil-settlement.test.ts
-  elif have anvil; then
-    run 'anvil integration' start_anvil_and_test
+  elif NODE_BIN="$(select_node_binary)"; then
+    run 'anvil integration' start_anvil_and_test "$NODE_BIN"
   else
     block 'anvil not installed (skipped: anvil integration)'
   fi
