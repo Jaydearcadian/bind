@@ -31,6 +31,8 @@ CONTRACT_SUITE=(npx vitest run tests/unit/contract-artifact.test.ts tests/integr
 fail=0
 pass=0
 not_run_accepted=0
+# State of the Arc protocol block in the Anvil suite: ran | skipped | n/a. Set by the anvil integration gate, printed in SUMMARY.
+arc_block=n/a
 
 gate() { printf '%s\t%s\n' "$1" "$2"; }
 
@@ -122,6 +124,32 @@ rpc_chain_is_31337() {
   ' "$1"
 }
 
+# Exit 0 when the node at $1 reports a latest base fee of at least 20 gwei (Arc mode, docs/decisions/0088).
+rpc_base_fee_at_least_20_gwei() {
+  node -e '
+    fetch(process.argv[1], { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBlockByNumber", params: ["latest", false] }) })
+      .then((r) => r.json())
+      .then((j) => process.exit(BigInt(j.result.baseFeePerGas) >= 20000000000n ? 0 : 1))
+      .catch(() => process.exit(1));
+  ' "$1"
+}
+
+# Prints "ran" when the Arc block of the Anvil suite runs against the node at $1 (node in Arc mode, or ANVIL_EXPECT_ARC=1 set
+# by the caller), else "skipped". The suite's own test file makes the same decision; this reports it in SUMMARY.
+arc_block_state() {
+  if [ "${ANVIL_EXPECT_ARC:-}" = 1 ] || rpc_base_fee_at_least_20_gwei "$1"; then
+    printf 'ran'
+  else
+    printf 'skipped'
+  fi
+}
+
+# Exit 0 when something already accepts a TCP connection on 127.0.0.1:$1.
+port_answers() {
+  (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
+
 # The local node binary. ANVIL_BIN overrides it. Otherwise arc-anvil (the Arc-aware build, docs/decisions/0088) is preferred
 # when it is on PATH, then plain anvil. Prints the name, or nothing and returns 1 when neither is available.
 select_node_binary() {
@@ -132,48 +160,90 @@ select_node_binary() {
 }
 
 # Starts a local node on a port of its own (18545 unless ANVIL_PORT is set), runs the Anvil suite against it and stops it.
-# The argument is the node binary. The suite is skipped without ANVIL_RPC_URL, so this function sets it.
-# With arc-anvil the node runs in Arc mode and ANVIL_EXPECT_ARC=1 is set, so the Arc-specific tests must run and fail if the
-# node is not in Arc mode. With plain anvil those tests are reported NOT RUN, and the run does not reproduce Arc behaviour
-# (a recorded caveat, not a failure). See docs/decisions/0088.
+# The argument is the node binary, validated before anything starts. The suite is skipped without ANVIL_RPC_URL, so this
+# function sets it, inline on the vitest command only (nothing is exported to later gates).
+# arc-anvil runs in Arc mode with ANVIL_EXPECT_ARC=1 for that vitest command, so the Arc tests must run and fail if the node is
+# not in Arc mode. Plain anvil is a standard EVM: its Arc tests are reported NOT RUN (recorded in arc_block), and the run does
+# not reproduce Arc behaviour (a recorded caveat, not a failure). A caller's ANVIL_EXPECT_ARC=1 with plain anvil is refused,
+# never silently dropped. The node is stopped by its exact pid on every exit path (cleanup, EXIT/INT/TERM traps).
+# See docs/decisions/0088.
 start_anvil_and_test() {
-  local bin="$1" port="${ANVIL_PORT:-18545}" url pid log i status
+  local bin="$1" port="${ANVIL_PORT:-18545}" url i status resolved is_arc
   local -a node_args
+  local pid="" log=""
   url="http://127.0.0.1:$port"
-  case "$(basename "$bin")" in
+
+  cleanup() {
+    if [ -n "$pid" ]; then kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; pid=""; fi
+    if [ -n "$log" ]; then rm -f "$log"; log=""; fi
+  }
+  trap cleanup EXIT
+  trap 'cleanup; exit 130' INT
+  trap 'cleanup; exit 143' TERM
+
+  resolved="$(command -v "$bin" 2>/dev/null)" || resolved=""
+  if [ -z "$resolved" ] || [ ! -x "$resolved" ]; then
+    printf 'BLOCKED: node binary "%s" was not found or is not executable (check ANVIL_BIN and PATH). Nothing was started.\n' "$bin"
+    trap - EXIT INT TERM
+    return 1
+  fi
+
+  case "$(basename "$resolved")" in
     arc-anvil*)
+      is_arc=1
       node_args=(--network arc --chain-id 31337 --host 127.0.0.1 --port "$port")
-      export ANVIL_EXPECT_ARC=1
-      printf 'INFO: starting %s (Arc mode, --network arc) on %s\n' "$bin" "$url"
+      printf 'INFO: starting %s (Arc mode, --network arc) on %s\n' "$resolved" "$url"
       ;;
     *)
+      is_arc=0
+      if [ "${ANVIL_EXPECT_ARC:-}" = 1 ]; then
+        printf 'BLOCKED: ANVIL_EXPECT_ARC=1 is set, but the node to start is %s, a plain standard-EVM anvil that cannot run the Arc tests. Put arc-anvil on PATH or set ANVIL_BIN to it, or unset ANVIL_EXPECT_ARC. Nothing was started.\n' "$resolved"
+        trap - EXIT INT TERM
+        return 1
+      fi
       node_args=(--chain-id 31337 --host 127.0.0.1 --port "$port")
-      unset ANVIL_EXPECT_ARC
-      printf 'INFO: starting %s (plain standard-EVM node) on %s\n' "$bin" "$url"
+      printf 'INFO: starting %s (plain standard-EVM node) on %s\n' "$resolved" "$url"
       printf 'CAVEAT: a plain-anvil run does NOT reproduce Arc behaviour (Arc base fee, native-value rules, system-emitter logs). The Arc-specific tests are NOT RUN here. This is recorded, not a failure. See docs/decisions/0088.\n'
       ;;
   esac
-  log="$(mktemp "${TMPDIR:-/tmp}/bind-anvil.XXXXXX")" || return 1
-  "$bin" "${node_args[@]}" >"$log" 2>&1 &
+
+  if port_answers "$port"; then
+    printf 'REFUSED: something already answers on 127.0.0.1:%s. The Anvil suite would run against a node this script did not start. Set ANVIL_PORT to a free port (or ANVIL_RPC_URL to a node you own) and run again. Nothing was started.\n' "$port"
+    trap - EXIT INT TERM
+    return 1
+  fi
+
+  log="$(mktemp "${TMPDIR:-/tmp}/bind-anvil.XXXXXX")" || { trap - EXIT INT TERM; return 1; }
+  "$resolved" "${node_args[@]}" >"$log" 2>&1 &
   pid=$!
-  printf 'INFO: %s started with pid %s; the script stops it by that pid when the suite ends\n' "$bin" "$pid"
+  printf 'INFO: %s started with pid %s; the script stops that pid when the suite ends or the run is interrupted\n' "$resolved" "$pid"
+
   for i in $(seq 1 40); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      printf 'node process %s exited before it answered eth_chainId 31337 on %s. Log follows.\n' "$pid" "$url"
+      cat "$log"
+      cleanup; trap - EXIT INT TERM
+      return 1
+    fi
     rpc_chain_is_31337 "$url" && break
     sleep 1
   done
   if ! rpc_chain_is_31337 "$url"; then
-    printf 'anvil did not answer eth_chainId 31337 on %s. Log follows.\n' "$url"
+    printf 'node did not answer eth_chainId 31337 on %s within 40 seconds. Log follows.\n' "$url"
     cat "$log"
-    kill "$pid" 2>/dev/null
-    wait "$pid" 2>/dev/null
-    rm -f "$log"
+    cleanup; trap - EXIT INT TERM
     return 1
   fi
-  ANVIL_RPC_URL="$url" npx vitest run tests/integration/anvil-settlement.test.ts
+
+  if [ "$is_arc" = 1 ]; then arc_block=ran; else arc_block=skipped; fi
+  if [ "$is_arc" = 1 ]; then
+    ANVIL_EXPECT_ARC=1 ANVIL_RPC_URL="$url" npx vitest run tests/integration/anvil-settlement.test.ts
+  else
+    ANVIL_RPC_URL="$url" npx vitest run tests/integration/anvil-settlement.test.ts
+  fi
   status=$?
-  kill "$pid" 2>/dev/null
-  wait "$pid" 2>/dev/null
-  rm -f "$log"
+  cleanup
+  trap - EXIT INT TERM
   return $status
 }
 
@@ -272,6 +342,10 @@ else
   fi
 
   if [ -n "${ANVIL_RPC_URL:-}" ]; then
+    arc_block="$(arc_block_state "$ANVIL_RPC_URL")"
+    if [ "${ANVIL_EXPECT_ARC:-}" != 1 ]; then
+      printf 'INFO: ANVIL_RPC_URL is set and ANVIL_EXPECT_ARC is not 1. The Arc protocol block depends on the node at %s: it runs only if that node is in Arc mode (base fee at least 20 gwei), and is reported NOT RUN otherwise (see ARC_BLOCK in SUMMARY).\n' "$ANVIL_RPC_URL"
+    fi
     run 'anvil integration' npx vitest run tests/integration/anvil-settlement.test.ts
   elif NODE_BIN="$(select_node_binary)"; then
     run 'anvil integration' start_anvil_and_test "$NODE_BIN"
@@ -299,5 +373,14 @@ printf '\n===== SUMMARY =====\nPASS=%d FAIL_OR_BLOCKED=%d NOT_RUN_ACCEPTED=%d\n'
 if [ "$not_run_accepted" -gt 0 ]; then
   printf 'NOT_RUN_ACCEPTED: test:e2e (named in BIND_ACCEPT_NOT_RUN; not run; not counted as a failure)\n'
 fi
+case "$arc_block" in
+  ran) printf 'ARC_BLOCK=ran: the Arc protocol tests of the Anvil suite RAN (node in Arc mode, or ANVIL_EXPECT_ARC=1).\n' ;;
+  skipped) printf 'ARC_BLOCK=skipped: the Arc protocol tests were SKIPPED (NOT RUN): the node is not in Arc mode. Arc behaviour is not verified by this run.\n' ;;
+  *) printf 'ARC_BLOCK=n/a: the Anvil gate did not run, so no Arc protocol result exists.\n' ;;
+esac
 if [ "$fail" -gt 0 ]; then exit 1; fi
-printf 'Every gate that ran passed. NOT_RUN_ACCEPTED gates were not run. This does not prove remote/testnet readiness.\n'
+if [ "$arc_block" = skipped ]; then
+  printf 'Every gate that ran passed. The Arc protocol block was SKIPPED, so the Anvil result is not an Arc result. NOT_RUN_ACCEPTED gates were not run. This does not prove remote/testnet readiness.\n'
+else
+  printf 'Every gate that ran passed. NOT_RUN_ACCEPTED gates were not run. This does not prove remote/testnet readiness.\n'
+fi
