@@ -104,7 +104,7 @@ import {
   rotateWebhookSecret,
 } from "../studio/workspaceControls.js";
 import { newId } from "../utils/ids.js";
-import { publicErrorMessage, rejectNulInput, requestErrorHandler, wrapAsyncHandlers } from "./errors.js";
+import { publicErrorMessage, rejectNulInput, requestErrorHandler, validationFields, wrapAsyncHandlers } from "./errors.js";
 import { errorContract } from "./error-contract.js";
 import { log } from "../observability/logger.js";
 import { redactText } from "../utils/redact.js";
@@ -174,7 +174,7 @@ const __dirname = path.dirname(__filename);
 function parseDecisionBody(req: Request, res: Response): { reason?: string } | null {
   const parsed = ApprovalDecisionBodySchema.safeParse(req.body ?? {});
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid request body", fields: parsed.error.issues.map((i) => i.path.join(".")) });
+    res.status(400).json({ error: "Invalid request body", fields: validationFields(parsed.error.issues) });
     return null;
   }
   return parsed.data;
@@ -214,7 +214,7 @@ function sendFulfilmentError(res: Response, err: unknown) {
     return res.status(status).json({ error: err.message, code: err.code });
   }
   if (err instanceof z.ZodError) {
-    return res.status(400).json({ error: "Invalid request body", fields: err.issues.map((i) => i.path.join(".")) });
+    return res.status(400).json({ error: "Invalid request body", fields: validationFields(err.issues) });
   }
   return res.status(500).json({ error: "Request could not be completed" });
 }
@@ -236,7 +236,7 @@ function sendMenuError(res: Response, err: unknown) {
     return res.status(status).json({ error: err.message, code: err.code });
   }
   if (err instanceof z.ZodError) {
-    return res.status(400).json({ error: "Invalid request body", fields: err.issues.map((i) => i.path.join(".")) });
+    return res.status(400).json({ error: "Invalid request body", fields: validationFields(err.issues) });
   }
   return res.status(500).json({ error: "Request could not be completed" });
 }
@@ -1302,7 +1302,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.post("/api/workspaces/:id/workflows/:workflowId/cancel", ...workspaceOwner, async (req: Request, res: Response) => {
     const parsed = CancelWorkflowBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid request body", fields: parsed.error.issues.map((i) => i.path.join(".")) });
+      res.status(400).json({ error: "Invalid request body", fields: validationFields(parsed.error.issues) });
       return;
     }
     try {

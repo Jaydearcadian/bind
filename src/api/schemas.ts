@@ -13,6 +13,7 @@
  *   `fields` on a validation error). The request id is in the `x-request-id` header, not the body.
  */
 import { z } from "zod";
+import { isoDateTimeWithOffset } from "./isoDateTime.js";
 import {
   AgentRoleUpsertSchema,
   InitialSupplierSchema,
@@ -37,7 +38,7 @@ export { ConfirmDocumentInputSchema, ExtractDocumentInputSchema };
 export const Decimal = z.union([z.string(), z.number()]);
 
 /** An ISO 8601 date-time, as `Date.toJSON` writes it. */
-export const IsoDateTime = z.string().datetime({ offset: true });
+export const IsoDateTime = isoDateTimeWithOffset();
 
 /** `_meta` on the answers of the command operations (ADR 0050; docs/ecosystem/spec/response-meta-v1.schema.json). */
 export const ResponseMetaSchema = z
@@ -59,7 +60,7 @@ export const ResponseMetaSchema = z
       )
       .optional(),
     warnings: z.array(z.object({ code: z.string(), message: z.string() })).optional(),
-    links: z.record(z.string()).optional(),
+    links: z.record(z.string(), z.string()).optional(),
   })
   .describe("Outcome of the request in one vocabulary, and what the caller's role may do next.");
 
@@ -91,7 +92,7 @@ export const ErrorBody = z
     requestId: z.string(),
     retryAfterSeconds: z.number().int().optional(),
     reasonCodes: z.array(z.string()).optional(),
-    details: z.record(z.unknown()).optional(),
+    details: z.record(z.string(), z.unknown()).optional(),
     recovery: z
       .array(z.object({ action: z.string(), description: z.string(), href: z.string().optional() }).passthrough())
       .optional(),
@@ -157,7 +158,7 @@ export const ConnectorSetBodySchema = z.object({
 export const CustomerOrderBodySchema = z.object({
   externalRef: z.string().trim().min(1).max(120),
   lines: z.array(z.object({ sku: z.string().min(1).max(120), quantity: z.number() })).max(200),
-  requestedFor: z.string().datetime({ offset: true }).optional(),
+  requestedFor: isoDateTimeWithOffset().optional(),
   note: z.string().max(5000).optional(),
 });
 
@@ -166,8 +167,8 @@ export const KitchenCapacityBodySchema = z.object({
   slots: z
     .array(
       z.object({
-        startsAt: z.string().datetime({ offset: true }),
-        endsAt: z.string().datetime({ offset: true }),
+        startsAt: isoDateTimeWithOffset(),
+        endsAt: isoDateTimeWithOffset(),
         capacityUnits: z.number().int().min(0),
       })
     )
@@ -184,7 +185,7 @@ export const FeedbackBodySchema = z.object({
 
 /** GET /api/workspaces/:id/feedback/summary?since=... */
 export const FeedbackSummaryQuerySchema = z.object({
-  since: z.string().datetime({ offset: true }).optional(),
+  since: isoDateTimeWithOffset().optional(),
 });
 
 /** GET /api/workspaces/:id/accounting/ledger?format=csv returns CSV; the default is the JSON rows. */
@@ -220,7 +221,7 @@ export const CancelWorkflowBodySchema = z.object({
 export const StandardWebhookBodySchema = z.object({
   provider: z.string().trim().min(1).max(200),
   eventId: z.string().trim().min(1).max(200),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -353,7 +354,7 @@ export const WorkflowSchema = z
     workspace_id: z.string(),
     workflow_type: z.string(),
     state: z.string(),
-    context_data: z.record(z.unknown()),
+    context_data: z.record(z.string(), z.unknown()),
     error_message: z.string().nullable(),
     retry_count: z.number().int(),
     idempotency_key: z.string(),
@@ -400,7 +401,7 @@ export const StagedDocumentSchema = z
     doc_type: z.string(),
     source_label: z.string(),
     raw_text: z.string(),
-    extracted_data: z.record(z.unknown()),
+    extracted_data: z.record(z.string(), z.unknown()),
     warnings: z.array(z.string()),
     status: z.string(),
     linked_order_id: z.string().nullable(),
@@ -415,7 +416,7 @@ export const DocumentDraftSchema = StagedDocumentSchema.extend({
   docId: z.string(),
   docType: z.string(),
   provenance: z.string(),
-  extractedFields: z.record(z.unknown()),
+  extractedFields: z.record(z.string(), z.unknown()),
   warnings: z.array(z.string()),
 });
 
@@ -456,7 +457,7 @@ export const AuditEntrySchema = z
     effect_class: z.string(),
     action: z.string(),
     policy_decision: z.string(),
-    evidence: z.record(z.unknown()),
+    evidence: z.record(z.string(), z.unknown()),
     tx_hash: z.string().nullable(),
     created_at: IsoDateTime,
   })
@@ -495,7 +496,7 @@ export const EventEnvelopeSchema = z
     workflowId: z.string().optional(),
     object: z.object({ type: z.string(), id: z.string().nullable() }).optional(),
     correlationId: z.string().optional(),
-    data: z.record(z.unknown()),
+    data: z.record(z.string(), z.unknown()),
   })
   .passthrough();
 
@@ -612,7 +613,7 @@ export const MenuProposalSchema = z
     sourceFeedbackIds: z.array(z.string()),
     proposedBy: z.string(),
     decidedBy: z.string().nullable(),
-    applied: z.record(z.unknown()).nullable(),
+    applied: z.record(z.string(), z.unknown()).nullable(),
     createdAt: IsoDateTime,
     updatedAt: IsoDateTime,
   })
@@ -925,8 +926,8 @@ export const OpenApiDocumentSchema = z
   .object({
     openapi: z.literal("3.0.3"),
     info: z.object({ title: z.literal("Bind API"), version: z.string() }).passthrough(),
-    paths: z.record(z.record(z.unknown())),
-    components: z.object({ securitySchemes: z.record(z.unknown()) }).passthrough(),
+    paths: z.record(z.string(), z.record(z.string(), z.unknown())),
+    components: z.object({ securitySchemes: z.record(z.string(), z.unknown()) }).passthrough(),
   })
   .passthrough();
 

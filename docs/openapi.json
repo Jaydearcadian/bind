@@ -3858,15 +3858,8 @@
                         "contactEmail": {
                           "anyOf": [
                             {
-                              "anyOf": [
-                                {
-                                  "not": {}
-                                },
-                                {
-                                  "format": "email",
-                                  "type": "string"
-                                }
-                              ]
+                              "format": "email",
+                              "type": "string"
                             },
                             {
                               "enum": [
@@ -16169,15 +16162,8 @@
                   "contactEmail": {
                     "anyOf": [
                       {
-                        "anyOf": [
-                          {
-                            "not": {}
-                          },
-                          {
-                            "format": "email",
-                            "type": "string"
-                          }
-                        ]
+                        "format": "email",
+                        "type": "string"
                       },
                       {
                         "enum": [

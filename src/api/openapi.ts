@@ -4,7 +4,6 @@
  * same document built at request time. The output is deterministic: object keys are sorted, and routes are sorted by path
  * and method by the object key order.
  */
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
 import { ROUTES, type AccessLevel, type ResponseSpec, type RouteSpec } from "./registry.js";
 import { ErrorBody, ResponseMetaSchema } from "./schemas.js";
@@ -44,19 +43,47 @@ export function toOpenApiPath(expressPath: string): string {
 /**
  * Converts a zod schema to JSON Schema (OpenAPI 3.0 dialect). Schemas are inlined, except the shared ErrorBody.
  * An optional schema is converted as its inner schema: presence is shown by `required`, not by an `anyOf` with `not`.
- * `removeAdditionalStrategy: "strict"` leaves `additionalProperties` open for a plain zod object, because the server
- * strips unknown fields rather than refusing them; only a `.strict()` object is documented as closed.
+ * A plain zod object stays open (`additionalProperties: true`), because the server strips unknown fields rather than refusing
+ * them; only a `.strict()` object is documented as closed. The input side of each schema is documented (`io: "input"`).
  */
-function jsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
-  let inner: z.ZodTypeAny = schema;
+export function jsonSchema(schema: z.core.$ZodType): Record<string, unknown> {
+  let inner: z.core.$ZodType = schema;
   while (inner instanceof z.ZodOptional) inner = inner.unwrap();
-  const converted = zodToJsonSchema(inner, {
-    target: "openApi3",
-    $refStrategy: "none",
-    removeAdditionalStrategy: "strict",
+  const converted = z.toJSONSchema(inner, {
+    target: "openapi-3.0",
+    io: "input",
+    unrepresentable: "any",
+    override: ({ zodSchema, jsonSchema: node }) => matchPreviousDocument(zodSchema, node),
   }) as Record<string, unknown>;
   delete converted.$schema;
   return converted;
+}
+
+const MAX_SAFE = Number.MAX_SAFE_INTEGER;
+
+/**
+ * Shapes the zod 4 JSON Schema output the way the document has always been written (it was produced by zod-to-json-schema
+ * until zod 4, which that library cannot read). These are presentation rules, not validation rules:
+ * - a plain or `.passthrough()` object is open (`additionalProperties: true`); a `.strict()` object is closed (`false`);
+ * - a `date-time` string is documented by its format alone, not by zod's long pattern;
+ * - an integer is not given zod's safe-integer bounds (the server still refuses values outside them, see the decision record);
+ * - a discriminated union is documented with `anyOf`, as before.
+ */
+function matchPreviousDocument(zodSchema: unknown, node: Record<string, unknown>): void {
+  const def = (zodSchema as { _zod?: { def?: Record<string, unknown> } })._zod?.def ?? {};
+  if (def.type === "object") {
+    const catchall = def.catchall as { _zod?: { def?: { type?: string } } } | undefined;
+    node.additionalProperties = catchall?._zod?.def?.type === "never" ? false : true;
+  }
+  if (node.format === "date-time" || node.format === "email") delete node.pattern;
+  if (node.type === "integer") {
+    if (node.minimum === -MAX_SAFE) delete node.minimum;
+    if (node.maximum === MAX_SAFE) delete node.maximum;
+  }
+  if (def.type === "union" && typeof def.discriminator === "string" && Array.isArray(node.oneOf)) {
+    node.anyOf = node.oneOf;
+    delete node.oneOf;
+  }
 }
 
 function schemaOrRef(schema: z.ZodTypeAny): Record<string, unknown> {
@@ -82,7 +109,7 @@ function responsesOf(responses: Record<number, ResponseSpec>, withMeta = false):
     if (response.schema) {
       const schema =
         withMeta && status >= 200 && status < 300 && response.schema instanceof z.ZodObject
-          ? (response.schema as z.AnyZodObject).extend({ _meta: ResponseMetaSchema.optional() })
+          ? (response.schema as z.ZodObject).extend({ _meta: ResponseMetaSchema.optional() })
           : response.schema;
       const mime = response.contentType ?? "application/json";
       entry.content = {

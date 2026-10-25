@@ -3781,7 +3781,7 @@ export interface operations {
                          * @enum {string}
                          */
                         adapterType?: "simulated_sysco" | "simulated_baldor" | "rest_api" | "manual_quote";
-                        contactEmail?: (unknown | string) | "";
+                        contactEmail?: string | "";
                         endpointUrl?: string;
                         id: string;
                         /** @default true */
@@ -10395,7 +10395,7 @@ export interface operations {
                      * @enum {string}
                      */
                     adapterType?: "simulated_sysco" | "simulated_baldor" | "rest_api" | "manual_quote";
-                    contactEmail?: (unknown | string) | "";
+                    contactEmail?: string | "";
                     endpointUrl?: string;
                     id: string;
                     /** @default true */

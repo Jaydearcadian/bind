@@ -642,3 +642,46 @@ Evidence class for everything here: LOCAL_PASS (local Postgres, spy adapter, loc
 | H4 | Arc `isOrderSettled` and the held-settlement reads against the real contract | None run | Not run. Item (c) of ADR 0081, a live Arc run of the tab path, is still required before any live use. | NOT_RUN |
 
 Residuals: proof (iii) cannot exclude a transaction still in a mempool after 30 minutes, so it needs the owner's acknowledgement; the local simulator forgets payments on a process restart, so its proofs can restore a simulated payment after a restart (simulated money only).
+
+## 12. Change evidence: zod 4 and the high-severity audit (ADR 0087), 2026-10-25
+
+**Base:** `origin/claude/capabilities-overview-c6elxr` at `4685506` (the worktree was fast-forwarded to it; it was clean). **Database:** a private `bind_haiku_zod` (created for this run and dropped after; the shared `bind_local` was not used). **Node** 22.22.0, **npm** 10.9.4.
+
+**Before the change:** `npm audit --audit-level=high` reported 4 high-severity findings, all for zod (GHSA-mrhx-c7xc-m3w5, zod before 4.6.6). Typecheck, lint and unit tests passed. Integration on the private database: 87 files passed and 1 skipped; 878 tests passed and 10 skipped.
+
+| # | Check | Command | Observed | Class |
+| :--- | :--- | :--- | :--- | :--- |
+| Z1 | Clean install from the lockfile | `npm ci` | exit 0, 439 packages added | LOCAL_PASS |
+| Z2 | High-severity audit (the gate) | `npm audit --audit-level=high` | exit 0, "found 0 vulnerabilities" | LOCAL_PASS |
+| Z3 | Types, all three projects | `npm run typecheck` | exit 0 (root, `sdk/`, `mcp/`) | LOCAL_PASS |
+| Z4 | Lint | `npm run lint` | exit 0 | LOCAL_PASS |
+| Z5 | Unit tests | `npm run test:unit` | exit 0; 71 files, 944 tests passed (871 before, 73 new in `tests/unit/zod-4-migration.test.ts`) | LOCAL_PASS |
+| Z6 | Integration, private database | `DATABASE_URL=…/bind_haiku_zod npx vitest run tests/integration/` | exit 0; 88 files passed, 1 skipped (as in the baseline); 881 tests passed, 10 skipped (3 new in `tests/integration/zod-4-error-fields.test.ts`) | LOCAL_PASS |
+| Z7 | Error contract and API contract | included in Z6 (`error-contract`, `api-contract`) | passed | LOCAL_PASS |
+| Z8 | Generated OpenAPI document | `npm run api:spec` | exit 0. Drift against HEAD: `docs/openapi.json`, 2 hunks, both the `contactEmail` schema (the old `not: {}` artifact removed) | LOCAL_PASS |
+| Z9 | Generated SDK types | `npm run sdk:generate` | exit 0. Drift: `sdk/src/generated/api.d.ts`, 2 lines, `contactEmail` from `(unknown \| string) \| ""` to `string \| ""` | LOCAL_PASS |
+| Z10 | Generated capabilities | `npm run capabilities:generate` | exit 0. No drift | LOCAL_PASS |
+| Z11 | Production build | `npm run build` | exit 0 (`tsc` plus the SDK build) | LOCAL_PASS |
+| Z12 | MCP build | `npm run mcp:build` | exit 0 | LOCAL_PASS |
+| Z13 | Web bundle (Privy adapter) | `npm run web:bundle` | exit 0; `web/app/vendor/privy.js` 1,384,683 bytes | LOCAL_PASS |
+| Z14 | Vercel build, step by step | `npm run build:vercel`; `npm run sdk:build`; `web:bundle`; copy `web/` and the brand assets into `public/`; `node scripts/copy-sdk-browser.mjs public/sdk`; `test -s public/app/vendor/privy.js` | every step exit 0. Run as separate commands because the sandbox would not run `scripts/vercel-build.sh` as one unit; the steps are the script's own commands in its order | LOCAL_PASS |
+| Z15 | Browser (Playwright) tests | `npm run test:e2e` | Not run: Playwright browsers are not installed in worktrees | NOT_RUN |
+
+**Differential checks (LOCAL_PASS).** The zod 3 side is HEAD's source, with `from "zod"` rewritten to the `zod/v3` subpath of the same zod 4 package, and was checked against real zod 3.25.76 for the sampled cases.
+- **HTTP validation, all 96 registry routes:** 1,744 generated inputs (the sample body, missing and wrong-typed fields, unknown keys, scalars). Success and the `fields` the server answers with were compared. After the change, 10 inputs differ: 5 integers at or above 2^53 and 5 non-finite numbers (`1e400`). Both are the documented change in ADR 0087, decision 7. Before the `validationFields` fix there were 156 differing lines, most of them duplicated field names.
+- **MCP tool validation text, all 17 tools:** 436 inputs. The text the MCP SDK would report matches zod 3 except 4 non-finite inputs.
+- **Environment (`envSchema`), 31 cases:** same accept and refuse results, except `PORT=1e400` (accepted before, refused now). Other differences are default message wording at boot.
+- **Advertised MCP input schemas (17 tools):** differ in two ways only (ADR 0087, decision 9).
+- **`@privy-io/api-base` `APIError` schema:** identical results for six inputs under zod 3.25.76 and zod 4.6.7.
+- **Email:** 41 samples, identical to zod 3 (in the unit test).
+- **Offset date-time:** 21 samples, identical to zod 3 (in the unit test).
+
+**Performance check that chose the engine (LOCAL_PASS).** An array of 2,000,000 strings against `.max(200)`: zod 4.6.5 (vulnerable) 45 ms and 16 MB; zod 4.6.7 native 1 ms and 0 MB; zod 4.6.7 `zod/v3` subpath 516 ms and 176 MB. The `zod/v3` path was therefore not used.
+
+**Known risks and open items**
+- **Privy override.** `@privy-io/api-base` is overridden to zod `^4.6.7`. Its declared range (`^3.25.76`) does not allow it, which is outside the rule we set for overrides. The reasons are in ADR 0087, decision 4. It has to be accepted by the owner, or reverted (which fails the audit gate again until privy releases zod 4 support).
+- **Behaviour change, numbers.** Integers beyond ±(2^53 − 1) and non-finite numbers are refused with 400 and the field named (previously accepted). This is intended and recorded in ADR 0087, decision 7, but it is a change to the HTTP contract and needs the owner's acknowledgement.
+- **MCP advertised schema** changes in two places (ADR 0087, decision 9).
+- **Default message wording** for zod's own messages changed where we had no text. No HTTP response carries zod text.
+- **Not run:** Playwright browser tests (Z15). One integration test file is skipped, as in the baseline.
+- **Not verified live:** no live Arc, Privy or deployed environment was touched; this change is local only.

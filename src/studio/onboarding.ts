@@ -53,7 +53,7 @@ export const InitialSupplierSchema = z.object({
   adapterType: z
     .enum(["simulated_sysco", "simulated_baldor", "rest_api", "manual_quote"])
     .default("manual_quote"),
-  contactEmail: z.string().email().optional().or(z.literal("")),
+  contactEmail: z.email().optional().or(z.literal("")),
   verified: z.boolean().default(true),
   isSimulated: z.boolean().default(true),
   endpointUrl: z.string().optional(),

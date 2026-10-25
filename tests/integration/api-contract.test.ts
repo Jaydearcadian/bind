@@ -817,8 +817,9 @@ function firstField(schema: z.ZodTypeAny): string {
       current = current.unwrap();
       continue;
     }
-    if (current instanceof z.ZodEffects) {
-      current = current.innerType();
+    // A transform or a preprocess is a pipe in zod 4: its input side is the body's shape.
+    if (current instanceof z.ZodPipe) {
+      current = current.in;
       continue;
     }
     const options = current?.options ?? current?._def?.options;
