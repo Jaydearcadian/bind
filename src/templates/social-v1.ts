@@ -2,7 +2,7 @@ import { EffectClass } from "../policy/effect-classifier.js";
 import { WorkspaceTemplate } from "./types.js";
 
 /**
- * Social media manager (docs/decisions/0083). Reads a brand's post analytics and reports what worked, and drafts a content
+ * Social media manager (docs/decisions/0084). Reads a brand's post analytics and reports what worked, and drafts a content
  * calendar. It has no posting, ads or replies: anything public or paid needs a later, separately approved capability.
  * No role can make a commercial commitment, so no money moves under this template.
  */

@@ -6,13 +6,13 @@ import { runMigrations } from "../../src/db/migrate.js";
 import { provisionWorkspace } from "../../src/templates/registry.js";
 import { issueToken } from "../../src/auth/tokens.js";
 
-// The social media manager template (docs/decisions/0083): created through the public API, listed, and refused the stock routes.
+// The social media manager template (docs/decisions/0084): created through the public API, listed, and refused the stock routes.
 const run = Date.now();
 const socialId = `ws-social-${run}`;
 const otherSocialId = `ws-social-other-${run}`;
 const kitchenId = `ws-social-kitchen-${run}`;
 
-describe("social-v1 workspace: provisioning, listing and stock refusals (docs/decisions/0083)", () => {
+describe("social-v1 workspace: provisioning, listing and stock refusals (docs/decisions/0084)", () => {
   const app = createApp();
   let server: Server;
   let baseUrl = "";

@@ -31,6 +31,11 @@ export const IDEMPOTENT_ROUTES: ReadonlySet<string> = new Set([
   "PUT /api/workspaces/:id/policy",
   "POST /api/workspaces/:id/agents",
   "POST /api/workspaces/:id/suppliers",
+  // Tab ledger (ADR 0081): a charge is an obligation and a settle moves money, so a retried request replays its answer.
+  "POST /api/workspaces/:id/tabs/charges",
+  "POST /api/workspaces/:id/tabs/:counterpartyId/settle",
+  // A resolve may send nothing (reconcile adopts and confirms only) or may restore a clear (cancel_and_restore): a retried request replays.
+  "POST /api/workspaces/:id/tabs/settlements/:settlementId/resolve",
 ]);
 
 /**

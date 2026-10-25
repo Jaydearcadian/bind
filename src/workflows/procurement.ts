@@ -110,7 +110,7 @@ export class ProcurementWorkflowRunner {
     if (pauseRes.rows[0]?.agents_paused === true) {
       throw new AgentsPausedError();
     }
-    // 0b. A template with no stock module has nothing to replenish (docs/decisions/0083). Refused before any workflow starts.
+    // 0b. A template with no stock module has nothing to replenish (docs/decisions/0084). Refused before any workflow starts.
     if (refusesStock(pauseRes.rows[0]?.template_id)) {
       throw new NoStockModuleError();
     }

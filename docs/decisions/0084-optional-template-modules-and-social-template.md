@@ -1,4 +1,4 @@
-# ADR 0083: Stock and suppliers are optional template modules; a social media manager template
+# ADR 0084: Stock and suppliers are optional template modules; a social media manager template
 
 ## Status
 Accepted (2026-10-24), as an experiment. Each part is small and reversible: remove the `social-v1` template and the descriptive fields to undo it.

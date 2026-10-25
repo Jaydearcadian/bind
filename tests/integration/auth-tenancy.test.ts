@@ -53,6 +53,8 @@ const PUBLIC_ROUTES: Array<[string, string]> = [
 
 /** Owner or staff of the workspace in the path (or, for the list, the caller's own workspace). */
 const ANY_ROLE_ROUTES: Array<[string, string]> = [
+  // Staff and owner may record a charge on a tab: it is an obligation, and it is audited with the token (ADR 0081).
+  ["POST", "/api/workspaces/:id/tabs/charges"],
   ["GET", "/api/workspaces"],
   // Who the token is (ADR 0058). The route answers for the caller's own workspace only.
   ["GET", "/api/me"],
@@ -107,6 +109,13 @@ const ACCOUNT_ROUTES: Array<[string, string]> = [
 /** Owner of the workspace in the path, or of the approval or order whose workspace the service checks. */
 const OWNER_ROUTES: Array<[string, string]> = [
   ["PUT", "/api/workspaces/:id/policy"],
+  // Reading a tab and settling it are owner actions (ADR 0081).
+  ["GET", "/api/workspaces/:id/tabs"],
+  ["GET", "/api/workspaces/:id/tabs/:counterpartyId"],
+  ["POST", "/api/workspaces/:id/tabs/:counterpartyId/settle"],
+  // Held tab settlements (ADR 0081): listing and resolving them are owner actions; a staff token is 403.
+  ["GET", "/api/workspaces/:id/tabs/settlements"],
+  ["POST", "/api/workspaces/:id/tabs/settlements/:settlementId/resolve"],
   ["POST", "/api/workspaces/:id/suppliers"],
   ["POST", "/api/workspaces/:id/agents"],
   ["POST", "/api/workspaces/:id/surfaces"],

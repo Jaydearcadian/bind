@@ -31,7 +31,7 @@ export interface SupplierSeedItem {
 }
 
 /**
- * Descriptive metadata only (docs/decisions/0083). Nothing reads these yet: they are shown in the template listing and
+ * Descriptive metadata only (docs/decisions/0084). Nothing reads these yet: they are shown in the template listing and
  * no behaviour is wired to them.
  */
 export interface DataSourceDefinition {
@@ -63,7 +63,7 @@ export interface WorkspaceTemplate {
   roles: RoleDefinition[];
   /**
    * Optional stock module. A template with no seedInventory has no stock: it has no replenishment, and the stock write
-   * route refuses it (docs/decisions/0083).
+   * route refuses it (docs/decisions/0084).
    */
   seedInventory?: InventorySeedItem[];
   /** Optional purchasing module. A template with no seedSuppliers has no supplier suggestions at onboarding. */

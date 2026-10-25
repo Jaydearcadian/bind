@@ -27,7 +27,7 @@ export class LocalSettlementSimulator implements SettlementAdapter {
   }
 
   async getBalance(address: string): Promise<bigint> {
-    return this.balances.get(address.toLowerCase()) || 500000n; // Default $5,000.00
+    return this.balances.get(address.toLowerCase()) ?? 500000n; // Default $5,000.00
   }
 
   async transferUSDC(req: TransferRequest): Promise<TransferResult> {
@@ -55,6 +55,11 @@ export class LocalSettlementSimulator implements SettlementAdapter {
     this.transfersByKey.set(req.idempotencyKey, result);
     this.transfersByOrder.set(req.orderId, result);
     return result;
+  }
+
+  /** True when a transfer was remembered for this order id: the memory the transfer itself was recorded in. */
+  async isOrderSettled(orderId: string): Promise<boolean> {
+    return this.transfersByOrder.has(orderId);
   }
 
   /** The transfer remembered for this order id, or null. Only in-process memory: a restart forgets it. */

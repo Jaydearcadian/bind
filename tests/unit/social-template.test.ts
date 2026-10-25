@@ -11,7 +11,7 @@ import {
 import { kitchenTemplate } from "../../src/templates/kitchen-v1.js";
 import { agencyTemplate } from "../../src/templates/agency-v1.js";
 
-describe("Social media manager template (social-v1, docs/decisions/0083)", () => {
+describe("Social media manager template (social-v1, docs/decisions/0084)", () => {
   it("is registered and listed alongside the kitchen and agency templates", () => {
     expect(getTemplate("social-v1")).toBe(socialTemplate);
     expect(listTemplates().map((t) => t.templateId).sort()).toEqual(["agency-v1", "kitchen-v1", "social-v1"]);

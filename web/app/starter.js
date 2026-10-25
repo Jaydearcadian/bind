@@ -35,7 +35,7 @@ export async function showStarter({ bind, me, ws }) {
     bind.call("listMembers", id).catch(() => null),
     bind.call("listTemplates").catch(() => null),
   ]);
-  // A template with no purchasing module (docs/decisions/0083) has no supplier to approve. An unknown template keeps the step.
+  // A template with no purchasing module (docs/decisions/0084) has no supplier to approve. An unknown template keeps the step.
   const tpl = Array.isArray(templates) ? templates.find((t) => t.templateId === ws.template_id) : undefined;
   const hasSuppliers = tpl?.modules?.suppliers !== false;
   let limitsDone = read(DONE_KEY(ws.id));

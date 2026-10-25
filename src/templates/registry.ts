@@ -11,7 +11,7 @@ const BASE_TEMPLATES: Record<string, WorkspaceTemplate> = {
   "social-v1": socialTemplate,
 };
 
-/** Refusal code for a stock route on a workspace whose template has no stock module (docs/decisions/0083). */
+/** Refusal code for a stock route on a workspace whose template has no stock module (docs/decisions/0084). */
 export const NO_STOCK_CODE = "TEMPLATE_HAS_NO_STOCK" as const;
 export const NO_STOCK_MESSAGE = "This workspace's template has no stock module.";
 
