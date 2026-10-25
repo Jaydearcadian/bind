@@ -427,7 +427,12 @@ export const ROUTES: RouteSpec[] = [
     summary: "Add or update an inventory item by sku.",
     body: InitialSupplyItemSchema,
     sampleBody: { sku: "FOOD-CONTRACT-SAMPLE", name: "Contract Sample Item", currentQuantity: 4, parLevel: 2, reorderQuantity: 3, unitPriceCents: 150 },
-    responses: { 201: ok("The stored item.", InventoryItemSchema) },
+    responses: {
+      201: ok("The stored item.", InventoryItemSchema),
+      400: err(
+        "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). Also refused: a workspace whose template has no stock module (code TEMPLATE_HAS_NO_STOCK, ADR 0084)."
+      ),
+    },
     contractTested: true,
   }),
   withGenericErrors({
@@ -442,7 +447,7 @@ export const ROUTES: RouteSpec[] = [
     responses: {
       200: ok("The replenishment workflow, and its order or approval if one exists.", ReplenishResultSchema),
       400: err(
-        "Malformed JSON, a NUL character, or a missing or non-text sku. Also refused: a paused workspace (code AGENTS_PAUSED, ADR 0023), an unknown sku, and an item with sufficient stock."
+        "Malformed JSON, a NUL character, or a missing or non-text sku. Also refused: a paused workspace (code AGENTS_PAUSED, ADR 0023), a workspace whose template has no stock module (code TEMPLATE_HAS_NO_STOCK, ADR 0084), an unknown sku, and an item with sufficient stock."
       ),
     },
     contractTested: true,

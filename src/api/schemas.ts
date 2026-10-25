@@ -838,6 +838,14 @@ export const TemplateSummarySchema = z
     defaultDailyLimitCents: Decimal,
     defaultApprovalThresholdCents: Decimal,
     roles: z.array(z.object({ roleName: z.string() }).passthrough()),
+    /** Which optional parts the template has. A template with neither has no stock and no purchasing (docs/decisions/0084). */
+    modules: z.object({ stock: z.boolean(), suppliers: z.boolean() }).optional(),
+    /** Descriptive only (docs/decisions/0084): no behaviour reads these yet. */
+    dataSources: z.array(z.object({ id: z.string(), label: z.string(), kind: z.string(), readOnly: z.literal(true) })).optional(),
+    triggers: z
+      .array(z.object({ id: z.string(), kind: z.enum(["schedule", "event", "manual"]), description: z.string() }))
+      .optional(),
+    outputs: z.array(z.object({ id: z.string(), kind: z.enum(["report", "notice", "order"]), description: z.string() })).optional(),
   })
   .passthrough();
 
