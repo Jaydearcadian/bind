@@ -1,6 +1,7 @@
 import {
   createPublicClient,
   createWalletClient,
+  decodeAbiParameters,
   decodeErrorResult,
   defineChain,
   encodeFunctionData,
@@ -8,8 +9,10 @@ import {
   http,
   isAddress,
   keccak256,
+  parseAbiParameters,
   parseEventLogs,
   toHex,
+  TransactionNotFoundError,
   TransactionReceiptNotFoundError,
   type AbiEvent,
   type Address,
@@ -23,12 +26,15 @@ import {
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { SettlementAdapter, SettlementStatus, TransferRequest, TransferResult } from "./types.js";
 import {
+  RECIPIENT_REFUSED_DETAIL,
   SettlementChainMismatchError,
   SettlementNotConfiguredError,
   SettlementNotSupportedError,
   SettlementPayerMismatchError,
   SettlementRejectedError,
   SettlementTransportError,
+  TRANSFER_FAILED_RECIPIENT,
+  ZERO_ADDRESS_RECIPIENT,
   assertPayableCentAmount,
   transportErrorFrom,
 } from "./errors.js";
@@ -116,11 +122,110 @@ export const ERC8183_ABI = [
 export const ARC_TESTNET_CHAIN_ID = 5042002;
 export const ARC_USDC_PRECOMPILE: Address = "0x3600000000000000000000000000000000000000";
 
+/**
+ * Fee rules (docs/decisions/0087, claims a and b). Source: arc/references/evm-differences.md, "Fee market and block behavior"
+ * ("The minimum base fee is 20 Gwei. Transactions with maxFeePerGas lower than 20 Gwei are silently dropped by the mempool.")
+ * and arc/concepts/stable-fee-design.md, "Key parameters" ("Maximum base fee | 20,000 Gwei") and "Priority fees" ("Set
+ * maxPriorityFeePerGas to 0 for most transactions."). The testnet minimum is the one that applies to Bind's testnet.
+ */
+export const ARC_MIN_BASE_FEE_WEI = 20_000_000_000n;
+export const ARC_MAX_BASE_FEE_WEI = 20_000_000_000_000n;
+export const ARC_DEFAULT_PRIORITY_FEE_WEI = 0n;
+
+/**
+ * USDC units (docs/decisions/0087, claim d). Source: arc/concepts/stablecoin-native-model.md: the native balance has 18
+ * decimals (`addr.balance`, `msg.value`), and the ERC-20 view at 0x3600…0000 has 6 decimals (`balanceOf`), which "truncates the
+ * last 12 decimal places of the native value". One cent is 1e16 wei natively and 10,000 ERC-20 units. The two are never mixed.
+ */
+export const NATIVE_WEI_PER_CENT = 10n ** 16n;
+export const ERC20_UNITS_PER_CENT = 10_000n;
+
+const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000";
+/** The text Arc's native transfer revert carries (arc/references/evm-differences.md, "Value transfer rules"). */
+const ZERO_ADDRESS_REVERT_TEXT = "Zero address not allowed";
+/** The selector of Solidity's Error(string), the revert a node reports for a require-style string. */
+const ERROR_STRING_SELECTOR = "0x08c379a0";
+
+function nonNegativeBigint(value: unknown, name: string): bigint {
+  if (typeof value !== "bigint" || value < 0n) throw new TypeError(`${name} must be a non-negative bigint`);
+  return value;
+}
+
+/** Whole cents to the native 18-decimal wei value that transferUSDC sends as `value`. Only whole cents convert. */
+export function centsToNativeWei(cents: bigint): bigint {
+  return nonNegativeBigint(cents, "cents") * NATIVE_WEI_PER_CENT;
+}
+
+/** Whole cents to the 6-decimal ERC-20 units a `balanceOf` read is in. */
+export function centsToErc20Units(cents: bigint): bigint {
+  return nonNegativeBigint(cents, "cents") * ERC20_UNITS_PER_CENT;
+}
+
+/** 6-decimal ERC-20 units to whole cents. Floor: a sub-cent remainder is not a cent. */
+export function erc20UnitsToCents(units: bigint): bigint {
+  return nonNegativeBigint(units, "units") / ERC20_UNITS_PER_CENT;
+}
+
+/** 18-decimal native wei to whole cents. Floor: a sub-cent remainder is not a cent. */
+export function nativeWeiToCents(wei: bigint): bigint {
+  return nonNegativeBigint(wei, "wei") / NATIVE_WEI_PER_CENT;
+}
+
+export interface FeeEstimate {
+  maxFeePerGas?: bigint;
+  maxPriorityFeePerGas?: bigint;
+}
+
+export interface FeeCaps {
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+}
+
+/**
+ * The fee caps a settlement is sent with. The cap is the estimate, raised to the 20 gwei floor and lowered to the 20,000 gwei
+ * ceiling. The priority fee is the estimate's when it is a non-negative number (zero otherwise) and never more than the cap.
+ * With no estimate the cap is the floor: a transfer is never sent without one.
+ */
+export function feeCapsFor(estimate: FeeEstimate | undefined): FeeCaps {
+  const estimated = typeof estimate?.maxFeePerGas === "bigint" && estimate.maxFeePerGas > 0n ? estimate.maxFeePerGas : 0n;
+  const raised = estimated > ARC_MIN_BASE_FEE_WEI ? estimated : ARC_MIN_BASE_FEE_WEI;
+  const maxFeePerGas = raised > ARC_MAX_BASE_FEE_WEI ? ARC_MAX_BASE_FEE_WEI : raised;
+  const tip =
+    typeof estimate?.maxPriorityFeePerGas === "bigint" && estimate.maxPriorityFeePerGas >= 0n
+      ? estimate.maxPriorityFeePerGas
+      : ARC_DEFAULT_PRIORITY_FEE_WEI;
+  return { maxFeePerGas, maxPriorityFeePerGas: tip > maxFeePerGas ? maxFeePerGas : tip };
+}
+
 const ARC_EXPLORER_TX_PREFIX = "https://testnet.arcscan.app/tx/";
 const HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 const PRIVATE_KEY_RE = /^0x[0-9a-fA-F]{64}$/;
 const RECEIPT_POLL_MS = 500;
 const DEFAULT_CONFIRM_WAIT_MS = 8000;
+
+/**
+ * True when a revert or error carries the zero-address text, or an Error(string) revert with that text. Walks the cause
+ * chain, bounded. Only the revert text is read; the error's own message is never copied anywhere.
+ */
+function recipientRefusalOf(error: unknown): boolean {
+  let node: unknown = error;
+  for (let depth = 0; node !== null && typeof node === "object" && depth < 10; depth++) {
+    const record = node as { message?: unknown; shortMessage?: unknown; details?: unknown; reason?: unknown; data?: unknown; cause?: unknown };
+    for (const text of [record.message, record.shortMessage, record.details, record.reason]) {
+      if (typeof text === "string" && text.includes(ZERO_ADDRESS_REVERT_TEXT)) return true;
+    }
+    if (typeof record.data === "string" && record.data.toLowerCase().startsWith(ERROR_STRING_SELECTOR)) {
+      try {
+        const [reason] = decodeAbiParameters(parseAbiParameters("string"), `0x${record.data.slice(10)}`) as [string];
+        if (reason.includes(ZERO_ADDRESS_REVERT_TEXT)) return true;
+      } catch {
+        // Not a decodable Error(string): not a recipient refusal.
+      }
+    }
+    node = record.cause;
+  }
+  return false;
+}
 
 export interface ArcL1SettlementOptions {
   rpcUrl?: string;
@@ -209,8 +314,8 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
         functionName: "balanceOf",
         args: [address as Address],
       });
-      // Convert 6 decimal USDC units to cents (cents = units / 10^4)
-      return balance / 10000n;
+      // balanceOf is the 6-decimal ERC-20 view: floor to whole cents (docs/decisions/0087, claim d).
+      return erc20UnitsToCents(balance);
     } catch {
       // Return 0 if network unreachable or precompile call reverts
       return 0n;
@@ -224,6 +329,10 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
   async transferUSDC(req: TransferRequest): Promise<TransferResult> {
     // First: a sub-cent or non-bigint amount is refused before any settings check, chain read or RPC call.
     assertPayableCentAmount(req.amountCents);
+    // A zero-address recipient is refused next, still before any settings check, chain read or RPC call (docs/decisions/0087).
+    if (isAddress(req.toAddress) && getAddress(req.toAddress) === ZERO_ADDRESS) {
+      throw new SettlementRejectedError(ZERO_ADDRESS_RECIPIENT, undefined, "the recipient is the zero address");
+    }
     const { contractAddress, signer, walletClient } = this.#requireSettings();
     await this.#assertChain();
 
@@ -240,7 +349,7 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
 
     const supplier = getAddress(req.toAddress);
     const matchHash = req.matchHash as Hex;
-    const value = req.amountCents * 10n ** 16n; // 1 cent = 1e16 wei of native 18-decimal USDC
+    const value = centsToNativeWei(req.amountCents); // native 18-decimal USDC: 1 cent = 1e16 wei
     const orderId32 = keccak256(toHex(req.orderId));
     const args = [orderId32, supplier, matchHash] as const;
 
@@ -251,6 +360,9 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
       return this.#classifyFailure(error, "pre-flight call", contractAddress, orderId32);
     }
 
+    // The fee cap is set explicitly, never left to the node (docs/decisions/0087, claims a and b): below 20 gwei the network
+    // drops the transaction with no receipt. The estimate itself never throws; a failed estimate leaves the floor.
+    const fees = await this.#feeCaps();
     let txHash: Hex;
     try {
       txHash = await walletClient.writeContract({
@@ -259,6 +371,8 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
         functionName: "settleOrder",
         args,
         value,
+        maxFeePerGas: fees.maxFeePerGas,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
         account: signer,
         chain: this.#chain,
       });
@@ -279,8 +393,12 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
     const contractAddress = this.#contractAddress();
     const hash = txHash as Hex;
 
-    const receipt = await this.#pollReceipt(hash);
-    if (!receipt) return this.#result(hash, "submitted");
+    const poll = await this.#pollReceipt(hash);
+    const receipt = poll.receipt;
+    if (!receipt) {
+      // Only a "not yet mined" answer can be followed by the transaction lookup. A failed receipt read is not evidence.
+      return this.#result(hash, "submitted", poll.notYetMined ? await this.#nodeMissingFlag(hash) : {});
+    }
 
     const blockNumber = Number(receipt.blockNumber);
     if (receipt.status !== "success") {
@@ -378,10 +496,18 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
     contractAddress: Address,
     orderId32: Hex
   ): Promise<TransferResult> {
+    // The zero-address text is checked first: its revert data is an Error(string), which is not a custom error of this ABI.
+    if (recipientRefusalOf(error)) {
+      throw new SettlementRejectedError(TRANSFER_FAILED_RECIPIENT, undefined, RECIPIENT_REFUSED_DETAIL);
+    }
     const revert = revertDataOf(error);
     if (revert === undefined) throw transportErrorFrom(operation, error, this.#secrets());
     const decoded = decodeRevert(revert);
     if (!decoded) throw new SettlementRejectedError("UNKNOWN_REVERT");
+    // The contract's native send to the recipient failed: a blocklisted or invalid recipient (docs/decisions/0087).
+    if (decoded.errorName === "TransferFailed") {
+      throw new SettlementRejectedError(TRANSFER_FAILED_RECIPIENT, undefined, RECIPIENT_REFUSED_DETAIL);
+    }
     if (decoded.errorName !== "OrderAlreadySettled") {
       throw new SettlementRejectedError(decoded.errorName, decoded.args);
     }
@@ -462,14 +588,17 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
         deployBlock: this.#deployBlock,
         chunkBlocks: this.#logChunkBlocks,
         rangeLimitOf: rangeLimitOfError,
-        fetchRange: (from, to) =>
-          this.#publicClient.getLogs({
+        fetchRange: async (from, to) => {
+          // The address filter is sent, and the answer is filtered again: a log from any other emitter is never a settlement.
+          const logs = await this.#publicClient.getLogs({
             address: contractAddress,
             event,
             args: { orderId: orderId32 },
             fromBlock: from,
             toBlock: to,
-          }),
+          });
+          return logs.filter((entry) => entry.address.toLowerCase() === contractAddress.toLowerCase());
+        },
       });
     } catch (error) {
       throw transportErrorFrom("settlement lookup", error, this.#secrets());
@@ -478,17 +607,48 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
     return { transactionHash: log.transactionHash, blockNumber: log.blockNumber };
   }
 
-  async #pollReceipt(hash: Hex): Promise<TransactionReceipt | undefined> {
+  /**
+   * The fee caps for a transfer: an EIP-1559 estimate from the node, through feeCapsFor. An estimate that throws is the floor.
+   * A transfer is never sent without a fee cap (docs/decisions/0087, item 1).
+   */
+  async #feeCaps(): Promise<FeeCaps> {
+    let estimate: FeeEstimate | undefined;
+    try {
+      estimate = await this.#publicClient.estimateFeesPerGas({ type: "eip1559", chain: this.#chain });
+    } catch {
+      estimate = undefined;
+    }
+    return feeCapsFor(estimate);
+  }
+
+  /**
+   * Asked only when no receipt arrived in the wait. `notFoundOnNode` is set only when the node answers "transaction not
+   * found". Any other answer, including an RPC error, leaves the flag unset (docs/decisions/0087, item 5).
+   */
+  async #nodeMissingFlag(hash: Hex): Promise<Partial<TransferResult>> {
+    try {
+      await this.#publicClient.getTransaction({ hash });
+      return {};
+    } catch (error) {
+      return error instanceof TransactionNotFoundError ? { notFoundOnNode: true } : {};
+    }
+  }
+
+  /**
+   * The receipt, or no receipt. `notYetMined` is true only when the node answered "receipt not found" on the last read, so a
+   * failed read is never taken as evidence that the transaction is missing.
+   */
+  async #pollReceipt(hash: Hex): Promise<{ receipt?: TransactionReceipt; notYetMined: boolean }> {
     const deadline = Date.now() + this.#confirmWaitMs;
     for (;;) {
       try {
-        return await this.#publicClient.getTransactionReceipt({ hash });
+        return { receipt: await this.#publicClient.getTransactionReceipt({ hash }), notYetMined: false };
       } catch (error) {
         // Not mined yet: keep waiting. Any other failure leaves the outcome unknown.
-        if (!(error instanceof TransactionReceiptNotFoundError)) return undefined;
+        if (!(error instanceof TransactionReceiptNotFoundError)) return { notYetMined: false };
       }
       const remaining = deadline - Date.now();
-      if (remaining <= 0) return undefined;
+      if (remaining <= 0) return { notYetMined: true };
       await new Promise((resolve) => setTimeout(resolve, Math.min(RECEIPT_POLL_MS, remaining)));
     }
   }
