@@ -131,6 +131,11 @@ export const ARC_USDC_PRECOMPILE: Address = "0x360000000000000000000000000000000
 export const ARC_MIN_BASE_FEE_WEI = 20_000_000_000n;
 export const ARC_MAX_BASE_FEE_WEI = 20_000_000_000_000n;
 export const ARC_DEFAULT_PRIORITY_FEE_WEI = 0n;
+/**
+ * The fee cap used when the fee estimate fails: 1.5 times the floor (30 gwei), so a fallback has a small margin above the
+ * minimum rather than sitting exactly on it. Still bounded by ARC_MAX_BASE_FEE_WEI (docs/decisions/0087, item 1).
+ */
+export const ARC_FEE_FALLBACK_WEI = (ARC_MIN_BASE_FEE_WEI * 3n) / 2n;
 
 /**
  * USDC units (docs/decisions/0087, claim d). Source: arc/concepts/stablecoin-native-model.md: the native balance has 18
@@ -616,7 +621,9 @@ export class ArcL1SettlementAdapter implements SettlementAdapter {
     try {
       estimate = await this.#publicClient.estimateFeesPerGas({ type: "eip1559", chain: this.#chain });
     } catch {
-      estimate = undefined;
+      // A failed estimate is not a reason to send unpriced: the fallback cap is 1.5 times the floor, still under the ceiling.
+      const fallback = ARC_FEE_FALLBACK_WEI > ARC_MAX_BASE_FEE_WEI ? ARC_MAX_BASE_FEE_WEI : ARC_FEE_FALLBACK_WEI;
+      return { maxFeePerGas: fallback, maxPriorityFeePerGas: ARC_DEFAULT_PRIORITY_FEE_WEI };
     }
     return feeCapsFor(estimate);
   }

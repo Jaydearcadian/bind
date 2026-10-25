@@ -16,6 +16,15 @@ import {
 } from "../helpers/tab-spy.js";
 import { ageEffect, drainHeldWorkspaces } from "../helpers/tab-held.js";
 
+/** Moves the latest SETTLEMENT_DROPPED hold back in time: the restore window is measured from the hold (ADR 0087, item 5). */
+async function ageDropHold(settlementId: string, minutes: number): Promise<void> {
+  await query(
+    `UPDATE audit_logs SET created_at = NOW() - ($2::int * INTERVAL '1 minute')
+     WHERE action = 'tab.settlement_held' AND evidence->>'settlementId' = $1 AND evidence->>'hold' = 'SETTLEMENT_DROPPED';`,
+    [settlementId, minutes]
+  );
+}
+
 /**
  * A `submitted` tab transfer the node does not know (a dropped transfer, docs/decisions/0087, item 5). The ledger holds it as
  * SETTLEMENT_DROPPED, keeps its clear, never sends it again, adopts it if a transfer for the order appears, and restores it
@@ -182,6 +191,16 @@ describe("a dropped tab transfer is held, not re-sent, and keeps its clear (docs
     expect(spy.calls, "the adoption sends nothing").toHaveLength(1);
   });
 
+  it("an adapter without the reads is never dropped: the tab stays submitted, with its clear and no dropped hold", async () => {
+    const { spy, ledger, settlementId, w, cp } = await sentAndDropped("drop-no-reads");
+    (spy as { findTransfer?: unknown }).findTransfer = undefined;
+    (spy as { isOrderSettled?: unknown }).isOrderSettled = undefined;
+    expect((await ledger.confirmSettlement(settlementId)).kind).toBe("awaiting");
+    expect((await row(settlementId)).status).toBe("submitted");
+    expect(await holdAuditWith(w, "SETTLEMENT_DROPPED")).toBe(0);
+    expect(await tabSums(w, cp)).toMatchObject({ clears: 50_000n, reversals: 0n });
+  });
+
   it("the worker re-asks a dropped tab on its backoff, counts the attempt, and never sends", async () => {
     const { spy, ledger, settlementId } = await sentAndDropped("drop-worker");
     expect((await ledger.confirmSettlement(settlementId)).kind).toBe("held");
@@ -206,10 +225,20 @@ describe("restoring a dropped tab uses the same proof (iii) as an unknown outcom
     expect(await auditCount(w, "tab.settlement_restore_refused")).toBeGreaterThanOrEqual(1);
   });
 
+  it("the window runs from the hold: a drop made about 2 minutes ago is refused even when the submission is 60 minutes old", async () => {
+    const { ledger, w, settlementId } = await sentAndDropped("drop-hold-win");
+    await ledger.confirmSettlement(settlementId);
+    await ageEffect(w, settlementId, 60);
+    const out = await ledger.cancelHeldAndRestore(settlementId, { actor: ACTOR, acknowledgeNotSent: true });
+    expect(out).toMatchObject({ kind: "refused", code: "NOT_PROVABLY_UNSENT" });
+    expect((out as { reason: string }).reason).toContain("30 minutes");
+    expect((await row(settlementId)).status).toBe("held");
+  });
+
   it("refused without the owner's acknowledgement, even when old enough", async () => {
     const { ledger, settlementId, w } = await sentAndDropped("drop-restore-noack");
     await ledger.confirmSettlement(settlementId);
-    await ageEffect(w, settlementId, 60);
+    await ageDropHold(settlementId, 60);
     const out = await ledger.cancelHeldAndRestore(settlementId, { actor: ACTOR, acknowledgeNotSent: false });
     expect(out).toMatchObject({ kind: "refused", code: "NOT_PROVABLY_UNSENT" });
     expect((await row(settlementId)).status).toBe("held");
@@ -218,7 +247,7 @@ describe("restoring a dropped tab uses the same proof (iii) as an unknown outcom
   it("refused when the node now has the transaction", async () => {
     const { spy, ledger, settlementId, w } = await sentAndDropped("drop-restore-has-it");
     await ledger.confirmSettlement(settlementId);
-    await ageEffect(w, settlementId, 60);
+    await ageDropHold(settlementId, 60);
     spy.notFoundOnNode = false;
     spy.droppedHashes.clear();
     const out = await ledger.cancelHeldAndRestore(settlementId, { actor: ACTOR, acknowledgeNotSent: true });
@@ -229,7 +258,7 @@ describe("restoring a dropped tab uses the same proof (iii) as an unknown outcom
   it("refused when a transfer for the order is found", async () => {
     const { spy, ledger, settlementId, w } = await sentAndDropped("drop-restore-found");
     await ledger.confirmSettlement(settlementId);
-    await ageEffect(w, settlementId, 60);
+    await ageDropHold(settlementId, 60);
     spy.adoptHash = `0x${"fe".repeat(32)}`;
     const out = await ledger.cancelHeldAndRestore(settlementId, { actor: ACTOR, acknowledgeNotSent: true });
     expect(out).toMatchObject({ kind: "refused", code: "NOT_PROVABLY_UNSENT" });
@@ -239,9 +268,9 @@ describe("restoring a dropped tab uses the same proof (iii) as an unknown outcom
   it("restored once old, acknowledged, not on the node and not settled: cancelled with exactly one reversal", async () => {
     const { ledger, w, cp, settlementId } = await sentAndDropped("drop-restore-ok");
     await ledger.confirmSettlement(settlementId);
-    await ageEffect(w, settlementId, 60);
+    await ageDropHold(settlementId, 60);
     const out = await ledger.cancelHeldAndRestore(settlementId, { actor: ACTOR, acknowledgeNotSent: true });
-    expect(out).toMatchObject({ kind: "cancelled", proof: "UNKNOWN_NOT_SETTLED_ACKNOWLEDGED", replayed: false });
+    expect(out).toMatchObject({ kind: "cancelled", proof: "DROPPED_NOT_SETTLED_ACKNOWLEDGED", replayed: false });
     expect(await row(settlementId)).toMatchObject({ status: "cancelled" });
     expect(await tabSums(w, cp)).toMatchObject({ clears: 50_000n, reversals: 50_000n });
   });

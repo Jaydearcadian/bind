@@ -202,7 +202,12 @@ function isTxHash(value: unknown): value is string {
 }
 
 /** Which proof allowed a restore (see cancelHeldAndRestore). */
-export type RestoreProof = "NO_EFFECT_ROW" | "DEFINITIVE_REVERT" | "UNKNOWN_NOT_SETTLED_ACKNOWLEDGED";
+export type RestoreProof =
+  | "NO_EFFECT_ROW"
+  | "DEFINITIVE_REVERT"
+  | "UNKNOWN_NOT_SETTLED_ACKNOWLEDGED"
+  /** Proof (iii) for a SETTLEMENT_DROPPED hold (docs/decisions/0087, item 5). Its own label, so the audit names the case. */
+  | "DROPPED_NOT_SETTLED_ACKNOWLEDGED";
 
 /** What cancelHeldAndRestore did. `replayed` is true when the settlement was already cancelled: nothing was written. */
 export type RestoreOutcome =
@@ -1193,7 +1198,7 @@ export class TabLedger {
     if (row.hold_reason === "SETTLEMENT_DROPPED") {
       // (iii) for a dropped transfer (docs/decisions/0087, item 5): same window, acknowledgement and reads as an unknown
       // outcome, and the stored hash must still be one the node does not know, asked now.
-      return this.proveDroppedRestore(row, effect, acknowledgeNotSent, adapter, orderId);
+      return this.proveDroppedRestore(settlementId, row, effect, acknowledgeNotSent, adapter, orderId);
     }
 
     if (row.tx_hash) {
@@ -1242,10 +1247,12 @@ export class TabLedger {
   /**
    * Proof (iii) for a SETTLEMENT_DROPPED hold (docs/decisions/0087, item 5). The hold keeps the hash, so the hash must be the one
    * the effect recorded, and the node must still answer not found for it, now. Then the same rules as (iii): the owner's
-   * acknowledgement, the effect at least 30 minutes old, findTransfer finds nothing and isOrderSettled is false. Any read that
+   * acknowledgement, the dropped hold made at least 30 minutes ago (measured from the hold, not the submission), findTransfer finds
+   * nothing and isOrderSettled is false. Any read that
    * throws refuses. Reads only.
    */
   private async proveDroppedRestore(
+    settlementId: string,
     row: { tx_hash: string | null },
     effect: { external_ref: string | null; updated_at: Date },
     acknowledgeNotSent: boolean,
@@ -1259,9 +1266,15 @@ export class TabLedger {
     if (!acknowledgeNotSent) {
       return { kind: "refused", reason: "the owner has not acknowledged the residual risk (acknowledgeNotSent)" };
     }
-    const ageMs = Date.now() - new Date(effect.updated_at).getTime();
-    if (!(ageMs >= RESTORE_MIN_AGE_MS)) {
-      return { kind: "refused", reason: "the effect was last updated less than 30 minutes ago" };
+    // The window runs from the drop, not from the submission: the latest SETTLEMENT_DROPPED hold audit row (a re-drop adds one).
+    const heldFor = await query(
+      `SELECT EXTRACT(EPOCH FROM (NOW() - MAX(created_at))) * 1000 AS age_ms FROM audit_logs
+       WHERE action = 'tab.settlement_held' AND evidence->>'settlementId' = $1 AND evidence->>'hold' = 'SETTLEMENT_DROPPED';`,
+      [settlementId]
+    );
+    const heldAge = heldFor.rows[0]?.age_ms;
+    if (heldAge === null || heldAge === undefined || !(Number(heldAge) >= RESTORE_MIN_AGE_MS)) {
+      return { kind: "refused", reason: "the dropped hold was made less than 30 minutes ago" };
     }
     let outcome: TransferResult;
     try {
@@ -1276,7 +1289,7 @@ export class TabLedger {
     if (lookup.kind === "refused") return lookup;
     const settled = await settledForRestore(adapter, orderId, "the order could not be read on the contract");
     if (settled.kind === "refused") return settled;
-    return { kind: "proved", proof: "UNKNOWN_NOT_SETTLED_ACKNOWLEDGED" };
+    return { kind: "proved", proof: "DROPPED_NOT_SETTLED_ACKNOWLEDGED" };
   }
 
   /**

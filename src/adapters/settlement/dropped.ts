@@ -14,7 +14,7 @@ export type DroppedVerdict =
   /** A transfer for the order id was found by the lookup. The caller adopts it when it is confirmed. */
   | { kind: "found"; result: TransferResult }
   /** Not dropped. The caller leaves the settlement submitted, as before. */
-  | { kind: "not_dropped"; reason: "node_has_it" | "too_young" | "lookup_unavailable" | "settled_on_contract" };
+  | { kind: "not_dropped"; reason: "node_has_it" | "too_young" | "lookup_unavailable" | "settled_on_contract" | "reads_unavailable" };
 
 /**
  * Decides whether a `submitted` transfer may be called dropped. Pure apart from the two adapter reads, which it makes only when the
@@ -27,26 +27,26 @@ export async function assessDropped(
 ): Promise<DroppedVerdict> {
   if (!input.notFoundOnNode) return { kind: "not_dropped", reason: "node_has_it" };
   if (input.ageMs === null || !(input.ageMs >= input.afterMs)) return { kind: "not_dropped", reason: "too_young" };
-
-  if (adapter.findTransfer) {
-    let found: TransferResult | null;
-    try {
-      found = await adapter.findTransfer({ orderId: input.orderId });
-    } catch {
-      return { kind: "not_dropped", reason: "lookup_unavailable" };
-    }
-    if (found !== null) return { kind: "found", result: found };
+  // Fail closed: both reads are required. An adapter that cannot answer them never produces a dropped verdict.
+  if (typeof adapter.findTransfer !== "function" || typeof adapter.isOrderSettled !== "function") {
+    return { kind: "not_dropped", reason: "reads_unavailable" };
   }
 
-  if (adapter.isOrderSettled) {
-    let settled: boolean;
-    try {
-      settled = await adapter.isOrderSettled(input.orderId);
-    } catch {
-      return { kind: "not_dropped", reason: "lookup_unavailable" };
-    }
-    if (settled !== false) return { kind: "not_dropped", reason: "settled_on_contract" };
+  let found: TransferResult | null;
+  try {
+    found = await adapter.findTransfer({ orderId: input.orderId });
+  } catch {
+    return { kind: "not_dropped", reason: "lookup_unavailable" };
   }
+  if (found !== null) return { kind: "found", result: found };
+
+  let settled: boolean;
+  try {
+    settled = await adapter.isOrderSettled(input.orderId);
+  } catch {
+    return { kind: "not_dropped", reason: "lookup_unavailable" };
+  }
+  if (settled !== false) return { kind: "not_dropped", reason: "settled_on_contract" };
 
   return { kind: "dropped" };
 }

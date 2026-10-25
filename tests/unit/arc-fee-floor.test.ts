@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { decodeFunctionData, parseTransaction, type Hex } from "viem";
 import {
   ARC_DEFAULT_PRIORITY_FEE_WEI,
+  ARC_FEE_FALLBACK_WEI,
   ARC_MAX_BASE_FEE_WEI,
   ARC_MIN_BASE_FEE_WEI,
   feeCapsFor,
@@ -66,9 +67,10 @@ describe("Arc transferUSDC fee cap", () => {
     expect(tx.maxFeePerGas).toBe(25n * GWEI);
   });
 
-  it("falls back to the floor when the estimate throws, and never sends without a cap", async () => {
+  it("falls back to 1.5 times the floor (30 gwei) when the estimate throws, and never sends without a cap", async () => {
     const { tx, rpc } = await broadcastWith({ baseFeeWei: "error" });
-    expect(tx.maxFeePerGas).toBe(ARC_MIN_BASE_FEE_WEI);
+    expect(ARC_FEE_FALLBACK_WEI).toBe(30n * GWEI);
+    expect(tx.maxFeePerGas).toBe(ARC_FEE_FALLBACK_WEI);
     // viem's parser omits a zero priority fee from the decoded transaction, so a missing value is zero.
     expect(tx.maxPriorityFeePerGas ?? 0n).toBe(ARC_DEFAULT_PRIORITY_FEE_WEI);
     expect(rpc.calls.some((c) => c.method === "eth_sendRawTransaction")).toBe(true);

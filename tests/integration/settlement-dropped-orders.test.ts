@@ -253,6 +253,21 @@ describe("a dropped order transfer is held, not re-sent (docs/decisions/0087, it
     expect(adapter.transferCalls, "the adoption sends nothing").toBe(1);
   });
 
+  it("an adapter without the reads is never dropped: the order stays settlement_submitted, with no dropped hold", async () => {
+    const adapter = new DroppingAdapter();
+    adapter.dropNext = true;
+    // The adapter cannot answer findTransfer or isOrderSettled (both are optional on the interface).
+    (adapter as { findTransfer?: unknown }).findTransfer = undefined;
+    (adapter as { isOrderSettled?: unknown }).isOrderSettled = undefined;
+    const runner = new ProcurementWorkflowRunner({ settlementFor: () => adapter, droppedAfterMs: 0 });
+    const wsId = await newWorkspace();
+    const { orderId } = await confirmedOrder(runner, wsId);
+    expect((await runner.fulfillAndReconcile(orderId, wsId)).pending).toBe(AWAITING);
+    expect((await orderRow(orderId)).status).toBe("settlement_submitted");
+    expect(await auditRows(wsId, "settlement.dropped")).toHaveLength(0);
+    expect(adapter.transferCalls).toBe(1);
+  });
+
   it("a TRANSFER_FAILED_RECIPIENT refusal holds the order as SETTLEMENT_REJECTED with the code in its evidence", async () => {
     const adapter = new DroppingAdapter();
     adapter.rejectNext = new SettlementRejectedError(TRANSFER_FAILED_RECIPIENT, undefined, "the recipient may be blocklisted or invalid");

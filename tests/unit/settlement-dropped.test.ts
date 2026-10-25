@@ -83,8 +83,11 @@ describe("assessDropped", () => {
     expect(verdict).toEqual({ kind: "not_dropped", reason: "lookup_unavailable" });
   });
 
-  it("an adapter without the lookups is judged on the node's answer and the age", async () => {
-    const verdict = await assessDropped(adapter({ withFind: false, withSettled: false }), { ...base, ageMs: OLD });
-    expect(verdict).toEqual({ kind: "dropped" });
+  // Rewritten (was: "judged on the node's answer and the age", which failed open). Both reads are required (ADR 0087).
+  it("an adapter without the lookups is never dropped, whatever the node's answer and the age", async () => {
+    for (const opts of [{ withFind: false, withSettled: false }, { withFind: false }, { withSettled: false }]) {
+      const verdict = await assessDropped(adapter(opts), { ...base, ageMs: OLD });
+      expect(verdict).toEqual({ kind: "not_dropped", reason: "reads_unavailable" });
+    }
   });
 });
