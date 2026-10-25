@@ -98,11 +98,11 @@ Status: built locally. Evidence is `LOCAL_PASS` only: a local PostgreSQL with a 
 
 ### Arc adapter behaviour: fee cap, decimals, emitters, dropped transfers (ADR 0087, `LOCAL_PASS`)
 
-- **Fee cap.** Every settlement is sent with `maxFeePerGas` at least 20 gwei and at most 20,000 gwei, and a priority fee of 0 unless the estimate gives one (`feeCapsFor` in `src/adapters/settlement/arc-l1.ts`). A failed estimate falls back to the floor. The contract and the ABI are unchanged.
+- **Fee cap.** Every settlement is sent with `maxFeePerGas` at least 20 gwei and at most 20,000 gwei, and a priority fee of 0 unless the estimate gives one (`feeCapsFor` in `src/adapters/settlement/arc-l1.ts`). A failed estimate falls back to 30 gwei (1.5 times the floor). The contract and the ABI are unchanged.
 - **Units.** Native value is 1 cent = 1e16 wei (18 decimals). `balanceOf` is 6 decimals and floors to whole cents. No amount is multiplied by 1e12 in the adapter (a source-scan test pins it).
 - **Emitters.** `SettlementExecuted` counts only from the BindSettlement address. Same-topic logs from USDC or the system emitter are ignored, and every log scan sends the contract address.
 - **Recipients.** A zero-address recipient is refused before any network call (`ZERO_ADDRESS_RECIPIENT`, a pre-send refusal). A `TransferFailed` revert, or Arc's "Zero address not allowed", is `TRANSFER_FAILED_RECIPIENT` and holds the clear. It is not a pre-send refusal.
-- **Dropped transfers.** A `submitted` transfer the node reports as not found is held as `SETTLEMENT_DROPPED` only when the age (120 s by default), `findTransfer` and `isOrderSettled` all agree (`src/adapters/settlement/dropped.ts`). It is never sent again. Its clear (tabs) or its hash (orders) is kept. Proof (iii) of the restore applies to it, with the node's not-found answer checked again at restore time.
+- **Dropped transfers.** A `submitted` transfer the node reports as not found is held as `SETTLEMENT_DROPPED` only when the age (120 s by default), `findTransfer` and `isOrderSettled` all agree (`src/adapters/settlement/dropped.ts`). It is never sent again. Its clear (tabs) or its hash (orders) is kept. Its restore uses its own proof label, `DROPPED_NOT_SETTLED_ACKNOWLEDGED`, with the 30-minute window measured from the drop and the node's not-found answer checked again at restore time. An adapter without both reads is never dropped.
 - **Not run live.** Every item above is tested against stub transports, the in-process chain helper and local PostgreSQL. The live Arc path is `NOT_RUN`.
 
 ## 4. Foundry Verification Gates
