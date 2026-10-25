@@ -2308,6 +2308,36 @@
                   "items": {
                     "additionalProperties": true,
                     "properties": {
+                      "dataSources": {
+                        "items": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "readOnly": {
+                              "enum": [
+                                true
+                              ],
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label",
+                            "kind",
+                            "readOnly"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
                       "defaultApprovalThresholdCents": {
                         "anyOf": [
                           {
@@ -2331,8 +2361,52 @@
                       "description": {
                         "type": "string"
                       },
+                      "modules": {
+                        "additionalProperties": true,
+                        "properties": {
+                          "stock": {
+                            "type": "boolean"
+                          },
+                          "suppliers": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "stock",
+                          "suppliers"
+                        ],
+                        "type": "object"
+                      },
                       "name": {
                         "type": "string"
+                      },
+                      "outputs": {
+                        "items": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "description": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "report",
+                                "notice",
+                                "order"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "description"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
                       },
                       "roles": {
                         "items": {
@@ -2351,6 +2425,34 @@
                       },
                       "templateId": {
                         "type": "string"
+                      },
+                      "triggers": {
+                        "items": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "description": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "schedule",
+                                "event",
+                                "manual"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "description"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
                       }
                     },
                     "required": [
@@ -3459,6 +3561,36 @@
                     "template": {
                       "additionalProperties": true,
                       "properties": {
+                        "dataSources": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "readOnly": {
+                                "enum": [
+                                  true
+                                ],
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "kind",
+                              "readOnly"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "defaultApprovalThresholdCents": {
                           "anyOf": [
                             {
@@ -3482,8 +3614,52 @@
                         "description": {
                           "type": "string"
                         },
+                        "modules": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "stock": {
+                              "type": "boolean"
+                            },
+                            "suppliers": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "stock",
+                            "suppliers"
+                          ],
+                          "type": "object"
+                        },
                         "name": {
                           "type": "string"
+                        },
+                        "outputs": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "description": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "report",
+                                  "notice",
+                                  "order"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "description"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
                         },
                         "roles": {
                           "items": {
@@ -3502,6 +3678,34 @@
                         },
                         "templateId": {
                           "type": "string"
+                        },
+                        "triggers": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "description": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "schedule",
+                                  "event",
+                                  "manual"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "description"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
                         }
                       },
                       "required": [
@@ -10393,7 +10597,7 @@
                 }
               }
             },
-            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). Also refused: a workspace whose template has no stock module (code TEMPLATE_HAS_NO_STOCK, ADR 0083)."
           },
           "401": {
             "content": {
@@ -15699,7 +15903,7 @@
                 }
               }
             },
-            "description": "Malformed JSON, a NUL character, or a missing or non-text sku. Also refused: a paused workspace (code AGENTS_PAUSED, ADR 0023), an unknown sku, and an item with sufficient stock."
+            "description": "Malformed JSON, a NUL character, or a missing or non-text sku. Also refused: a paused workspace (code AGENTS_PAUSED, ADR 0023), a workspace whose template has no stock module (code TEMPLATE_HAS_NO_STOCK, ADR 0083), an unknown sku, and an item with sufficient stock."
           },
           "401": {
             "content": {

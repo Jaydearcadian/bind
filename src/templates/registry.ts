@@ -1,5 +1,6 @@
 import { kitchenTemplate } from "./kitchen-v1.js";
 import { agencyTemplate } from "./agency-v1.js";
+import { socialTemplate } from "./social-v1.js";
 import { WorkspaceTemplate } from "./types.js";
 import { withTransaction } from "../db/client.js";
 import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.js";
@@ -7,7 +8,42 @@ import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.j
 const BASE_TEMPLATES: Record<string, WorkspaceTemplate> = {
   "kitchen-v1": kitchenTemplate,
   "agency-v1": agencyTemplate,
+  "social-v1": socialTemplate,
 };
+
+/** Refusal code for a stock route on a workspace whose template has no stock module (docs/decisions/0083). */
+export const NO_STOCK_CODE = "TEMPLATE_HAS_NO_STOCK" as const;
+export const NO_STOCK_MESSAGE = "This workspace's template has no stock module.";
+
+/** True when the template has a stock module. A template with no seedInventory has none. */
+export function templateHasStock(template: WorkspaceTemplate): boolean {
+  return template.seedInventory !== undefined;
+}
+
+/** True when the template has a purchasing (suppliers) module. */
+export function templateHasSuppliers(template: WorkspaceTemplate): boolean {
+  return template.seedSuppliers !== undefined;
+}
+
+/**
+ * True when a workspace's template is a known template with no stock module. A blank workspace (its template_id is its own
+ * id, so it names no template) is not refused: stock routes behave as they always did for it.
+ */
+export function refusesStock(templateId: string | null | undefined): boolean {
+  if (!templateId) return false;
+  const template = getTemplate(templateId);
+  return template !== undefined && !templateHasStock(template);
+}
+
+/** Thrown by the replenishment start for a stock-less template. The route answers 400 with `code`. */
+export class NoStockModuleError extends Error {
+  readonly code = NO_STOCK_CODE;
+
+  constructor() {
+    super(NO_STOCK_MESSAGE);
+    this.name = "NoStockModuleError";
+  }
+}
 
 export function getTemplate(templateId: string): WorkspaceTemplate | undefined {
   // Only the template table's own keys count: "constructor" or "__proto__" name no template (Task 11).

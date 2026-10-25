@@ -3004,16 +3004,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": ({
+                        dataSources?: ({
+                            id: string;
+                            kind: string;
+                            label: string;
+                            /** @enum {boolean} */
+                            readOnly: true;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
                         defaultApprovalThresholdCents: string | number;
                         defaultDailyLimitCents: string | number;
                         description: string;
+                        modules?: {
+                            stock: boolean;
+                            suppliers: boolean;
+                        } & {
+                            [key: string]: unknown;
+                        };
                         name: string;
+                        outputs?: ({
+                            description: string;
+                            id: string;
+                            /** @enum {string} */
+                            kind: "report" | "notice" | "order";
+                        } & {
+                            [key: string]: unknown;
+                        })[];
                         roles: ({
                             roleName: string;
                         } & {
                             [key: string]: unknown;
                         })[];
                         templateId: string;
+                        triggers?: ({
+                            description: string;
+                            id: string;
+                            /** @enum {string} */
+                            kind: "schedule" | "event" | "manual";
+                        } & {
+                            [key: string]: unknown;
+                        })[];
                     } & {
                         [key: string]: unknown;
                     })[];
@@ -3502,16 +3533,47 @@ export interface operations {
                             [key: string]: unknown;
                         };
                         template: {
+                            dataSources?: ({
+                                id: string;
+                                kind: string;
+                                label: string;
+                                /** @enum {boolean} */
+                                readOnly: true;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
                             defaultApprovalThresholdCents: string | number;
                             defaultDailyLimitCents: string | number;
                             description: string;
+                            modules?: {
+                                stock: boolean;
+                                suppliers: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            };
                             name: string;
+                            outputs?: ({
+                                description: string;
+                                id: string;
+                                /** @enum {string} */
+                                kind: "report" | "notice" | "order";
+                            } & {
+                                [key: string]: unknown;
+                            })[];
                             roles: ({
                                 roleName: string;
                             } & {
                                 [key: string]: unknown;
                             })[];
                             templateId: string;
+                            triggers?: ({
+                                description: string;
+                                id: string;
+                                /** @enum {string} */
+                                kind: "schedule" | "event" | "manual";
+                            } & {
+                                [key: string]: unknown;
+                            })[];
                         } & {
                             [key: string]: unknown;
                         };
@@ -7079,7 +7141,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). Also refused: a workspace whose template has no stock module (code TEMPLATE_HAS_NO_STOCK, ADR 0083). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -10038,7 +10100,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Malformed JSON, a NUL character, or a missing or non-text sku. Also refused: a paused workspace (code AGENTS_PAUSED, ADR 0023), an unknown sku, and an item with sufficient stock. */
+            /** @description Malformed JSON, a NUL character, or a missing or non-text sku. Also refused: a paused workspace (code AGENTS_PAUSED, ADR 0023), a workspace whose template has no stock module (code TEMPLATE_HAS_NO_STOCK, ADR 0083), an unknown sku, and an item with sufficient stock. */
             400: {
                 headers: {
                     [name: string]: unknown;

@@ -26,7 +26,16 @@ import {
   upsertAccount,
 } from "../accounts/service.js";
 import { authenticated, workspaceMember, workspaceOwner, anyWorkspaceOwner } from "../auth/middleware.js";
-import { provisionWorkspace, listTemplates } from "../templates/registry.js";
+import {
+  provisionWorkspace,
+  listTemplates,
+  NO_STOCK_CODE,
+  NO_STOCK_MESSAGE,
+  NoStockModuleError,
+  refusesStock,
+  templateHasStock,
+  templateHasSuppliers,
+} from "../templates/registry.js";
 import { createDemoWorkspace, resetDemoWorkspace, DemoError, DEMO_LOCK_WAIT_MS, type DemoCredentials } from "../demo/service.js";
 import { DEFAULT_DEMO_MAX_ACTIVE, demoEnabled, effectiveSettlementMode } from "../demo/policy.js";
 import { isDemoWorkspace } from "../demo/status.js";
@@ -586,8 +595,16 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.locals.closeHostedMcp = hostedMcp.close;
 
   // Templates & Blueprints
+  // `modules` says which optional parts a template has (docs/decisions/0083). It is derived, not stored.
   app.get("/api/templates", (_req: Request, res: Response) => {
-    res.json(jsonSafe(listTemplates()));
+    res.json(
+      jsonSafe(
+        listTemplates().map((t) => ({
+          ...t,
+          modules: { stock: templateHasStock(t), suppliers: templateHasSuppliers(t) },
+        }))
+      )
+    );
   });
 
   app.get("/api/templates/:id/blueprint", (req: Request, res: Response) => {
@@ -781,6 +798,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.post("/api/workspaces/:id/inventory", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
+      // A template with no stock module takes no stock rows (docs/decisions/0083). Checked before the body is read.
+      const tplRes = await query("SELECT template_id FROM workspaces WHERE id = $1;", [id]);
+      if (refusesStock(tplRes.rows[0]?.template_id)) {
+        return res.status(400).json({ error: NO_STOCK_MESSAGE, code: NO_STOCK_CODE });
+      }
       const item = InitialSupplyItemSchema.parse(req.body);
       const itemId = `inv_${id}_${item.sku}`;
       const ins = await query(
@@ -831,6 +853,10 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     } catch (err: any) {
       // A paused workspace keeps the same 400 and message, and adds the typed code (ADR 0023, ADR 0040).
       if (err instanceof AgentsPausedError) {
+        return res.status(400).json({ error: publicErrorMessage(err), code: err.code });
+      }
+      // A template with no stock module has nothing to replenish (docs/decisions/0083).
+      if (err instanceof NoStockModuleError) {
         return res.status(400).json({ error: publicErrorMessage(err), code: err.code });
       }
       res.status(400).json({ error: publicErrorMessage(err) });

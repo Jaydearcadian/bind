@@ -28,12 +28,16 @@ export async function showStarter({ bind, me, ws }) {
   const box = document.getElementById("starter");
   if (!box || me.role !== "owner" || ws.is_demo || read(HIDE_KEY(ws.id))) return;
   const id = { params: { id: ws.id } };
-  const [suppliers, connectors, invites, members] = await Promise.all([
+  const [suppliers, connectors, invites, members, templates] = await Promise.all([
     bind.call("listSuppliers", id).catch(() => null),
     bind.call("listConnectors", id).catch(() => null),
     bind.call("listInvites", id).catch(() => null),
     bind.call("listMembers", id).catch(() => null),
+    bind.call("listTemplates").catch(() => null),
   ]);
+  // A template with no purchasing module (docs/decisions/0083) has no supplier to approve. An unknown template keeps the step.
+  const tpl = Array.isArray(templates) ? templates.find((t) => t.templateId === ws.template_id) : undefined;
+  const hasSuppliers = tpl?.modules?.suppliers !== false;
   let limitsDone = read(DONE_KEY(ws.id));
   const steps = () => [
     {
@@ -44,13 +48,17 @@ export async function showStarter({ bind, me, ws }) {
       done: limitsDone,
       tick: true,
     },
-    {
-      key: "supplier",
-      title: "Approve a real supplier",
-      sub: "Until then, agents only practise with simulated ones.",
-      href: "/app/connections",
-      done: !!suppliers?.some((s) => !s.is_simulated && s.verified),
-    },
+    ...(hasSuppliers
+      ? [
+          {
+            key: "supplier",
+            title: "Approve a real supplier",
+            sub: "Until then, agents only practise with simulated ones.",
+            href: "/app/connections",
+            done: !!suppliers?.some((s) => !s.is_simulated && s.verified),
+          },
+        ]
+      : []),
     {
       key: "tool",
       title: "Connect a tool",

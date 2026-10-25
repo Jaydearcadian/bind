@@ -7,9 +7,10 @@ import { getTemplate, listTemplates } from "../../src/templates/registry.js";
 describe("Workspace Templates (Kitchen & Agency)", () => {
   it("registers both kitchen-v1 and agency-v1 templates", () => {
     const templates = listTemplates();
-    expect(templates.length).toBe(2);
+    expect(templates.length).toBe(3); // Count raised for social-v1 (docs/decisions/0083).
     expect(getTemplate("kitchen-v1")).toBeDefined();
     expect(getTemplate("agency-v1")).toBeDefined();
+    expect(getTemplate("social-v1")).toBeDefined();
   });
 
   describe("Kitchen Vertical Slice Specification (kitchen-v1)", () => {
