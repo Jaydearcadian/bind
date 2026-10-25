@@ -179,3 +179,32 @@ test("where account sign-in isn't switched on, the page says so and the access k
   await expect(page.getByRole("button", { name: "Sign in to join" })).toBeDisabled();
   await expect(page.getByRole("link", { name: "Sign in to join" })).toBeHidden();
 });
+
+test("a first sign-in can start a social media team: it is created from that template, named in Settings, and has no supplier step", async ({ page, request }) => {
+  const problems: string[] = [];
+  page.on("console", (m) => m.type() === "error" && problems.push(m.text()));
+  await installAdapter(page, null, privyToken(newUser()));
+  await page.goto("/app/sign-in");
+  await page.getByRole("button", { name: "Continue with a wallet" }).click();
+  await page.locator("#start-person").fill("Ada Social");
+  await page.getByLabel("Name your workspace").fill("Studio Brands");
+  await page.getByLabel(/Social media team/).check();
+  await page.getByRole("button", { name: "Start my workspace" }).click();
+  await expect(page).toHaveURL(/\/app\/$/);
+
+  const key = (await sessionKey(page))!;
+  const me = await (await request.get("/api/me", auth(key))).json();
+  const ws = await (await request.get(`/api/workspaces/${me.workspaceId}`, auth(key))).json();
+  expect(ws.workspace.template_id).toBe("social-v1");
+  await expect(page.getByRole("heading", { level: 1, name: "Today" })).toBeVisible();
+  await expect(page.getByText("Approve a real supplier")).toHaveCount(0);
+  await expect(page.getByText(/supplier/i)).toHaveCount(0);
+
+  await page.goto("/app/settings");
+  await expect(page.locator("#ws-facts")).toContainText("Social media team");
+  // Stock routes refuse for this team in plain, typed form.
+  const refused = await request.post(`/api/workspaces/${me.workspaceId}/inventory`, { data: { sku: "X", name: "X", category: "c", unit: "kg", currentQuantity: 1, parLevel: 1, reorderQuantity: 1, unitPriceCents: 100 }, ...auth(key) });
+  expect(refused.status()).toBe(400);
+  expect((await refused.json()).code).toBe("TEMPLATE_HAS_NO_STOCK");
+  expect(problems).toEqual([]);
+});

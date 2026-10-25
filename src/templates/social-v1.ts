@@ -10,7 +10,7 @@ export const socialTemplate: WorkspaceTemplate = {
   templateId: "social-v1",
   name: "Social media manager",
   description:
-    "Reads post analytics for a brand and reports what worked (reels against other posts, followers against non-followers, time of day, country), and drafts a content calendar. It never posts, runs ads or replies: anything public or paid needs a later, separately approved capability.",
+    "Will read post analytics for a brand, once an analytics connection exists, and report what worked (reels against other posts, followers against non-followers, time of day, country), and drafts a content calendar. It never posts, runs ads or replies: anything public or paid needs a later, separately approved capability.",
   defaultDailyLimitCents: 0n, // No spend in this template.
   defaultApprovalThresholdCents: 0n, // No spend in this template.
   roles: [
@@ -18,7 +18,7 @@ export const socialTemplate: WorkspaceTemplate = {
       roleName: "analytics_agent",
       displayName: "Post Analytics Agent",
       description:
-        "Reads post analytics for each brand and finds what worked: reels against other posts, followers against non-followers, time of day, and country. Read only: it never changes the account.",
+        "Will read post analytics for each brand, once an analytics connection exists, and find what worked: reels against other posts, followers against non-followers, time of day, and country. Read only: it never changes the account.",
       permittedEffects: [EffectClass.READ, EffectClass.EXTERNAL_REQUEST],
       spendingLimitCents: 0n,
       enabled: true,
@@ -27,7 +27,7 @@ export const socialTemplate: WorkspaceTemplate = {
       roleName: "reporting_agent",
       displayName: "Reporting Agent",
       description:
-        "Turns the analytics findings into a short report and sends the owner a notice that it is ready. Sends nothing to the public.",
+        "Will turn the analytics findings into a short report and send the owner a notice that it is ready. Sends nothing to the public.",
       permittedEffects: [EffectClass.READ, EffectClass.EXTERNAL_REQUEST],
       spendingLimitCents: 0n,
       enabled: true,

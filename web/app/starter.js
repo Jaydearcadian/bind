@@ -62,7 +62,7 @@ export async function showStarter({ bind, me, ws }) {
     {
       key: "tool",
       title: "Connect a tool",
-      sub: "Accounting, messaging or a supplier's system.",
+      sub: hasSuppliers ? "Accounting, messaging or a supplier's system." : "Your analytics, accounting or messaging.",
       href: "/app/connections",
       done: !!connectors?.some((c) => c.status !== "revoked"),
     },
