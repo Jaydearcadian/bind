@@ -95,10 +95,50 @@ export function stripComments(src: string): string {
       i = stop;
       continue;
     }
+    if (c === "/" && startsRegexLiteral(out)) {
+      // A regex literal. Its body may hold `/*`, `//` or quotes, and none of them starts a comment or a string. The body
+      // ends at the first unescaped `/` outside a character class, or at a newline (a regex literal cannot span lines).
+      out += c;
+      i++;
+      let inClass = false;
+      while (i < n && src[i] !== "\n") {
+        const ch = src[i];
+        if (ch === "\\" && i + 1 < n && src[i + 1] !== "\n") {
+          out += ch + src[i + 1];
+          i += 2;
+          continue;
+        }
+        if (ch === "[") inClass = true;
+        else if (ch === "]") inClass = false;
+        out += ch;
+        i++;
+        if (ch === "/" && !inClass) break;
+      }
+      continue;
+    }
     out += c;
     i++;
   }
   return out;
+}
+
+/** Punctuation after which a `/` starts a regex literal rather than a division. */
+const REGEX_PRECEDERS = new Set(["(", ",", "=", ":", "[", "!", "&", "|", "?", "{", "}", ";", "+", "-", "*", "%", "<", ">", "~", "^"]);
+/** Keywords after which a `/` starts a regex literal. */
+const REGEX_KEYWORDS = new Set([
+  "return", "typeof", "case", "do", "else", "in", "of", "void", "yield", "await", "throw", "new", "delete", "instanceof",
+]);
+
+/** True when a `/` at this point starts a regex literal. Looks back over whitespace only, so it is linear. */
+function startsRegexLiteral(before: string): boolean {
+  let j = before.length - 1;
+  while (j >= 0 && /\s/.test(before[j])) j--;
+  if (j < 0) return true;
+  if (REGEX_PRECEDERS.has(before[j])) return true;
+  if (!/[\w$]/.test(before[j])) return false;
+  let start = j;
+  while (start > 0 && /[\w$]/.test(before[start - 1])) start--;
+  return REGEX_KEYWORDS.has(before.slice(start, j + 1));
 }
 
 const strippedCache = new Map<string, string>();
@@ -121,6 +161,8 @@ const MCP_FILES = walk(join(ROOT, "mcp", "src"), (n) => CODE_EXTENSIONS.has(extn
 const SCRIPT_FILES = walk(join(ROOT, "scripts"), (n) => CODE_EXTENSIONS.has(extname(n))).map(rel).sort();
 const PRODUCT_FILES = [...SRC_FILES, ...MCP_FILES];
 const CODE_FILES = [...PRODUCT_FILES, ...SCRIPT_FILES];
+// templates/ws-* directories are untracked fixtures written by integration tests. They are scanned too: the rule is
+// stricter than it needs to be, and a fixture that carries a wallet instruction should fail here as well.
 const TEMPLATE_FILES = walk(join(ROOT, "templates"), (n) => TEMPLATE_EXTENSIONS.has(extname(n))).map(rel).sort();
 
 function isSettlementAdapter(relPath: string): boolean {
@@ -154,7 +196,12 @@ const PRIMITIVE_EXCEPTIONS: Record<string, string> = {
 };
 
 /** Words the templates must never contain (agents read them as instructions). Checked on the raw text. */
-const TEMPLATE_FORBIDDEN_WORDS: RegExp[] = [/wallet\s+execute/i, /circle\s+wallet/i];
+const TEMPLATE_FORBIDDEN_WORDS: RegExp[] = [
+  /wallet\s+execute/i,
+  /circle\s+wallet/i,
+  /\bcast\s+send\b/i,
+  /\bcircle\s+contract\s+execute\b/i,
+];
 
 describe("(a) value-moving primitives stay in the settlement adapters, and templates never instruct a wallet command", () => {
   it("the scanner matches the text it guards, and ignores a comment (self-test)", () => {
@@ -189,6 +236,17 @@ describe("(a) value-moving primitives stay in the settlement adapters, and templ
     expect(stripComments('const u = "https://example.test/x";')).toContain("https://example.test/x");
     // A stray quote does not hide the next line.
     expect(stripComments("const q = \"abc\nwriteContract(x)")).toContain("writeContract(x)");
+    // A regex literal whose body contains `/*` does not open a comment: the code after it is still scanned (M11).
+    expect(stripComments("const re = /a\\/*b/; w.writeContract({});")).toContain("w.writeContract({});");
+    expect(stripComments("return /a\\/*b/; w.writeContract({});")).toContain("w.writeContract({});");
+    expect(stripComments("if (x) /a\\/\\*b/.test(s); w.writeContract({});")).toContain("w.writeContract({});");
+    // A quote or `//` inside a regex body starts neither a string nor a comment.
+    expect(stripComments("const r = /[\"']\\/\\//; w.writeContract({});")).toContain("w.writeContract({});");
+    // A division is not a regex: a real comment after it is still removed.
+    const division = stripComments("const r = (a + b) / 2; // writeContract(\nconst s = a / b; /* walletClient */ z");
+    expect(division).toContain("const r = (a + b) / 2;");
+    expect(division).toContain("const s = a / b;");
+    expect(division).not.toMatch(/writeContract|walletClient/);
   });
 
   it("the settlement adapter does contain the primitives, so the scan is not vacuous", () => {
@@ -239,6 +297,9 @@ describe("(a) value-moving primitives stay in the settlement adapters, and templ
   it("the template words are matched case-insensitively (self-test)", () => {
     expect(TEMPLATE_FORBIDDEN_WORDS.some((w) => w.test("Run CIRCLE WALLET EXECUTE now"))).toBe(true);
     expect(TEMPLATE_FORBIDDEN_WORDS.some((w) => w.test("Circle Agent Stack is a vendor name"))).toBe(false);
+    expect(TEMPLATE_FORBIDDEN_WORDS.some((w) => w.test("Run `cast send 0x1 ...` to pay"))).toBe(true);
+    expect(TEMPLATE_FORBIDDEN_WORDS.some((w) => w.test("then circle contract execute the vendor"))).toBe(true);
+    expect(TEMPLATE_FORBIDDEN_WORDS.some((w) => w.test("cast call is read only"))).toBe(false);
   });
 });
 

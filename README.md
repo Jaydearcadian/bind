@@ -194,7 +194,7 @@ Key source:
 - Accounting: a local journal in PostgreSQL. No accounting service is connected.
 - Settlement: the default is an in-memory local simulator. Its transfers are lost on restart.
 - Model: no model key is set. The deterministic offline path runs. The LLM path is not run.
-- Market benchmarks, the TypeSafe scorer and the Circle CLI: off unless their keys or flags are set, and none is set here.
+- Market benchmarks and the TypeSafe scorer: off unless their keys are set, and none is set here. The Circle CLI is not used: no code path runs it, and no value moves through it (ADR 0085).
 
 **Not verified**:
 
