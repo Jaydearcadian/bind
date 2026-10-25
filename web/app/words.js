@@ -10,6 +10,8 @@ export function agentName(actor, roles) {
   if (actor.type === "staff") return actor.id || "Staff";
   if (actor.type === "system") return "Bind";
   if (actor.type === "webhook") return "A connected app";
+  // An agent connected with a staff key (ADR 0075). Owners get the key's name from the key list; staff only see that it was an agent.
+  if (actor.type === "staff_key") return roles.get(actor.id) ?? "An agent key";
   return actor.id || "Someone";
 }
 
@@ -35,6 +37,7 @@ const SENTENCES = {
   "customer_order.declined": () => "declined a customer order",
   "customer_order.fulfilled": () => "marked a customer order fulfilled",
   "customer_order.cancelled": () => "cancelled a customer order",
+  "agent.tool_called": (e) => (e.decision === "DENY" ? "made a request that Bind refused" : "made a request through its key"),
   "feedback.ingested": () => "received new feedback",
   "menu.proposed": () => "suggested a menu change",
   "menu.published": () => "published a menu change",
