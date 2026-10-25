@@ -642,3 +642,23 @@ Evidence class for everything here: LOCAL_PASS (local Postgres, spy adapter, loc
 | H4 | Arc `isOrderSettled` and the held-settlement reads against the real contract | None run | Not run. Item (c) of ADR 0081, a live Arc run of the tab path, is still required before any live use. | NOT_RUN |
 
 Residuals: proof (iii) cannot exclude a transaction still in a mempool after 30 minutes, so it needs the owner's acknowledgement; the local simulator forgets payments on a process restart, so its proofs can restore a simulated payment after a restart (simulated money only).
+
+## Arc and Circle hardening round (2026-10-25), merged branch
+
+Four local, code-only tasks from the owner's instruction of 2026-10-25, plus an Arc-aware local gate node. Nothing was sent on chain in this round and no
+key was used by any of this work. The live run of the tab path (ADR 0081 item c) is still not approved and not run.
+
+| # | Check | Command | Observed | Class |
+| :--- | :--- | :--- | :--- | :--- |
+| A1 | Merged branch, static gates | `npm run typecheck`, `npm run lint`, `npm run build` | Typecheck (root, sdk, mcp) clean; lint 0 errors and 3 warnings (unused variables in `tests/integration/tab-dropped.test.ts`); production build passes; code map, OpenAPI, SDK and capabilities regenerated and consistent | LOCAL_PASS |
+| A2 | Merged branch, unit and integration | `NODE_ENV=test npx vitest run tests/unit` and `tests/integration` on a private database | Unit: 73 files, 936 tests passed. Integration: 89 files passed, 1 skipped, 906 tests passed, 16 skipped (the Anvil suite, which is gated on a node) | LOCAL_PASS |
+| A3 | Anvil settlement suite against a local Arc-mode node (first time it ran in this environment; before this it was NOT_RUN) | `arc-anvil --network arc --chain-id 31337`, then `ANVIL_RPC_URL=<node> npx vitest run tests/integration/anvil-settlement.test.ts` | 16 of 16 passed: the 10 original tests plus 6 Arc-specific tests. On a standard-EVM node the Arc block reports NOT RUN, and with `ANVIL_EXPECT_ARC=1` 5 of the 6 fail, so the gate cannot pass silently on the wrong node | LOCAL_PASS |
+| A4 | Arc behaviour reproduced by the local Arc-mode node, and not by a standard EVM node | `cast` probes on both modes | Base fee 20 Gwei (standard: about 1 Gwei and falling); a transaction with `maxFeePerGas` 1 Gwei is rejected (standard: accepted); a native send of 1 wei to the zero address reverts with "Zero address not allowed" (standard: succeeds); a native send emits one log from the system emitter `0xffff…fffe` (standard: none). Local Arc mode is not live Arc. | LOCAL_PASS |
+| A5 | `isBlocklisted(address)` is not a method of the live USDC contract | `cast call 0x3600…0000 "isBlocklisted(address)(bool)"` on Arc testnet through Circle's public RPC, 2026-10-25 | Reverted. The same public RPC answered `eth_chainId` 5042002 without a token. | LIVE_READ_PASS |
+| A6 | ERC-8183 reference contract facts used by ADR 0086 | Public explorer API reads of the proxy and its implementation | `0x0747…4583` is an EIP-1967 proxy to a verified `AgenticCommerce` implementation; the admin and treasury at initialisation are one externally owned account. Current role holders were not readable. | LIVE_READ_PASS |
+| A7 | Fee floor and dropped outcome, zero-address and blocklist errors, decimals, emitter filtering (ADR 0087) | `tests/unit/arc-fee-floor.test.ts`, `arc-decimals-emitters.test.ts`, `settlement-dropped.test.ts`, `tests/integration/tab-dropped.test.ts`, `settlement-dropped-orders.test.ts` | Passing; 25 mutation checks on a scratch copy each caught by a failing test. A dropped transfer is held and never re-sent; the dropped decision needs all four conditions (node cannot find it, 120 s old, no transfer found for the order, contract does not show the order settled). | LOCAL_PASS |
+| A8 | No model-facing tool can move value (ADR 0085) | `tests/unit/no-value-moving-model-tools.test.ts` | Passing; mutation checks caught the tested bypasses. The scan is a text tripwire: string concatenation and runtime-built names are beyond it. | LOCAL_PASS |
+| A9 | Forge gates, Slither, the browser E2E run, CI on GitHub, the live Arc run of the tab path | None run in this round | Not run. CI still starts plain Anvil (ADR 0088 follow-up). | NOT_RUN |
+
+Known limits: the dropped decision can be wrong on a lagging node (fail-closed, the transfer is never re-sent, but a dropped order is not adopted automatically and needs an
+operator settle); the escrow and nanopayment ADRs (0086, 0083) are Proposed and decide nothing; ADR 0085's remaining prompt-injection surface (deepagents file tools) is recorded, not fixed.
