@@ -1,5 +1,5 @@
 import { EffectClass } from "../policy/effect-classifier.js";
-import { WorkspaceTemplate } from "./types.js";
+import { ANALYTICS_SOURCE_KIND, WorkspaceTemplate } from "./types.js";
 
 /**
  * Social media manager (docs/decisions/0084). Reads a brand's post analytics and reports what worked, and drafts a content
@@ -10,7 +10,7 @@ export const socialTemplate: WorkspaceTemplate = {
   templateId: "social-v1",
   name: "Social media manager",
   description:
-    "Will read post analytics for a brand, once an analytics connection exists, and report what worked (reels against other posts, followers against non-followers, time of day, country), and drafts a content calendar. It never posts, runs ads or replies: anything public or paid needs a later, separately approved capability.",
+    "Reads post analytics for a brand and reports what worked (reels against other posts, followers against non-followers, time of day, country), and drafts a content calendar. Until a real analytics provider is connected, the data is simulated and labelled as such. It never posts, runs ads or replies: anything public or paid needs a later, separately approved capability.",
   defaultDailyLimitCents: 0n, // No spend in this template.
   defaultApprovalThresholdCents: 0n, // No spend in this template.
   roles: [
@@ -18,7 +18,7 @@ export const socialTemplate: WorkspaceTemplate = {
       roleName: "analytics_agent",
       displayName: "Post Analytics Agent",
       description:
-        "Will read post analytics for each brand, once an analytics connection exists, and find what worked: reels against other posts, followers against non-followers, time of day, and country. Read only: it never changes the account.",
+        "Reads post analytics for each brand and finds what worked: reels against other posts, followers against non-followers, time of day, and country. Read only: it never changes the account. The data is simulated until a real provider is connected.",
       permittedEffects: [EffectClass.READ, EffectClass.EXTERNAL_REQUEST],
       spendingLimitCents: 0n,
       enabled: true,
@@ -27,7 +27,7 @@ export const socialTemplate: WorkspaceTemplate = {
       roleName: "reporting_agent",
       displayName: "Reporting Agent",
       description:
-        "Will turn the analytics findings into a short report and send the owner a notice that it is ready. Sends nothing to the public.",
+        "Turns the analytics findings into a short report and tells the owner it is ready. The notice names no finding. Sends nothing to the public.",
       permittedEffects: [EffectClass.READ, EffectClass.EXTERNAL_REQUEST],
       spendingLimitCents: 0n,
       enabled: true,
@@ -44,9 +44,9 @@ export const socialTemplate: WorkspaceTemplate = {
   ],
   dataSources: [
     {
-      id: "instagram_insights",
-      label: "Instagram post insights",
-      kind: "instagram_insights",
+      id: "post_analytics",
+      label: "Post analytics (simulated until a provider is connected)",
+      kind: ANALYTICS_SOURCE_KIND,
       readOnly: true,
     },
   ],
@@ -54,19 +54,20 @@ export const socialTemplate: WorkspaceTemplate = {
     {
       id: "weekly_report",
       kind: "schedule",
-      description: "Once a week, the findings are refreshed and the report is written.",
+      description:
+        "Once a week, for the last full week, each brand's posts are synced and its report is written, when the worker runs with BIND_ANALYTICS_REPORTS=true (docs/RUNBOOK.md).",
     },
     {
-      id: "post_published",
-      kind: "event",
-      description: "When a post is published, its insights are picked up for the next report.",
+      id: "on_demand_report",
+      kind: "manual",
+      description: "The owner asks for a report of a chosen period, through the API.",
     },
   ],
   outputs: [
     {
-      id: "weekly_report",
+      id: "analytics_report",
       kind: "report",
-      description: "A short written report of what worked, for the owner.",
+      description: "A short written report of what worked, for the owner. It is read in Bind, and the notice that it is ready names nothing in it.",
     },
   ],
 };

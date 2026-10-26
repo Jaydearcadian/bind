@@ -586,6 +586,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
 
     // Every GET route except the UI catch-all is read here.
     expect(ROUTES.filter((r) => r.method === "get" && !r.contractTested).map((r) => specKey(r))).toEqual([
+      "GET /api/workspaces/:id/analytics/reports/:reportId", // needs a report of a workspace with the module: tests/integration/analytics.test.ts (ADR 0091)
       "GET /api/workspaces/:id/events",
       "GET /api/account/workspaces", // needs a Privy token: tests/integration/accounts.test.ts (ADR 0052)
       "GET *",
@@ -806,7 +807,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
 });
 
 /** The number of routes with `contractTested: false`. Raise it only with a recorded reason in the ADR. */
-const MAX_NOT_CONTRACT_TESTED = 13; // 2 earlier, plus 8 People routes that need a Privy token or a seeded id (ADR 0052), plus 3 owner email routes that need a configured provider or a code only the email carries (ADR 0074)
+const MAX_NOT_CONTRACT_TESTED = 17; // 2 earlier, plus 8 People routes that need a Privy token or a seeded id (ADR 0052), plus 3 owner email routes that need a configured provider or a code only the email carries (ADR 0074), plus 4 analytics routes that need a workspace with the analytics module (ADR 0091)
 
 /** The first key of an object schema, or of the first option of a union. Used to build a wrong-typed body. */
 function firstField(schema: z.ZodTypeAny): string {

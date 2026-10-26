@@ -1,7 +1,7 @@
 # ADR 0086: Escrow direction: keep our native escrow, adopt ERC-8183, or defer escrow
 
 ## Status
-Proposed (2026-10-25). Needs the owner's decision.
+Accepted as deferred (2026-10-26). The owner decided: escrow stays deferred because no business we are working with needs it yet. Reopen this record when a real business needs escrow. Until then, neither escrow option is built and `BindSettlement`'s escrow functions stay unwired.
 
 This record builds nothing. It does not deploy, configure, wire or call any contract. It does not change the adapter, the
 app or any test. The deployed `BindSettlement` at `0x16E1…aA29` is left as it is. The choice is still open.

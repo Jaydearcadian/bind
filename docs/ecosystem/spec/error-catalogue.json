@@ -377,6 +377,94 @@
       "retryable": false,
       "existing": true,
       "note": "People and invitations (ADR 0051)."
+    },
+    {
+      "code": "TEMPLATE_HAS_NO_ANALYTICS",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": "This workspace's template has no post analytics module (docs/decisions/0090)."
+    },
+    {
+      "code": "ANALYTICS_PROVIDER_NOT_AVAILABLE",
+      "httpStatus": 400,
+      "category": "validation",
+      "retryable": false,
+      "existing": true,
+      "note": "Only the simulated analytics provider is available on this server (docs/decisions/0090)."
+    },
+    {
+      "code": "ANALYTICS_PROVIDER_OUTPUT_INVALID",
+      "httpStatus": 502,
+      "category": "upstream",
+      "retryable": true,
+      "existing": true,
+      "note": "The analytics provider's answer failed validation. Nothing was stored."
+    },
+    {
+      "code": "ANALYTICS_PROVIDER_UNAVAILABLE",
+      "httpStatus": 502,
+      "category": "upstream",
+      "retryable": true,
+      "existing": true,
+      "note": "The analytics provider did not answer. Nothing was stored."
+    },
+    {
+      "code": "ANALYTICS_ACCOUNT_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "No such analytics account in this workspace."
+    },
+    {
+      "code": "ANALYTICS_REPORT_NOT_FOUND",
+      "httpStatus": 404,
+      "category": "not_found",
+      "retryable": false,
+      "existing": true,
+      "note": "No such analytics report in this workspace."
+    },
+    {
+      "code": "ANALYTICS_ACCOUNT_DISABLED",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "The analytics account is disabled."
+    },
+    {
+      "code": "ANALYTICS_ACCOUNT_LIMIT",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": false,
+      "existing": true,
+      "note": "The workspace already has the most analytics accounts it can have."
+    },
+    {
+      "code": "ANALYTICS_DEMO_REFUSED",
+      "httpStatus": 403,
+      "category": "policy",
+      "retryable": false,
+      "existing": true,
+      "note": "A demo workspace does not change analytics (docs/decisions/0090)."
+    },
+    {
+      "code": "ANALYTICS_SYNC_TOO_SOON",
+      "httpStatus": 429,
+      "category": "rate_limited",
+      "retryable": true,
+      "existing": true,
+      "note": "This analytics account was attempted within the minimum interval. Retry-After is set (docs/decisions/0090)."
+    },
+    {
+      "code": "ANALYTICS_NO_DATA_YET",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": true,
+      "existing": true,
+      "note": "The period has no stored posts yet. Nothing is stored for it (docs/decisions/0090)."
     }
   ]
 }

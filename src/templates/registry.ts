@@ -1,7 +1,7 @@
 import { kitchenTemplate } from "./kitchen-v1.js";
 import { agencyTemplate } from "./agency-v1.js";
 import { socialTemplate } from "./social-v1.js";
-import { WorkspaceTemplate } from "./types.js";
+import { ANALYTICS_SOURCE_KIND, WorkspaceTemplate } from "./types.js";
 import { withTransaction } from "../db/client.js";
 import { simulatedPaymentAddress } from "../adapters/suppliers/payment-address.js";
 
@@ -18,6 +18,11 @@ export const NO_STOCK_MESSAGE = "This workspace's template has no stock module."
 /** True when the template has a stock module. A template with no seedInventory has none. */
 export function templateHasStock(template: WorkspaceTemplate): boolean {
   return template.seedInventory !== undefined;
+}
+
+/** True when the template declares a post analytics data source. Nothing is read from the metadata alone: the analytics routes check it. */
+export function templateHasAnalytics(template: WorkspaceTemplate): boolean {
+  return (template.dataSources ?? []).some((source) => source.kind === ANALYTICS_SOURCE_KIND);
 }
 
 /** True when the template has a purchasing (suppliers) module. */

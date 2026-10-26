@@ -1127,3 +1127,77 @@ export const TabSettleResultSchema = z.object({
   txHash: z.string().nullable().optional(),
   holdReason: z.string().nullable().optional(),
 });
+
+/**
+ * Post analytics (docs/decisions/0090). Bodies are checked here and again by the service, which is where the rules live. The
+ * simulated provider is the only one the API accepts: any other `provider` string is refused by the route with
+ * ANALYTICS_PROVIDER_NOT_AVAILABLE, so the body schema only bounds its length.
+ */
+export const AnalyticsAccountBodySchema = z
+  .object({
+    provider: z.string().min(1).max(40),
+    brandLabel: z.string().min(1).max(80),
+    timeZone: z.string().min(1).max(64).optional(),
+  })
+  .strict();
+
+/** POST .../analytics/reports. Only `on_demand` is accepted here; the weekly report is written by the worker. */
+export const AnalyticsReportBodySchema = z
+  .object({
+    accountId: z.string().min(1).max(64).optional(),
+    kind: z.literal("on_demand"),
+    periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be a date, such as 2026-10-19").optional(),
+    periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be a date, such as 2026-10-19").optional(),
+  })
+  .strict();
+
+export const AnalyticsAccountSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  brandLabel: z.string(),
+  timeZone: z.string(),
+  isSimulated: z.boolean(),
+  status: z.string(),
+  createdAt: IsoDateTime,
+  lastSyncedAt: IsoDateTime.nullable(),
+  postCount: z.number().int(),
+});
+
+export const AnalyticsSyncResultSchema = z.object({
+  accountId: z.string(),
+  posts: z.number().int(),
+  inserted: z.number().int(),
+  updated: z.number().int(),
+  syncedAt: IsoDateTime,
+  simulated: z.boolean(),
+});
+
+/** The findings of a report. Its shape is the one analysePosts returns (src/analytics/analyse.ts). */
+export const AnalyticsFindingsSchema = z
+  .object({
+    simulated: z.boolean(),
+    timeZone: z.string(),
+    postCount: z.number().int(),
+    minimumGroupPosts: z.number().int(),
+    formats: z.object({ status: z.string(), groups: z.array(z.any()), comparisons: z.array(z.any()) }).passthrough(),
+    hours: z.object({ status: z.string(), timeZone: z.string(), eligibleHours: z.array(z.any()) }).passthrough(),
+    followers: z.object({ status: z.string(), posts: z.number().int() }).passthrough(),
+    countries: z.object({ status: z.string(), posts: z.number().int(), top: z.array(z.any()) }).passthrough(),
+    rankings: z.object({ status: z.string(), eligible: z.number().int(), top: z.array(z.any()), bottom: z.array(z.any()) }).passthrough(),
+  })
+  .passthrough();
+
+export const AnalyticsReportSchema = z.object({
+  id: z.string(),
+  accountId: z.string().nullable(),
+  kind: z.enum(["weekly", "on_demand"]),
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  createdAt: IsoDateTime,
+  simulated: z.boolean(),
+  text: z.string(),
+  findings: AnalyticsFindingsSchema,
+});
+
+/** POST .../analytics/reports: the report, and whether this call wrote it (false when the period already had one). */
+export const AnalyticsReportCreatedSchema = AnalyticsReportSchema.extend({ created: z.boolean() });

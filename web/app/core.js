@@ -210,6 +210,8 @@ export function shell({ me, onSignOut }) {
   }
   document.getElementById("sign-out")?.addEventListener("click", onSignOut);
 
+  addReportsLink(me);
+
   // Phones: "More" opens the areas that don't fit in the tab bar.
   const moreBtn = document.getElementById("more-btn");
   const moreMenu = document.getElementById("more-menu");
@@ -228,6 +230,46 @@ export function shell({ me, onSignOut }) {
         moreBtn.focus();
       }
     });
+  }
+}
+
+// ---- Reports link (only for teams that have post analytics, ADR 0091) -------------------------------------------------
+
+/** Adds "Reports" to the side nav and the More menu when this workspace's team reads post analytics. Quiet on any failure. */
+async function addReportsLink(me) {
+  if (document.querySelector('a[href="/app/reports"]')) return;
+  try {
+    const cacheKey = `bind-analytics:${me.workspaceId}`;
+    let has = safe(() => window.sessionStorage.getItem(cacheKey));
+    if (has === null) {
+      const api = client(storedKey());
+      const [ws, templates] = await Promise.all([api.workspace(me.workspaceId), api.call("listTemplates")]);
+      const tpl = (Array.isArray(templates) ? templates : []).find((t) => t.templateId === ws.workspace.template_id);
+      has = tpl?.dataSources?.some((d) => d.kind === "post_analytics") ? "1" : "0";
+      safe(() => window.sessionStorage.setItem(cacheKey, has));
+    }
+    if (has !== "1") return;
+    const item = document.createElement("li");
+    const a = document.createElement("a");
+    a.className = "nav-item";
+    a.href = "/app/reports";
+    const ico = document.createElement("span");
+    ico.className = "nav-ico ico-reports";
+    ico.setAttribute("aria-hidden", "true");
+    a.append(ico, "Reports");
+    item.append(a);
+    const activity = document.querySelector('.side-nav a[href="/app/activity"]')?.closest("li");
+    if (activity) activity.after(item);
+    const more = document.getElementById("more-menu");
+    if (more) {
+      const m = document.createElement("a");
+      m.className = "more-item";
+      m.href = "/app/reports";
+      m.textContent = "Reports";
+      more.prepend(m);
+    }
+  } catch {
+    // The link is a convenience; the page still works at /app/reports.
   }
 }
 

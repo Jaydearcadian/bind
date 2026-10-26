@@ -35,6 +35,9 @@ const READ_TOOLS = [
   "feedback_summary",
   "list_audit",
   "poll_events",
+  // Post analytics reports (docs/decisions/0090): read only.
+  "list_analytics_reports",
+  "get_analytics_report",
 ];
 const ACTION_TOOLS = [
   "request_replenishment",
@@ -59,6 +62,8 @@ const EXPECTED_OPERATION: Record<string, string> = {
   feedback_summary: "getFeedbackSummary",
   list_audit: "listAudit",
   poll_events: "pollEvents",
+  list_analytics_reports: "listAnalyticsReports",
+  get_analytics_report: "getAnalyticsReport",
   request_replenishment: "replenish",
   create_customer_order: "createCustomerOrder",
   cancel_customer_order: "cancelCustomerOrder",
@@ -80,6 +85,8 @@ const VALID_ARGS: Record<string, Record<string, unknown>> = {
   feedback_summary: { since: "2026-01-01T00:00:00Z" },
   list_audit: {},
   poll_events: { limit: 5 },
+  list_analytics_reports: {},
+  get_analytics_report: { reportId: "rpt_sample" },
   request_replenishment: { sku: "FOOD-FLOUR-50LB" },
   create_customer_order: { externalRef: "ord-1", lines: [{ sku: "FOOD-FLOUR-50LB", quantity: 2 }] },
   cancel_customer_order: { orderId: "cord_1" },

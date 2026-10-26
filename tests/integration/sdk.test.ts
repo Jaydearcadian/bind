@@ -224,7 +224,8 @@ describe("typed client against the real server (docs/decisions/0036)", () => {
 
     // These three read one workflow, supplier order or approval by an id this file does not create; tests/integration/resource-reads.test.ts
     // reads each of them. They share the `orderId` name with the customer-order route, so one value cannot serve both.
-    const needsOwnIds = new Set(["getWorkflow", "getOrder", "getApproval"]);
+    // getAnalyticsReport needs a report of a workspace with the analytics module: tests/integration/analytics.test.ts (ADR 0091).
+    const needsOwnIds = new Set(["getWorkflow", "getOrder", "getApproval", "getAnalyticsReport"]);
     for (const id of needsOwnIds) expect(ROUTES.some((r) => r.operationId === id), id).toBe(true);
     const routes = ROUTES.filter((r) => r.method === "get" && r.access === "member" && r.contractTested && !needsOwnIds.has(r.operationId));
     expect(routes.length).toBeGreaterThanOrEqual(10);
