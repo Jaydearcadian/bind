@@ -42,7 +42,7 @@ describe("the report-ready owner notice", () => {
   });
 });
 
-describe("the template declares its analytics data source (docs/decisions/0090)", () => {
+describe("the template declares its analytics data source (docs/decisions/0091)", () => {
   it("social-v1 declares the analytics source, with its real ids", () => {
     expect(templateHasAnalytics(socialTemplate)).toBe(true);
     expect(socialTemplate.dataSources).toEqual([

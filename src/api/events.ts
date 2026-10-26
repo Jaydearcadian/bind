@@ -31,7 +31,7 @@ const BIGINT_MAX = 9223372036854775807n;
  */
 const ALLOWED_EVIDENCE_KEY =
   /^(?:[A-Za-z]*Id|[A-Za-z]*Ids|status|state|fromState|toState|hold|code|codes|reasonCodes|kind|decision|connectorId|txHash|orderNumber|attempts|effectId|units|sku|channel|surface|promisedFor|slotId|posts|inserted|updated)$/;
-/** Keys that carry counts: only a number is sent for them, whatever the audit row holds (docs/decisions/0090). */
+/** Keys that carry counts: only a number is sent for them, whatever the audit row holds (docs/decisions/0091). */
 const NUMBER_ONLY_KEYS: ReadonlySet<string> = new Set(["posts", "inserted", "updated"]);
 const MAX_VALUE_CHARACTERS = 200;
 const MAX_ARRAY_ITEMS = 20;

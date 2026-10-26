@@ -1,5 +1,5 @@
 /**
- * Time helpers for analytics (docs/decisions/0090). Report periods are whole UTC days, stored as DATE. The hour of a post is
+ * Time helpers for analytics (docs/decisions/0091). Report periods are whole UTC days, stored as DATE. The hour of a post is
  * read in the account's time zone through Intl, so daylight saving changes are the runtime's rule, not ours.
  */
 

@@ -1,5 +1,5 @@
 /**
- * Post analytics: the provider boundary (docs/decisions/0090).
+ * Post analytics: the provider boundary (docs/decisions/0091).
  *
  * A provider supplies post numbers for one account. Its output is UNTRUSTED: a platform, a remote service or a fixture can
  * return anything. So the normalised type carries only ids, enums, numbers and timestamps. No caption, comment, bio or other

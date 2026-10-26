@@ -189,11 +189,11 @@ describe("Idempotency-Key", () => {
       .filter((c) => c.method !== "GET" && c.exposure === "public_api" && (c.economic || c.irreversible))
       .map((c) => `${c.method} ${c.route.replace(/\{(\w+)\}/g, ":$1")}`)
       .sort();
-    // The one keyed route that is neither economic nor irreversible: the analytics sync (docs/decisions/0090). The brief
+    // The one keyed route that is neither economic nor irreversible: the analytics sync (docs/decisions/0091). The brief
     // asks for an Idempotency-Key on it. A repeat leaves the stored posts as they were, and the key replays the first answer.
     // It is named here, so a second such route is a visible decision and not a silent one.
     // Keyed for a reason other than economic: the analytics sync (a provider call, replayed on a retry) and connecting an account
-    // (a row per call, replayed on a retry). See docs/decisions/0090.
+    // (a row per call, replayed on a retry). See docs/decisions/0091.
     const keyedForAnotherReason = [
       "POST /api/workspaces/:id/analytics/accounts/:accountId/sync",
       "POST /api/workspaces/:id/analytics/accounts",

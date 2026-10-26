@@ -1,5 +1,5 @@
 /**
- * Deterministic post analysis (docs/decisions/0090). Pure: no model, no I/O, no clock. The same posts and options always give the
+ * Deterministic post analysis (docs/decisions/0091). Pure: no model, no I/O, no clock. The same posts and options always give the
  * same findings and the same text.
  *
  * Rules that the tests pin:

@@ -81,13 +81,17 @@ owner's notice are built and tested against a simulated provider. A real adapter
   The WhatsApp or Telegram message says the same.
 - **At most once per (workspace, report, recipient).** A recipient whose ledger row is `completed` is not contacted again. A row that
   is `started` or `failed` is not sent again either, and is not audited again.
-- **Failures are recorded at first sight.** Every notice the worker meets that is not sent is counted and audited in the same pass:
-  a row left `started` (the send may have reached the provider) is `notification.in_doubt`; a row marked `failed` (the provider
-  refused) is `notification.failed`. The worker's tick report counts them (`failed`, `noticesInDoubt`).
+- **Failures are recorded at first sight.** A notice whose row was written and then left `started` (the send may have reached the
+  provider) is `notification.in_doubt`, audited in the same pass. A row marked `failed` (the provider refused) is `notification.failed`,
+  audited in the same pass. The worker's tick report counts them (`failed`, `noticesInDoubt`).
+- **A send that fails before its ledger row exists is tried again (review S-D).** Nothing was sent and nothing is recorded, so it is
+  not audited at once. The report stays not done, and each later delivery tries that recipient again. `analytics_reports.notice_attempts`
+  counts the deliveries that found a recipient untried. At `MAX_NOTICE_ATTEMPTS` (3) the recipient is audited once as
+  `notification.failed` (`reason: not_attempted`) and the report is done. A retry that succeeds is sent once, with no audit row.
 - **Each report is done once.** `analytics_reports.notice_done` is set when every recipient has been dealt with: sent, already sent,
-  failed, in doubt, or none to tell. The weekly job lists only the reports that are not done. A workspace with no owner contact is done
-  at once, so it never holds a batch slot. A crash between two recipients leaves the report not done, and the next pass sends only the
-  recipients that have no row yet. Recipients with a row are never sent again.
+  failed, in doubt, none to tell, or retries exhausted. The weekly job lists only the reports that are not done. A workspace with no
+  owner contact is done at once, so it never holds a batch slot. A crash between two recipients leaves the report not done, and the
+  next pass sends only the recipients that have no row yet. Recipients with a row are never sent again.
 - Email delivery off, or simulated, and demo refusal behave as the other owner notices do: the dispatcher and the recipient resolver
   are unchanged.
 
@@ -99,6 +103,11 @@ owner's notice are built and tested against a simulated provider. A real adapter
   the minimum interval) and writes the week's report, then delivers the notice.
 - **Backoff.** A failed sync or report puts the account into backoff: 15 minutes after the first failure, doubling, capped at 12 hours.
   A provider that is not available or that answers invalid data waits the full 12 hours at once. A successful sync resets the backoff.
+  A report that fails after a good sync does not reset it: the sync resets the count, so the job passes the count the account had before
+  the pass, and the wait keeps doubling while the report keeps failing (review S-A). A report that is written clears the backoff.
+  Over 48 hours with a report that always fails and a pass every 16 minutes, the provider is called 9 times. The gaps between calls are
+  16, 32, 64, 128, 240, 480, 720 and 720 minutes: the 15, 30, 60 and 120 minute steps, quantised to the 16-minute pass grid
+  (`tests/integration/analytics-notices.test.ts`).
   Broken accounts therefore cannot fill every batch: they are retried later, and the healthy accounts are served first (tested with 30
   broken accounts older than one healthy one).
 - **Minimum interval.** Each sync attempt, manual or by the worker, claims the account with one conditional update: it succeeds only
@@ -108,8 +117,13 @@ owner's notice are built and tested against a simulated provider. A real adapter
 - **Timeout.** A provider call has 20 seconds, and the provider is sent an abort signal. A provider that does not answer in time is
   abandoned with `502 ANALYTICS_PROVIDER_UNAVAILABLE`, nothing is stored, and the account backs off. The pass also starts no new
   account or notice after 120 seconds (`ANALYTICS_PASS_DEADLINE_MS`), so one slow provider cannot hold the tick.
-- **Audit once per real sync.** `analytics.synced` is written only with a successful sync's rows, in the same transaction. A report
-  that fails after a good sync does not cause another sync until the backoff and the interval allow one.
+- **Audit only a sync that changed data.** A stored post is rewritten only when one of its values differs (its `synced_at` is still
+  stamped on every sync, so the account view shows the latest sync). `analytics.synced` is written, in the same transaction as the
+  rows, only when at least one post was inserted or changed. A re-sync of unchanged posts writes no audit row. `updated` in the sync
+  result still counts every existing post the sync covered.
+- **Scoped passes (tests only).** `runWeeklyAnalyticsReports` and the worker tick take `workspaceIds` / `analyticsWorkspaceIds`. The
+  integration tests use them so one file's pass cannot reach another file's rows. Production passes neither, so the job runs over every
+  real analytics workspace.
 - A pass does nothing that was already done. Demo workspaces and disabled accounts are not selected at all (the query excludes them),
   so they are not attempted and cannot fail.
 
@@ -198,6 +212,8 @@ Until then, every report says it is simulated.
 - **Reports are fixed when written.** A later sync that brings new posts for an already-written period does not update that report. A
   correction is a new period, not a rewrite.
 - **The all-brands report pools the posts of different brands,** so its medians mix brands. It is for an overview. It names no brand.
+- **A report step that fails every time is retried for ever, on the backoff.** It costs one provider call and one failed report per
+  step, at the 12-hour cap at most. Tracking it further (a stop after N failures, an owner notice) is not built.
 - **Real providers are not built.** The backoff, the timeout and the throttle are tested with fake providers. Their values (15 minutes,
   12 hours, 20 seconds, 5 minutes) are a first choice, to be revisited when a real provider's rate limits are known.
 
@@ -219,5 +235,8 @@ Until then, every report says it is simulated.
   `tests/integration/analytics-notices.test.ts` (the notice at most once, concurrent deliveries, email off, no contact, the crash between
   report and notice, the crash during the send, a refused send, in-doubt and failed sends audited by the worker at first sight, the
   weekly job's gate, isolation, replay, disabled and demo accounts, the batch of one with an owner who cannot be mailed, and 30 broken
-  accounts older than one healthy account).
+  accounts older than one healthy account, an account in backoff not called six minutes later, the 48-hour backoff schedule with a
+  failing report, the 120-second budget constant, the provider abort signal, the no-data deferral, the upsert order, a re-sync with no
+  change writing no audit row, and the notice retry: a recipient untried for three deliveries is audited once and the report is done).
+  The worker tick and the job both run at a real clock or a scoped set of workspaces, so the suite is hermetic across files (review S-C).
 - The mutation checks and their results are in `docs/RELEASE_EVIDENCE.md`, section 0d.

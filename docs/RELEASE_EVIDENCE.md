@@ -54,7 +54,7 @@ The table uses the full mutation list of this pass. A mutation is KILLED when at
 | I | Connect not keyed (S6) | KILLED | five requests with one key give one account |
 | J | Throttle claim always succeeds | KILLED | second sync inside the interval is refused |
 | K | Provider call not raced against the timeout | KILLED | hanging provider test (times out in the test) |
-| L | Due query ignores backoff (starvation) | SURVIVED (corrected by the independent re-review, 2026-10-27) | The starvation test passes without the backoff filter; see the follow-ups below |
+| L | Due query ignores backoff (starvation) | KILLED (third pass, 2026-10-26) | `an account in backoff is not called again before it ends` (`tests/integration/analytics-notices.test.ts`); also the 48-hour backoff tests |
 | M | Backoff does not double | KILLED | backoff sequence 15/30/60 minutes |
 | N | Provider-level failures wait the short time | KILLED | 12-hour case for invalid output |
 | O | Failed and in-doubt notices not audited at first sight | KILLED | worker in-doubt and failed audit tests |
@@ -82,6 +82,94 @@ The table uses the full mutation list of this pass. A mutation is KILLED when at
 **Known limitations (ADR 0091).** A crash in the middle of one provider send leaves the row `started`; the owner's audit row is written by the pass that sees the failure, not by a later pass. Reports are fixed when written. The all-brands report pools brands. The backoff, timeout and throttle values are first choices, with fake providers only.
 
 **Not claimed:** no `LIVE_READ_PASS`, `VERIFIED_REMOTE` or `BLOCKED` for this slice. The simulated provider is `LOCAL_PASS` only.
+
+### Review-2 follow-ups (third pass, 2026-10-26): S-C, S-A, S-B, S-D
+
+**Commit basis:** the working tree on top of `1779d0d` (the merge of `origin/claude/capabilities-overview-c6elxr`), with these changes
+uncommitted until the commit that carries this section. The integration runs used one private database, `bind_analytics_s2`, created
+for this pass and dropped afterwards. `bind_local` was never used for analytics. No real platform is contacted; the provider is simulated.
+
+| Command | Result | Class |
+| --- | --- | --- |
+| `npm run typecheck` (root, SDK, MCP) | passes | `LOCAL_PASS` |
+| `npm run lint` | 0 errors; 3 warnings, all existing | `LOCAL_PASS` |
+| `npx vitest run tests/unit/` | 81 of 82 files pass; 1218 tests pass and 3 fail, all three in `tests/unit/no-value-moving-model-tools.test.ts` (see below) | `BLOCKED` (the gate) |
+| `DATABASE_URL=…bind_analytics_s2 npx vitest run tests/integration/`, runs 1, 2 and 3 on the same database | 92 files passed, 2 skipped (the existing skip under ADR 0057, and the live-tab rehearsal, which needs `BIND_LIVE_PG_ADMIN_URL`); 971 tests passed, 18 skipped. Identical in all three runs | `LOCAL_PASS` |
+| `npm run api:spec`, `sdk:generate`, `capabilities:generate` | regenerated after the ADR renumbering; only the note text (`0090` to `0091`) changed | `LOCAL_PASS` |
+| Browser E2E, real provider, Meta | not run, not contacted | `NOT_RUN` |
+
+**The unit gate does not pass, and the failure is not in this slice.** `tests/unit/no-value-moving-model-tools.test.ts` has 3 failing
+tests, all for `scripts/live-tab-arc.ts` (line 804 names `sendRawTransaction`, line 381 names `transferUSDC`, and the file spawns a child
+process that is not in the operator list). That file came in with the merge of `origin/claude/capabilities-overview-c6elxr` (the live
+tab harness, ADR 0090). The guard is not weakened here and the file is not edited here, because it belongs to that workstream. It needs
+its owner to list the file, or to move the primitive behind the settlement adapter. Until then the unit gate is `BLOCKED` by that file.
+
+**S-C, hermetic suite.** `tests/integration/analytics-notices.test.ts` no longer runs the weekly job or the worker tick at the fixture's
+clock across the shared database. Every job pass takes `workspaceIds` (the file's own workspaces), and the worker tick takes
+`analyticsWorkspaceIds` and the real clock, so its other steps (expiry, settlement) run as they do in every other worker test. In the
+independent reviewer's three runs before the change, one passed and two failed (`worker.test.ts` "bounded by batch size", and two notices
+tests on a reused database). This pass's three runs after the final change: 92 files passed, 2 skipped (the existing skip under ADR 0057, and the live-tab rehearsal, which needs `BIND_LIVE_PG_ADMIN_URL`); 971 tests passed, 18 skipped. Identical in all three runs.
+Result: the whole integration suite passed three times in a row on one private database (92 files passed, 2 skipped (the existing skip under ADR 0057, and the live-tab rehearsal, which needs `BIND_LIVE_PG_ADMIN_URL`); 971 tests passed, 18 skipped. Identical in all three runs).
+
+**A second cause of failure, found in this pass.** Three full runs passed earlier in this pass. In the later gate run, the third of
+three full runs (same database) failed one test: the 48-hour report-failure test saw 45 provider calls. The simulator
+publishes nothing on about 45% of days, so for about 0.4% of accounts a whole 7-day period is empty. Then the report step reports "no
+data" before the insert the test refuses, and the account waits an hour instead of backing off, which gives 45 calls in 48 hours. This
+is a fixture fault, not a backoff fault. The same cause made `analytics.test.ts` fail once in the next run (a report for a period 14 to
+21 days back had no posts for that seed). Both files now give their simulated accounts one post on each day the tests ask about
+(`useDefaultProvider` in each file, one post inside the test period in the notices file and one on each of the last 30 days in the
+analytics file). The seed still decides the rest of the data, so the tests assert counts and states, not the simulator's values.
+
+**S-A, backoff escalates when the report fails.** A sync resets the failure count, so a failing report used to leave the count at 1 and
+the next attempt 15 minutes later, every time. Now the job passes the count the account had before the pass, and the wait keeps doubling
+(`recordFailure`, `priorFailures`). A written report clears the backoff. Test, on a 48-hour simulated clock with a pass every 16 minutes
+and a report that always fails: 9 provider calls, gaps 16, 32, 64, 128, 240, 480, 720, 720 minutes, and the count is 9 at the end (before
+the change, the reviewer measured 180 calls and 180 audit rows for the same setup).
+`analytics.synced` is written only when a sync inserted or changed a post. A stored post is rewritten only when a value differs, and
+`synced_at` is still stamped on every covered post. Test: a re-sync with no change writes no audit row.
+
+**S-B, the surviving mutants.** Each was applied to the source, the analytics integration files were run, and the file was restored.
+The table lists the results after the tests were added. Survivor found on the first run: `CAP_sql_removed` (the 12-hour cap on the plain
+sync-failure path). The 48-hour test covered only the carried-count path, so a test was added for an ordinary provider error over 48
+hours (gaps capped at 720 minutes). Re-run: KILLED.
+
+| # | Mutation | Verdict | Killing tests (examples) |
+| --- | --- | --- | --- |
+| L | Due query ignores backoff | KILLED (4 failures) | `an account in backoff is not called again before it ends` (six minutes later the account waits) |
+| CAP-sql | 12-hour cap removed on the plain sync-failure path | KILLED (after a test was added; first run SURVIVED) | `a sync that keeps failing with an ordinary provider error also stops at 12 hours` |
+| CAP-carry | 12-hour cap removed on the carried-count path | KILLED | `the backoff grows with each failed report and stops at 12 hours` |
+| NO-DOUBLE | Plain sync-failure backoff does not double | KILLED | `backoff doubles per failure, capped at 12 hours` (analytics.test) |
+| CARRY | Report failure does not carry the count | KILLED | the 48-hour report-failure test |
+| ABORT | Abort signal never fired at the timeout | KILLED | `a provider that never answers is sent the abort signal at the timeout` |
+| SORT | Post sort removed from the upsert arrays | KILLED | `the upsert arrays are in provider-id order` (a unit test of the function that builds them) |
+| DEFER | No-data deferral removed | KILLED | `an account with no posts for the week is deferred an hour` |
+| BUDGET | Pass budget constant changed to 1 s | KILLED | `the weekly pass has a 120 second budget`, and the worker-on test |
+| AUDIT-ALL | Audit written on every sync | KILLED | `a re-sync that brings no new data ... writes no analytics.synced row` |
+| UPSERT-ALL | Upsert rewrites every row (no change test) | KILLED | the same re-sync test |
+| SYNCED-AT | `synced_at` not moved on a re-sync | KILLED (37 failures) | `a later sync updates the stored rows, not only their count` (analytics.test) |
+| NOTICE-NORETRY | Untried notice never retried | KILLED | `a recipient that fails before its ledger row exists is tried again` |
+| NOTICE-DONE | Untried notice marked done at once | KILLED | the same test |
+| NOTICE-AUDIT-NOW | Untried notice audited on the first try | KILLED | the same test (its audit count check fails) |
+| THROTTLE | Sync claim always succeeds | KILLED (44 failures) | `30 permanently broken accounts`, and the abort test |
+| TIMEOUT | Provider call not raced against the timeout | KILLED | `a provider that hangs is abandoned after the timeout` (analytics.test) |
+| NOTICE-FILTER | `notice_done` filter removed from the pending query | KILLED | `an owner who cannot be mailed does not hold the batch` |
+| NOTICE-INDOUBT | In-doubt notice audited as failed | KILLED | `a crash during the send ... is in doubt` |
+| NOTICE-PRECHECK | Completed ledger rows not checked before a send | KILLED | `a verified owner is emailed once for a report` |
+| WS-LOCK | Workspace row lock removed (B2) | KILLED | `20 concurrent connects give exactly 10 accounts` |
+| REPORT-CONFLICT | `ON CONFLICT` removed from the report insert | KILLED | `ten concurrent requests for one new period write exactly one report` |
+
+All 22 mutants in this table were run against the final code (after the last test change), and all 22 are killed. The earlier table
+(A to AE) was not re-run in full: this pass changed only the code paths listed above, so its verdicts for the other mutants are carried
+forward from the first and second passes, and they are not re-verified here.
+
+**S-D, a notice never handed over.** A recipient that fails before its ledger row exists is not audited at once and not marked sent. The
+report stays not done, and each later delivery tries it again. `analytics_reports.notice_attempts` counts those deliveries. At 3 it is
+audited once (`notification.failed`, `reason: not_attempted`) and the report is done. A retry that succeeds sends once and writes no audit
+row. Tests: a recipient refused three times is audited once; a recipient refused once is sent on the next pass. The refusal is a database
+fixture (a trigger on the ledger insert, dropped after the test), so the service sees a real error.
+
+**Not claimed.** Nothing in this section is `LIVE_READ_PASS`, `VERIFIED_REMOTE` or `BLOCKED` for the slice itself. The remaining review
+items (S-E, the process-crash `started` row, and the RUNBOOK wording for it) are not changed here. The flag stays off by default.
 
 ## 0c. Embedded wallet for Google sign-in (ADR 0073): gate run and deployment
 

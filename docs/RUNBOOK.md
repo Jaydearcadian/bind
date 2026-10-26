@@ -255,6 +255,10 @@ What an operator will see:
   logged with its error code only. A repeated failure of the same account does not repeat within its backoff.
 - A notice that the provider refused is audited as `notification.failed` in the pass that saw it. A notice whose send may have reached
   the provider is audited as `notification.in_doubt`. Neither is sent again. Look for these rows in the owner's audit log.
+- A notice that could not be handed over before its ledger row existed is not audited at once. The next passes try it again; after
+  three tries it is audited once as `notification.failed` with `reason: not_attempted`, and the report is no longer looked at.
+- `analytics.synced` is written only when a sync changed a post. A sync with no new data writes no row, so a quiet account is not
+  noisy in the log.
 - A report with no stored posts yet is not written; the account is looked at again in an hour (`analyticsReports.deferred`).
 
 Only the simulated provider exists in this release, so the data is fabricated and every report says so, and the owner's notice says

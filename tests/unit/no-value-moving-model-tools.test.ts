@@ -484,8 +484,8 @@ const TOOL_ALLOWLIST: Record<string, AllowedTool> = {
   feedback_summary: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of feedback summary." },
   list_audit: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of the audit log." },
   poll_events: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of the event feed." },
-  list_analytics_reports: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of post analytics reports (docs/decisions/0090)." },
-  get_analytics_report: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of one post analytics report (docs/decisions/0090)." },
+  list_analytics_reports: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of post analytics reports (docs/decisions/0091)." },
+  get_analytics_report: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of one post analytics report (docs/decisions/0091)." },
   request_replenishment: {
     file: "mcp/src/tools.ts",
     effect: "commercial_commitment",

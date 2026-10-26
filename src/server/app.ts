@@ -285,7 +285,7 @@ function decidedByOf(label: string): string {
 /** Sends a token-operation failure with its status. */
 /** Sends an owner-email refusal with its status and code (ADR 0074). The message never carries a code, a key or a full address. */
 /**
- * Post analytics refusals (docs/decisions/0090): a typed AnalyticsError keeps its status and code. Malformed provider output is
+ * Post analytics refusals (docs/decisions/0091): a typed AnalyticsError keeps its status and code. Malformed provider output is
  * a 502. Anything else is logged with its detail and answered with a message that names nothing.
  */
 function sendAnalyticsError(res: Response, err: unknown) {
@@ -1686,7 +1686,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     }
   });
 
-  // Post analytics (docs/decisions/0090). Reads are members'; every write is the owner's, so staff get 403. A workspace whose
+  // Post analytics (docs/decisions/0091). Reads are members'; every write is the owner's, so staff get 403. A workspace whose
   // template has no analytics module answers 400 TEMPLATE_HAS_NO_ANALYTICS; a demo workspace refuses writes (403).
   app.get("/api/workspaces/:id/analytics/accounts", ...workspaceMember, async (req: Request, res: Response) => {
     try {
