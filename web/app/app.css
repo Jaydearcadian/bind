@@ -414,3 +414,13 @@ a.nav-item:hover { color: var(--text); background: color-mix(in srgb, var(--bord
 #email-box { display: grid; gap: 12px; margin-top: 8px; }
 #email-box[hidden] { display: none; }
 .pending-email .error { margin-top: 8px; }
+
+/* Reports (ADR 0090) */
+.ico-reports { border-radius: 3px; border-width: 1.8px 1.8px 1.8px 5px; }
+.report-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
+.report-actions select { min-width: 12em; }
+.report-text p { margin: 0 0 0.9em; line-height: 1.55; max-width: 62ch; }
+.report-view header { margin-bottom: 10px; }
+#module-area { display: grid; gap: 18px; }
+#module-area[hidden], #no-module[hidden] { display: none; }
+.notice { background: color-mix(in srgb, var(--border) 35%, transparent); border-radius: 10px; padding: 10px 14px; margin: 0 0 12px; font-size: 0.92rem; }
