@@ -76,7 +76,7 @@ async function syncBrand(account, button) {
     toast(`${account.brandLabel} is up to date.`);
     await loadBrands();
   } catch (err) {
-    toast(errorText(err, "Couldn't update the stats. Try again."));
+    toast(err instanceof BindApiError && err.status === 429 ? `${account.brandLabel} was updated a moment ago. Try again in a few minutes.` : errorText(err, "Couldn't update the stats. Try again."));
     button.disabled = false;
   }
 }
@@ -203,7 +203,14 @@ function wireReportMaker() {
       const chosen = $("report-brand").value;
       const targets = chosen ? state.accounts.filter((a) => a.id === chosen) : state.accounts;
       // A report reads stored posts, so bring each brand up to date first.
-      for (const a of targets) await bind.call("syncAnalyticsAccount", { params: { id: state.me.workspaceId, accountId: a.id }, idempotencyKey: newKey() });
+      // A brand updated a few minutes ago answers "too soon" (429). That is fine here: the report uses the stats we already hold.
+      for (const a of targets) {
+        try {
+          await bind.call("syncAnalyticsAccount", { params: { id: state.me.workspaceId, accountId: a.id }, idempotencyKey: newKey() });
+        } catch (syncErr) {
+          if (!(syncErr instanceof BindApiError && syncErr.status === 429)) throw syncErr;
+        }
+      }
       const made = await bind.call("createAnalyticsReport", {
         params: { id: state.me.workspaceId },
         body: { kind: "on_demand", ...(chosen ? { accountId: chosen } : {}) },
