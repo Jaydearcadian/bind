@@ -864,3 +864,9 @@ private `bind_live_rehearsal_<random>` database, which it creates, migrates and 
 
 **Not verified by the offline rehearsal.** The chain reads, the transports, the log scan and the cap against the Arc testnet. A loopback fake of the
 RPC exercises those code paths; it is not the Arc network and it is not evidence from it. No live run has been made for the change in this section.
+
+Operator notes (final review):
+
+- The ledger and lock live under `$HOME/.bind-live-state/`. Keep `HOME` the same for every run (sudo, CI and containers change it). A different `HOME` means a different ledger and lock; the chain count still caps the total at 3 once payments are mined. `--preflight` prints the resolved ledger path.
+- A child refused because the lock is held (or by any later hook check) has already written its send marker to the state file. Treat that state file as used and start the scenario from a fresh state only after inspecting the chain and the ledger.
+- The lock uses `O_EXCL` and is reliable on a local filesystem only, not on NFS.
