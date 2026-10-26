@@ -91,9 +91,9 @@ describe("social-v1 workspace: provisioning, listing and stock refusals (docs/de
     expect(social.name).toBe("Social media manager");
     expect(social.modules).toEqual({ stock: false, suppliers: false });
     expect(social.dataSources).toEqual([
-      { id: "instagram_insights", label: "Instagram post insights", kind: "instagram_insights", readOnly: true },
+      { id: "post_analytics", label: "Post analytics (simulated until a provider is connected)", kind: "post_analytics", readOnly: true },
     ]);
-    expect(social.outputs).toEqual([expect.objectContaining({ id: "weekly_report", kind: "report" })]);
+    expect(social.outputs).toEqual([expect.objectContaining({ id: "analytics_report", kind: "report" })]);
     expect(kitchen.modules).toEqual({ stock: true, suppliers: true });
     expect(kitchen.roles.map((r: any) => r.roleName)).toEqual([
       "procurement_agent",

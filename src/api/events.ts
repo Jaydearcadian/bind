@@ -30,7 +30,9 @@ const BIGINT_MAX = 9223372036854775807n;
  * else, including every free-text key, is dropped.
  */
 const ALLOWED_EVIDENCE_KEY =
-  /^(?:[A-Za-z]*Id|[A-Za-z]*Ids|status|state|fromState|toState|hold|code|codes|reasonCodes|kind|decision|connectorId|txHash|orderNumber|attempts|effectId|units|sku|channel|surface|promisedFor|slotId)$/;
+  /^(?:[A-Za-z]*Id|[A-Za-z]*Ids|status|state|fromState|toState|hold|code|codes|reasonCodes|kind|decision|connectorId|txHash|orderNumber|attempts|effectId|units|sku|channel|surface|promisedFor|slotId|posts|inserted|updated)$/;
+/** Keys that carry counts: only a number is sent for them, whatever the audit row holds (docs/decisions/0090). */
+const NUMBER_ONLY_KEYS: ReadonlySet<string> = new Set(["posts", "inserted", "updated"]);
 const MAX_VALUE_CHARACTERS = 200;
 const MAX_ARRAY_ITEMS = 20;
 
@@ -120,7 +122,9 @@ export function eventData(evidence: unknown, txHash: string | null): Record<stri
   const out: Record<string, unknown> = {};
   if (evidence !== null && typeof evidence === "object" && !Array.isArray(evidence)) {
     for (const [key, value] of Object.entries(evidence as Record<string, unknown>)) {
-      if (ALLOWED_EVIDENCE_KEY.test(key) && allowedValue(value)) out[key] = value;
+      if (!ALLOWED_EVIDENCE_KEY.test(key) || !allowedValue(value)) continue;
+      if (NUMBER_ONLY_KEYS.has(key) && typeof value !== "number") continue;
+      out[key] = value;
     }
   }
   if (txHash !== null) out.txHash = txHash;

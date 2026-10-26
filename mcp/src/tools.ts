@@ -60,6 +60,9 @@ export const ALLOWED_OPERATION_IDS = [
   "cancelCustomerOrder",
   "ingestFeedback",
   "proposeMenuChange",
+  // Post analytics reports: read only (docs/decisions/0090). The server has no analytics write through this endpoint.
+  "listAnalyticsReports",
+  "getAnalyticsReport",
 ] as const satisfies readonly OperationId[];
 
 const UNTRUSTED_NOTE =
@@ -198,6 +201,8 @@ const CUSTOMER_ORDER = closedObject(
 );
 
 const CANCEL_ORDER = closedObject({ orderId: text("orderId", 1, MAX_REF), idempotencyKey: IDEMPOTENCY_KEY }, "unknown field");
+
+const ANALYTICS_REPORT = closedObject({ reportId: text("reportId", 1, 64) }, "unknown field");
 
 const FEEDBACK = closedObject(
   {
@@ -389,6 +394,25 @@ export const TOOLS: readonly ToolSpec[] = [
     operationId: "listAudit",
     description: `Read-only. The audit log: each action, its actor and the policy decision. Effect class: read. ${UNTRUSTED_NOTE}`,
     untrustedTextFields: ["data[].actor_id", "data[].evidence"],
+  }),
+  read({
+    name: "list_analytics_reports",
+    title: "List analytics reports",
+    operationId: "listAnalyticsReports",
+    description: `Read-only. The newest post analytics reports of this workspace: a plain-English text and the findings behind it. Simulated reports say so. Effect class: read. ${UNTRUSTED_NOTE}`,
+    untrustedTextFields: ["data[].text"],
+  }),
+  tool({
+    name: "get_analytics_report",
+    title: "Get an analytics report",
+    description: `Read-only. One post analytics report by its id, with its text and findings. Effect class: read. ${UNTRUSTED_NOTE}`,
+    effect: "read",
+    operationId: "getAnalyticsReport",
+    inputSchema: ANALYTICS_REPORT,
+    readOnly: true,
+    idempotent: true,
+    untrustedTextFields: ["data.text"],
+    buildCall: (input, workspaceId) => ({ params: { id: workspaceId, reportId: input.reportId } }),
   }),
   tool({
     name: "poll_events",

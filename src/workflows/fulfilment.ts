@@ -552,7 +552,7 @@ export async function acceptHeldOrder(
 // ---------------------------------------------------------------------------------------------------------------------
 
 /** The order decisions that tell the owner something. An accepted order sends nothing. */
-type OrderNoticeKind = Exclude<OwnerNoticeKind, "approval">;
+type OrderNoticeKind = Exclude<OwnerNoticeKind, "approval" | "analytics_report">;
 
 const NOTICE_KIND_BY_STATUS: Partial<Record<CustomerOrderStatus, OrderNoticeKind>> = {
   needs_owner: "order_held",

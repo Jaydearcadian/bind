@@ -21,6 +21,12 @@ import {
   TabResolveResultSchema,
   TabSettleResultSchema,
   TabSummarySchema,
+  AnalyticsAccountBodySchema,
+  AnalyticsAccountSchema,
+  AnalyticsReportBodySchema,
+  AnalyticsReportCreatedSchema,
+  AnalyticsReportSchema,
+  AnalyticsSyncResultSchema,
   AgentRoleUpsertResultSchema,
   AgentRoleUpsertSchema,
   AgentsListSchema,
@@ -1108,6 +1114,112 @@ export const ROUTES: RouteSpec[] = [
     },
     contractTested: false,
     notTestedReason: "Needs an address that exists first, which the contract sweep does not create. Covered by tests/integration/owner-email-routes.test.ts.",
+  }),
+
+  // -------------------------------------------------------------------------------------------------------------------
+  // Post analytics (docs/decisions/0090). Only templates with a post analytics data source have it; the others get
+  // TEMPLATE_HAS_NO_ANALYTICS. The simulated provider is the only one.
+  // -------------------------------------------------------------------------------------------------------------------
+  withGenericErrors({
+    operationId: "listAnalyticsAccounts",
+    method: "get",
+    path: "/api/workspaces/:id/analytics/accounts",
+    access: "member",
+    tags: ["Analytics"],
+    summary:
+      "The analytics accounts of this workspace, with when each was last synced and how many posts it holds. A workspace whose template has no analytics module has none: the list is empty.",
+    responses: {
+      200: ok("The accounts, oldest first.", list(AnalyticsAccountSchema)),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "createAnalyticsAccount",
+    method: "post",
+    path: "/api/workspaces/:id/analytics/accounts",
+    access: "owner",
+    tags: ["Analytics"],
+    summary: "Connect an analytics account. Only the simulated provider is available: its data is labelled simulated everywhere.",
+    body: AnalyticsAccountBodySchema,
+    responses: {
+      201: ok("The account, now connected.", AnalyticsAccountSchema),
+      400: err(
+        "Malformed input (INVALID_INPUT: a brand label of 1 to 80 characters, or an IANA time zone). Also: TEMPLATE_HAS_NO_ANALYTICS, or ANALYTICS_PROVIDER_NOT_AVAILABLE for any provider other than simulated."
+      ),
+      403: err("A demo workspace does not change analytics (ANALYTICS_DEMO_REFUSED)."),
+      409: err("The workspace already has the most accounts it can have (ANALYTICS_ACCOUNT_LIMIT)."),
+    },
+    contractTested: false,
+    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0090).",
+  }),
+  withGenericErrors({
+    operationId: "syncAnalyticsAccount",
+    method: "post",
+    path: "/api/workspaces/:id/analytics/accounts/:accountId/sync",
+    access: "owner",
+    tags: ["Analytics"],
+    summary: "Fetch the account's recent posts from its provider and store them. Repeating it leaves the stored posts as they were.",
+    responses: {
+      200: ok("What the sync stored: how many posts, how many were new and how many were updated.", AnalyticsSyncResultSchema),
+      400: err("This workspace's template has no post analytics module (TEMPLATE_HAS_NO_ANALYTICS), or the stored provider is not available."),
+      403: err("A demo workspace does not change analytics (ANALYTICS_DEMO_REFUSED)."),
+      404: err("No such analytics account in this workspace (ANALYTICS_ACCOUNT_NOT_FOUND)."),
+      409: err("The account is disabled (ANALYTICS_ACCOUNT_DISABLED)."),
+      429: err("This account was attempted within the minimum interval (ANALYTICS_SYNC_TOO_SOON). Retry-After is set."),
+      502: err(
+        "The provider did not answer (ANALYTICS_PROVIDER_UNAVAILABLE), or its answer is not valid (ANALYTICS_PROVIDER_OUTPUT_INVALID). Nothing was stored."
+      ),
+    },
+    contractTested: false,
+    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0090).",
+  }),
+  withGenericErrors({
+    operationId: "listAnalyticsReports",
+    method: "get",
+    path: "/api/workspaces/:id/analytics/reports",
+    access: "member",
+    tags: ["Analytics"],
+    summary: "The 50 newest analytics reports of this workspace, with their text and findings. Empty for a workspace with no analytics module.",
+    responses: {
+      200: ok("The reports, newest first.", list(AnalyticsReportSchema)),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "getAnalyticsReport",
+    method: "get",
+    path: "/api/workspaces/:id/analytics/reports/:reportId",
+    access: "member",
+    tags: ["Analytics"],
+    summary: "One analytics report of this workspace.",
+    responses: {
+      200: ok("The report.", AnalyticsReportSchema),
+      404: err("No such analytics report in this workspace (ANALYTICS_REPORT_NOT_FOUND). Also the answer for a workspace with no analytics module."),
+    },
+    contractTested: false,
+    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0090).",
+  }),
+  withGenericErrors({
+    operationId: "createAnalyticsReport",
+    method: "post",
+    path: "/api/workspaces/:id/analytics/reports",
+    access: "owner",
+    tags: ["Analytics"],
+    summary:
+      "Write a report for a period (UTC days, at most 92, ending by today). Once per period: asking again for the same period returns the same report.",
+    body: AnalyticsReportBodySchema,
+    responses: {
+      201: ok("The report was written now (created: true).", AnalyticsReportCreatedSchema),
+      200: ok("The period already had its report, which is returned (created: false).", AnalyticsReportCreatedSchema),
+      400: err(
+        "Malformed input (INVALID_INPUT: a period that is not whole days, longer than 92 days, or ends after today). Also TEMPLATE_HAS_NO_ANALYTICS."
+      ),
+      403: err("A demo workspace does not change analytics (ANALYTICS_DEMO_REFUSED)."),
+      404: err("No such analytics account in this workspace (ANALYTICS_ACCOUNT_NOT_FOUND), when an accountId is given."),
+      409: err("The period has no stored posts yet (ANALYTICS_NO_DATA_YET). Sync the account, then ask again. Nothing is stored for the period."),
+    },
+    contractTested: false,
+    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0090).",
   }),
 
   // -------------------------------------------------------------------------------------------------------------------

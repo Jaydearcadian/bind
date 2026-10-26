@@ -27,6 +27,17 @@ import {
 } from "../accounts/service.js";
 import { authenticated, workspaceMember, workspaceOwner, anyWorkspaceOwner } from "../auth/middleware.js";
 import {
+  createAnalyticsAccount,
+  defaultOnDemandPeriod,
+  generateReport,
+  getAnalyticsReport,
+  listAnalyticsAccounts,
+  listAnalyticsReports,
+  parsePeriod,
+  syncAccount,
+} from "../analytics/service.js";
+import { AnalyticsError, AnalyticsProviderOutputError } from "../analytics/types.js";
+import {
   provisionWorkspace,
   listTemplates,
   NO_STOCK_CODE,
@@ -115,7 +126,14 @@ import { checkReadiness } from "../observability/readiness.js";
 import { mountHostedMcp, UNWIRED_HOSTED_MCP, type HostedMcpOptions } from "./mcp-route.js";
 import { ROUTES } from "../api/registry.js";
 import { OwnerEmailError, listNotificationChannels, removeOwnerEmail, requestOwnerEmailVerification, verifyOwnerEmail } from "../notifications/owner-emails.js";
-import { OwnerEmailRequestBodySchema, OwnerEmailVerifyBodySchema, TabChargeBodySchema, TabResolveBodySchema } from "../api/schemas.js";
+import {
+  AnalyticsAccountBodySchema,
+  AnalyticsReportBodySchema,
+  OwnerEmailRequestBodySchema,
+  OwnerEmailVerifyBodySchema,
+  TabChargeBodySchema,
+  TabResolveBodySchema,
+} from "../api/schemas.js";
 import {
   tabLedger,
   type TabActor,
@@ -266,6 +284,24 @@ function decidedByOf(label: string): string {
 
 /** Sends a token-operation failure with its status. */
 /** Sends an owner-email refusal with its status and code (ADR 0074). The message never carries a code, a key or a full address. */
+/**
+ * Post analytics refusals (docs/decisions/0090): a typed AnalyticsError keeps its status and code. Malformed provider output is
+ * a 502. Anything else is logged with its detail and answered with a message that names nothing.
+ */
+function sendAnalyticsError(res: Response, err: unknown) {
+  if (err instanceof AnalyticsError) {
+    if (err.retryAfterSeconds !== undefined) res.setHeader("Retry-After", String(err.retryAfterSeconds));
+    res.status(err.status).json({ error: err.message, code: err.code });
+    return;
+  }
+  if (err instanceof AnalyticsProviderOutputError) {
+    res.status(502).json({ error: err.message, code: err.code });
+    return;
+  }
+  log.error("analytics.request_failed", { error: err });
+  res.status(500).json({ error: "An unexpected failure. The detail is logged with the request id, never returned.", code: "INTERNAL_ERROR" });
+}
+
 function sendOwnerEmailError(res: Response, err: unknown) {
   if (err instanceof OwnerEmailError) {
     if (err.retryAfterSeconds !== undefined) res.setHeader("Retry-After", String(err.retryAfterSeconds));
@@ -1647,6 +1683,74 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
       res.json(jsonSafe(await removeOwnerEmail(req.params.id, req.params.emailId, req.actor!.label)));
     } catch (err) {
       sendOwnerEmailError(res, err);
+    }
+  });
+
+  // Post analytics (docs/decisions/0090). Reads are members'; every write is the owner's, so staff get 403. A workspace whose
+  // template has no analytics module answers 400 TEMPLATE_HAS_NO_ANALYTICS; a demo workspace refuses writes (403).
+  app.get("/api/workspaces/:id/analytics/accounts", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      res.json(jsonSafe(await listAnalyticsAccounts(req.params.id)));
+    } catch (err) {
+      sendAnalyticsError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/analytics/accounts", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      const body = AnalyticsAccountBodySchema.safeParse(req.body ?? {});
+      if (!body.success) throw new AnalyticsError("INVALID_INPUT", 400, "provider and brandLabel are required; brandLabel is 1 to 80 characters");
+      const account = await createAnalyticsAccount(req.params.id, body.data, { type: "owner", id: req.actor!.label });
+      res.status(201).json(jsonSafe(account));
+    } catch (err) {
+      sendAnalyticsError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/analytics/accounts/:accountId/sync", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      res.json(jsonSafe(await syncAccount(req.params.id, req.params.accountId, { type: "owner", id: req.actor!.label })));
+    } catch (err) {
+      sendAnalyticsError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/analytics/reports", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      res.json(jsonSafe(await listAnalyticsReports(req.params.id)));
+    } catch (err) {
+      sendAnalyticsError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/analytics/reports/:reportId", ...workspaceMember, async (req: Request, res: Response) => {
+    try {
+      res.json(jsonSafe(await getAnalyticsReport(req.params.id, req.params.reportId)));
+    } catch (err) {
+      sendAnalyticsError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/analytics/reports", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      const body = AnalyticsReportBodySchema.safeParse(req.body ?? {});
+      if (!body.success) {
+        throw new AnalyticsError("INVALID_INPUT", 400, "kind must be on_demand; accountId, periodStart and periodEnd are optional, and the dates are YYYY-MM-DD");
+      }
+      const now = new Date();
+      const hasPeriod = body.data.periodStart !== undefined || body.data.periodEnd !== undefined;
+      const period = hasPeriod
+        ? parsePeriod({ periodStart: body.data.periodStart, periodEnd: body.data.periodEnd }, now)
+        : defaultOnDemandPeriod(now);
+      const out = await generateReport(
+        req.params.id,
+        { accountId: body.data.accountId ?? null, kind: "on_demand", periodStart: period.start, periodEnd: period.end },
+        { type: "owner", id: req.actor!.label },
+        now
+      );
+      res.status(out.created ? 201 : 200).json(jsonSafe({ ...out.report, created: out.created }));
+    } catch (err) {
+      sendAnalyticsError(res, err);
     }
   });
 

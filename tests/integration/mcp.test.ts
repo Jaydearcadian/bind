@@ -48,6 +48,9 @@ const READ_TOOLS = [
   "feedback_summary",
   "list_audit",
   "poll_events",
+  // Post analytics reports (docs/decisions/0090): read only.
+  "list_analytics_reports",
+  "get_analytics_report",
 ];
 const TOOL_NAMES = [
   ...READ_TOOLS,
@@ -68,6 +71,8 @@ const VALID_ARGS: Record<string, Record<string, unknown>> = {
   list_customer_orders: {},
   list_menu: {},
   list_menu_proposals: {},
+  list_analytics_reports: {},
+  get_analytics_report: { reportId: "rpt_sample" },
   feedback_summary: {},
   list_audit: {},
   poll_events: {},

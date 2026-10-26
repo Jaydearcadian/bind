@@ -6,6 +6,83 @@ that this task did not reproduce are kept, labelled, in the appendix at the end,
 **Commit the gates ran on:** `407533ac09f7121806836e25db4834be5c91c412` (HEAD of `claude/capabilities-overview-c6elxr` before the
 commit that adds this document; the working tree was clean at that commit).
 
+## 0d. Post analytics, first read-only slice (ADR 0090): gate run, second pass after review
+
+**Commit the gates ran on:** the working tree on top of `6e4a8a2` (the first commit of this slice), with the review changes uncommitted at the time of the runs. Integration runs used a private database, `bind_haiku_analytics`, created for this work and dropped afterwards. `bind_local` was never used for analytics. No real platform is contacted and no credential is read; the provider is simulated only.
+
+| Command | Result | Class |
+| --- | --- | --- |
+| `npm run typecheck` (root, SDK, MCP) | passes | `LOCAL_PASS` |
+| `npm run lint` | 0 errors; 3 warnings, all in `tests/integration/tab-dropped.test.ts` (existing, not changed) | `LOCAL_PASS` |
+| `npx vitest run tests/unit/` | 81 files, 1090 tests passed | `LOCAL_PASS` |
+| `DATABASE_URL=…bind_haiku_analytics npx vitest run tests/integration/` | 92 files passed, 1 skipped (existing skip, ADR 0057); 961 tests passed, 16 skipped (existing skips) | `LOCAL_PASS` |
+| `npm run api:spec`, `sdk:generate`, `capabilities:generate` | regenerated; re-running reproduces the committed files | `LOCAL_PASS` |
+| `npm run build` (incl. `sdk:build`), `npm run mcp:build` | both pass | `LOCAL_PASS` |
+| Browser E2E | not run in this worktree (screens are the owner's) | `NOT_RUN` |
+| Any real provider or Meta | not contacted | `NOT_RUN` |
+| `docs/CODEBASE_MAP.md` | not regenerated (no `.ua` graph in a worktree), not edited by hand | `NOT_RUN` |
+
+### What the review asked for, and what was done
+
+- **B1, failed and in-doubt notices audited through the worker.** The weekly job now counts every notice it did not send and audits it at first sight: `notification.in_doubt` for a row left `started`, `notification.failed` for a refused row. Tests drive the worker itself (`runWeeklyAnalyticsReports` and `runTick`): a crash after the provider accepted the message (fault injection) gives one in-doubt audit row, ledger `started`, one mail, and no resend on the next pass; a provider 500 gives a failed count, a `failed` row, one failed audit row, and no resend. Both assert `failed` and `noticesInDoubt`.
+- **B2, connect limit under concurrency.** The count of accounts is taken under the workspace row lock. Test: 20 concurrent connects give exactly 10 `201` and 10 `409 ANALYTICS_ACCOUNT_LIMIT`, with 10 rows.
+- **B3, staff on every write route.** Test: staff get `403` on connect, sync and report creation, and the test checks the state too (no account row, no post row, no report row, no `analytics.%` audit row written). Mutation D (sync route opened to members) is killed.
+- **S7, ADR section 9.** Corrected: four routes are `contractTested: false`; their response schemas are checked by parsing real responses in `analytics.test.ts`; the cap is 17, and that is the true count. The cap is not lowered because the four routes cannot succeed on the kitchen fixture (see below).
+- **S1, backoff, timeout, minimum interval, audit once per real sync.** Columns `last_sync_attempt_at`, `last_sync_at`, `consecutive_failures`, `next_attempt_at` on `analytics_accounts`. Each sync attempt claims the account by one conditional update, so the minimum interval (`BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS`, default 5 minutes) holds across the API and the worker. A manual sync inside it gets `429 ANALYTICS_SYNC_TOO_SOON` with `Retry-After`. Backoff: 15 minutes, doubling, capped at 12 hours; 12 hours at once for `ANALYTICS_PROVIDER_NOT_AVAILABLE` and `ANALYTICS_PROVIDER_OUTPUT_INVALID`. A provider call has a 20-second timeout and an abort signal, and the weekly pass starts no new work after 120 seconds. `analytics.synced` is written only with a successful sync's rows. Tests: the throttle (`429` and `Retry-After`), a hanging provider (`502` in under 5 seconds, nothing stored, backoff recorded), the backoff sequence 15/30/60 minutes and the 12-hour slow case, a recovery that writes exactly one sync audit row, and the starvation scenario: 30 permanently broken accounts older than one healthy account. The healthy report is written, and each broken account has exactly one failure after the pass.
+- **S2 and S3, owners who cannot be mailed and partial multi-owner sends.** `analytics_reports.notice_done` marks a report whose owners have all been dealt with (sent, already sent, failed, in doubt, or none to tell). The weekly job lists only reports that are not done, so a workspace with no reachable owner never holds a batch slot. Test with a batch of one: the older report belongs to a workspace whose owner binding cannot be mailed, and the verified owner of the newer workspace is still mailed. A crash between recipients leaves the report not done; the next pass sends only the recipients with no row.
+- **S4, a period with no posts.** Refused with `409 ANALYTICS_NO_DATA_YET`, and nothing is stored. Test: no report row for the period; the same request works after a sync. The weekly job treats it as deferred (one hour), not as a failure.
+- **S5, the notice says "(sample data)" for simulated data.** "Your report is ready (sample data)." in the email, and the same in the WhatsApp or Telegram message. Tests cover the email text (simulated and real) and the delivered title and message.
+- **S6, idempotent connects.** `POST /accounts` is in `IDEMPOTENT_ROUTES`. Test: five requests with one key give one account, and the same id each time. The idempotency test names it, with the sync, as keyed for a reason other than economic.
+- **S8, the missing kills.** AH (report ignores the account's zone): killed by the New York test. AD (flag defaults on): the flag builder moved to `src/workers/options.ts`, tested with `"true"`, `"TRUE"`, `"1"`, `""`, `"false"`, `"on"`, and unset; mutation F is killed. W and X (demo and disabled accounts are swept): the due query excludes them, and tests assert `failed === 0` and that they are not attempted; mutations G and H are killed.
+- **S9, contract coverage.** The four routes that need a module-bearing workspace are checked by parsing real responses with the registry's schemas (`AnalyticsAccountSchema`, `AnalyticsSyncResultSchema`, `AnalyticsReportCreatedSchema`, `AnalyticsReportSchema`). Not moved into the sweep, because the sweep's fixture is a kitchen with no module.
+- **Nits.** N1, comparisons use the printed values (reach to one decimal, rates to 0.1%), and a median that is not whole prints with one decimal (`10.5 against 11`). N2, a difference under 5% is "about the same". N3, the ADR now states the one ordering that the code uses. N5, the count keys carry only numbers. N6, the provider's own message is not logged, only its error name. N7, a publish time at `24:00` is refused. N9, posts are sorted by provider id before the upsert.
+
+### Mutation checks (second pass; each applied to the source, suites run, file restored)
+
+The table uses the full mutation list of this pass. A mutation is KILLED when at least one test fails.
+
+| # | Mutation | Verdict | Killing tests (examples) |
+| --- | --- | --- | --- |
+| A | Report `ON CONFLICT` removed | KILLED | concurrent report requests write one row |
+| B | Format sample guard removed (1 post) | KILLED | "does not state a comparison from fewer than 5 posts" |
+| C | Workspace row lock removed (B2) | KILLED | 20 concurrent connects give exactly 10 |
+| D | Staff allowed to sync (O) | KILLED | staff get 403 on every write, state unchanged |
+| E | Report ignores the account time zone (AH) | KILLED | New York report reports `America/New_York` |
+| F | Worker flag defaults on (AD) | KILLED | worker-options unit test (`"TRUE"`, `"1"`, unset) |
+| G | Demo accounts swept (W) | KILLED | demo test: `failed === 0` and not attempted |
+| H | Disabled accounts swept (X) | KILLED | disabled test: `failed === 0` |
+| I | Connect not keyed (S6) | KILLED | five requests with one key give one account |
+| J | Throttle claim always succeeds | KILLED | second sync inside the interval is refused |
+| K | Provider call not raced against the timeout | KILLED | hanging provider test (times out in the test) |
+| L | Due query ignores backoff (starvation) | SURVIVED (corrected by the independent re-review, 2026-10-27) | The starvation test passes without the backoff filter; see the follow-ups below |
+| M | Backoff does not double | KILLED | backoff sequence 15/30/60 minutes |
+| N | Provider-level failures wait the short time | KILLED | 12-hour case for invalid output |
+| O | Failed and in-doubt notices not audited at first sight | KILLED | worker in-doubt and failed audit tests |
+| P | `notice_done` filter removed | KILLED | batch-of-one test: verified owner still mailed |
+| Q | Zero-post period stored (no refusal) | KILLED | 409 `ANALYTICS_NO_DATA_YET`, nothing stored |
+| R | Simulated notice says nothing about sample data (S5) | KILLED | notice text and delivered title |
+| S | Materiality threshold removed (N2) | KILLED | 3,000 against 2,900 is about the same (unit) |
+| T | Engagement rate compared unrounded (N1), after the new test | KILLED | 5.5% against 5.2% (unit) |
+| U | Count keys accept text (N5) | KILLED | event allowlist test |
+| V | Publish time 24:00 accepted (N7) | KILLED | validator test |
+| W | Ledger bypassed for the owner notice (M3, from the first pass) | KILLED | ten concurrent deliveries; crash tests |
+| X | Delivery pre-check ignores completed rows (M4) | KILLED | "a verified owner is emailed once" |
+| Y | Re-sync keeps the old sync time (M5) | KILLED | "a later sync updates the stored rows" |
+| Z | Account lookup loses tenant scope (M6) | KILLED | 39 failing tests (tenancy and notices) |
+| AA | Staff allowed to create reports (M7) | KILLED | staff 403 on report creation |
+| AB | Demo refusal removed for writes (M8) | KILLED | demo test |
+| AC | NaN accepted as a count (M9) | KILLED | validator refusal tests |
+| AD | Free text kept by the validator (M10) | KILLED | caption test |
+| AE | Template refusal removed from connect (M11) | KILLED | template refusal tests |
+
+**Survivors and their explanation.** In the second pass, one mutant survived: the rounding of the reach medians (`round1`) was removed. It is an **equivalent mutant**: a median of whole-number reaches is always a whole number or a half, and one-decimal rounding does not change a half. The line that does matter, the engagement-rate rounding, survived in the first version of the suite, and a new test now kills it (mutation T). No other survivor.
+
+**Earlier mutation sweep (first pass, before this review).** Its survivors were: the time-zone mutation of the account (now killed, AH), the flag default (now killed, F), staff sync (now killed, D), demo and disabled sweeps (now killed, G and H), the sync time (killed in both passes), and the weekly job's ledger-check removal (now replaced by `notice_done`, mutation P, killed). The first pass's in-doubt audit gap (B1) is closed, and its test now runs through the worker.
+
+**Known limitations (ADR 0090).** A crash in the middle of one provider send leaves the row `started`; the owner's audit row is written by the pass that sees the failure, not by a later pass. Reports are fixed when written. The all-brands report pools brands. The backoff, timeout and throttle values are first choices, with fake providers only.
+
+**Not claimed:** no `LIVE_READ_PASS`, `VERIFIED_REMOTE` or `BLOCKED` for this slice. The simulated provider is `LOCAL_PASS` only.
+
 ## 0c. Embedded wallet for Google sign-in (ADR 0073): gate run and deployment
 
 **Commit the gates ran on and the commit deployed:** `28f13c4df9ab72e6f48f14bd1d1d4bff66cc7580`. Command: `bash scripts/verify-local.sh`. Result: `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0` (unit 57 files and 606 tests, integration 638 passed and 10 skipped, contract 32, browser E2E including `wallet.spec.ts`, `account-signin.spec.ts` and `privy-bundle.spec.ts`).
@@ -719,3 +796,14 @@ Owner decision, 2026-10-26: CI stays on the standard Anvil. The Arc-mode (`arc-a
 - LOCAL_PASS: `tests/unit/live-tab-arc.test.ts` 131 passed; `tests/integration/live-tab-arc-rehearsal.test.ts` 2 passed on a private local Postgres (skipped without `BIND_LIVE_PG_ADMIN_URL`); 34 of 35 mutation checks caught (survivor: the child's lock release, recorded in ADR 0090).
 - NOT_RUN: every chain path of the harness (log scan, gas estimate, nonce reads, cap against the real testnet, lock across real processes) was tested with fake RPCs only. The live tab-path run itself is NOT_RUN and not approved. The owner must rotate the RPC token and signer key and give an explicit yes first. The chain cap counts all signer-to-vendor payments since deployment, including earlier recovery runs, so `--preflight` may report the cap already reached.
 
+
+
+### Independent re-review of the analytics slice (2026-10-27)
+
+Sonnet re-ran the claims in section 0d on private databases and approved a merge with the weekly flag OFF and the simulated provider only. It also corrected the table above: mutation L survived, and so did the backoff cap, the abort signal never firing, the post sort, the no-data deferral and the 120 s pass budget constant. Open follow-ups, all required before a real provider is connected (the flag stays off until an owner opts in):
+
+- **S-A.** A failure in the report step never escalates the backoff (`service.ts` resets `consecutive_failures` after the sync, then the worker sets it to 1). A report step that always fails costs a provider call and an `analytics.synced` audit row about every 15 minutes.
+- **S-B.** Tests for the due query ignoring backoff, the backoff cap, the abort signal, the post sort, the no-data deferral and the 120 s budget.
+- **S-C.** `analytics-notices.test.ts` runs unscoped worker ticks on the shared DB with a clock 9 days ahead; the likely cause of the intermittent `worker.test.ts` expiry failure. The suite is not hermetic: of three full runs, one was fully green.
+- **S-D / S-E.** A recipient that fails before its ledger row exists is audited as failed and never retried; a real process crash after a send leaves a `started` row no pass audits (documented in ADR 0090).
+- Adapter work for a real provider (verified API facts, credential store, rate-limit-aware backoff, recorded fixtures, an authorised live read).
