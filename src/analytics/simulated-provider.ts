@@ -1,5 +1,5 @@
 /**
- * A deterministic, fabricated post analytics provider (docs/decisions/0090). It is labelled `simulated` everywhere it surfaces.
+ * A deterministic, fabricated post analytics provider (docs/decisions/0091). It is labelled `simulated` everywhere it surfaces.
  * It exists so the analysis, storage, reports and notices can be built and tested without a real account. It makes no network
  * call and holds no credential.
  *

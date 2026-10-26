@@ -21,7 +21,7 @@ import { runWeeklyAnalyticsReports } from "../analytics/service.js";
  *   1. approval expiry, 2. interrupted-workflow recovery, 3. settlement confirmation polling,
  *   4. recovery of orders left in `settling`, 4b. the tab settlements (docs/decisions/0081: resume pending, confirm submitted,
  *   the end-of-day batch), 5. the restock sweep (off unless enabled), 6. the weekly post analytics reports (off unless
- *   BIND_ANALYTICS_REPORTS=true, docs/decisions/0090), then the idempotency sweep and
+ *   BIND_ANALYTICS_REPORTS=true, docs/decisions/0091), then the idempotency sweep and
  *   the demo expiry sweep (docs/decisions/0057), which deletes expired demo workspaces whatever the demo flag says.
  * Every step first takes a non-blocking session lock named `worker:<step>`. A step whose lock is busy is skipped
  * and reported as skipped. The operations are idempotent regardless, so the locks only avoid duplicate work.
@@ -68,7 +68,7 @@ export interface TickReport {
   /** `skipped` is true when the sweep did not run: it is off, or its lock was busy. */
   restockSweep: { skipped: boolean; started: number; failed: number };
   /**
-   * The weekly analytics job (docs/decisions/0090). Off unless BIND_ANALYTICS_REPORTS=true. `failed` counts accounts and notices
+   * The weekly analytics job (docs/decisions/0091). Off unless BIND_ANALYTICS_REPORTS=true. `failed` counts accounts and notices
    * that did not complete in the pass; each one is recorded (backoff, or an audit row) and is not retried at once.
    */
   analyticsReports: {
@@ -103,10 +103,12 @@ export interface TickOptions {
   stuckSettlingAfterMs?: number;
   /** Runs the restock sweep (step 5). Off by default, so a bare tick does not start replenishments (ADR 0030). */
   restockSweep?: boolean;
-  /** Runs the weekly analytics job (step 6). Off by default (docs/decisions/0090). */
+  /** Runs the weekly analytics job (step 6). Off by default (docs/decisions/0091). */
   analyticsReports?: boolean;
   /** The sweep looks only at these workspaces. Unset means every workspace that is not paused. */
   restockWorkspaceIds?: string[];
+  /** The weekly analytics job looks only at these workspaces. Unset means every real analytics workspace (tests scope it). */
+  analyticsWorkspaceIds?: string[];
   /** A sku with any workflow created this recently is not swept again (default 6 hours). */
   restockCooldownMs?: number;
   /**
@@ -138,7 +140,7 @@ const DEFAULT_RESTOCK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const ERROR_LIMIT = 200;
 /** The actor on the sweep's audit rows. */
 const SWEEP_ACTOR = "system:restock-sweep";
-/** The analytics pass starts no new work after this long (docs/decisions/0090). Each provider call has its own timeout. */
+/** The analytics pass starts no new work after this long (docs/decisions/0091). Each provider call has its own timeout. */
 export const ANALYTICS_PASS_DEADLINE_MS = 120_000;
 
 const STEP_KEY: Record<WorkerStep, keyof Omit<TickReport, "errors">> = {
@@ -186,6 +188,7 @@ function resolved(opts: TickOptions) {
     restockSweep: opts.restockSweep ?? false,
     analyticsReports: opts.analyticsReports ?? false,
     restockWorkspaceIds: opts.restockWorkspaceIds,
+    analyticsWorkspaceIds: opts.analyticsWorkspaceIds,
     restockCooldownMs: opts.restockCooldownMs ?? DEFAULT_RESTOCK_COOLDOWN_MS,
     tabs: {
       endOfDay: opts.tabs?.endOfDay ?? true,
@@ -253,12 +256,17 @@ async function tabSettlementsStep(cfg: Resolved, report: TickReport): Promise<vo
 }
 
 /**
- * The weekly post analytics job (docs/decisions/0090): syncs each analytics account of a real workspace and writes its report for
+ * The weekly post analytics job (docs/decisions/0091): syncs each analytics account of a real workspace and writes its report for
  * the last full week, then tells the owner once per report. Each account and each notice is isolated; errors are bounded.
  */
 async function analyticsReportsStep(cfg: Resolved, report: TickReport): Promise<void> {
   // The pass starts no new account or notice after ANALYTICS_PASS_DEADLINE_MS, so one slow provider cannot hold the tick.
-  const result = await runWeeklyAnalyticsReports({ now: cfg.now, batchSize: cfg.batchSize, deadlineMs: ANALYTICS_PASS_DEADLINE_MS });
+  const result = await runWeeklyAnalyticsReports({
+    now: cfg.now,
+    batchSize: cfg.batchSize,
+    deadlineMs: ANALYTICS_PASS_DEADLINE_MS,
+    workspaceIds: cfg.analyticsWorkspaceIds,
+  });
   report.analyticsReports.synced = result.synced;
   report.analyticsReports.skippedRecentSync = result.skippedRecentSync;
   report.analyticsReports.reports = result.reports;

@@ -101,9 +101,9 @@ const envShape = z.object({
   BIND_WORKER_ENABLED: z.string().optional(),
   // The restock sweep (ADR 0030) runs in the worker unless this is exactly "false".
   BIND_RESTOCK_SWEEP: z.string().optional(),
-  // Weekly post analytics reports (docs/decisions/0090). Off unless exactly "true". Any other value is ignored.
+  // Weekly post analytics reports (docs/decisions/0091). Off unless exactly "true". Any other value is ignored.
   BIND_ANALYTICS_REPORTS: z.string().optional(),
-  // The shortest gap between two sync attempts of one analytics account, manual or by the worker (docs/decisions/0090). Tests
+  // The shortest gap between two sync attempts of one analytics account, manual or by the worker (docs/decisions/0091). Tests
   // that exercise the throttle set it themselves; everything else uses the default.
   BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
   // Log level for the structured logger (ADR 0032). Unset or empty means info.

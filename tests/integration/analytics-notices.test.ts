@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from "vitest";
 import { query, closePool } from "../../src/db/client.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import { config } from "../../src/config/env.js";
@@ -7,22 +7,31 @@ import { notificationEmitter } from "../../src/adapters/web2/notifications.js";
 import { upsertSurfaceBinding } from "../../src/adapters/socialSurface.js";
 import { requestOwnerEmailVerification, verifyOwnerEmail } from "../../src/notifications/owner-emails.js";
 import { setEffectFault } from "../../src/effects/faults.js";
-import { runTick } from "../../src/workers/runner.js";
+import { runTick, ANALYTICS_PASS_DEADLINE_MS } from "../../src/workers/runner.js";
 import { workerOptionsFromEnv } from "../../src/workers/options.js";
 import {
   createAnalyticsAccount,
   deliverReportNotice,
   generateReport,
+  MAX_NOTICE_ATTEMPTS,
   runWeeklyAnalyticsReports,
+  setAnalyticsProviderForTests,
   syncAccount,
   SYSTEM_ACTOR,
+  upsertArrays,
 } from "../../src/analytics/service.js";
+import { createSimulatedProvider } from "../../src/analytics/simulated-provider.js";
+import type { PostAnalyticsProvider, ProviderPost } from "../../src/analytics/types.js";
 import { startFakeResend, codeIn, type FakeResend } from "../helpers/fake-resend.js";
 
 /*
- * Analytics reports and the owner's notice (docs/decisions/0090, ADR 0017, ADR 0074), against a local fake email provider.
+ * Analytics reports and the owner's notice (docs/decisions/0091, ADR 0017, ADR 0074), against a local fake email provider.
  * The notice is at most once per (workspace, report, recipient): a replay, a concurrent call, a crash before the notice, and a
- * crash during the send are each tested. The weekly job is tested for its bounds, its isolation and its replay.
+ * crash during the send are each tested. The weekly job is tested for its bounds, its isolation, its backoff and its replay.
+ *
+ * The suite shares one database with every other integration file, and the tests here run the weekly job at a fixed clock. So
+ * every pass is scoped to the workspaces this file made (`workspaceIds`), and the worker tick uses the real clock, so nothing
+ * here can expire another file's rows (review S-C).
  */
 
 const run = Date.now();
@@ -31,6 +40,8 @@ const NOTICE_SUBJECT = "Something is waiting for you in Bind";
 const NOW = new Date("2026-11-04T10:00:00Z");
 const PERIOD_START = new Date("2026-10-26T00:00:00Z");
 const PERIOD_END = new Date("2026-11-02T00:00:00Z");
+const MIN = 60_000;
+const HOUR = 60 * MIN;
 const SYNC_ACTOR = { type: "owner" as const, id: "owner-notices" };
 const wsIds: string[] = [];
 let counter = 0;
@@ -69,7 +80,34 @@ beforeEach(() => {
   fake.rawBody = null;
   notificationEmitter.clear();
   enableEmail();
+  useDefaultProvider();
 });
+
+afterEach(() => {
+  setAnalyticsProviderForTests(null);
+});
+
+/** A post inside the test period (26 October to 2 November 2026), whatever the simulator gives for an account's seed. */
+const ANCHOR_POST: ProviderPost = {
+  externalId: "anchor_post",
+  publishedAt: new Date("2026-10-28T12:00:00Z"),
+  mediaType: "image" as ProviderPost["mediaType"],
+  metrics: { reach: 100, impressions: 120, likes: 3, comments: 1, saves: 1, shares: 0 },
+};
+
+/**
+ * The default provider for this file's simulated accounts: the simulator, plus one post inside the test period. The simulator
+ * publishes nothing on about 45% of days, so a seed can have no posts for a whole week (about 0.4%). Then the report has no data
+ * and never reaches the insert the tests rely on. Anchoring the period makes every report's data independent of the seed.
+ * A test that needs another provider replaces this for its own account.
+ */
+function useDefaultProvider(): void {
+  setAnalyticsProviderForTests((account) => {
+    if (account.provider !== "simulated") return null;
+    const inner = createSimulatedProvider({ workspaceId: account.workspace_id, accountId: account.id });
+    return { ...inner, fetchPosts: async (request) => [ANCHOR_POST, ...(await inner.fetchPosts(request))] };
+  });
+}
 
 afterAll(async () => {
   config.BIND_EMAIL_PROVIDER = saved.provider;
@@ -77,20 +115,32 @@ afterAll(async () => {
   config.BIND_EMAIL_FROM = saved.from;
   config.BIND_EMAIL_API_BASE = saved.base;
   setEffectFault(null);
+  setAnalyticsProviderForTests(null);
   await fake.close();
   for (const id of wsIds.splice(0)) await query(`DELETE FROM workspaces WHERE id = $1;`, [id]);
   await closePool();
 });
 
-/** A fresh social workspace with one analytics account, synced. Each test decides what else it has. */
+/** A fresh social workspace with one analytics account, synced at NOW. Each test decides what else it has. */
 async function socialWorkspace(): Promise<{ wsId: string; accountId: string }> {
+  const made = await workspaceWithAccount();
+  await syncAccount(made.wsId, made.accountId, SYNC_ACTOR, NOW);
+  return made;
+}
+
+/** A fresh social workspace with one analytics account that has never been synced. */
+async function workspaceWithAccount(): Promise<{ wsId: string; accountId: string }> {
   counter += 1;
   const wsId = `ws-ann-${run}-${counter}`;
   wsIds.push(wsId);
   await provisionWorkspace(wsId, "Notice Brand", "social-v1");
   const account = await createAnalyticsAccount(wsId, { provider: "simulated", brandLabel: "Brand" }, SYNC_ACTOR);
-  await syncAccount(wsId, account.id, SYNC_ACTOR, NOW);
   return { wsId, accountId: account.id };
+}
+
+/** One pass of the weekly job, scoped to the given workspaces. */
+function pass(workspaceIds: string[], batchSize = 1000, now: Date = NOW) {
+  return runWeeklyAnalyticsReports({ now, batchSize, workspaceIds });
 }
 
 /** Verifies an owner address through the real service; the code comes from the fake provider's email. */
@@ -118,6 +168,24 @@ async function weeklyReportsFor(wsId: string): Promise<number> {
     [wsId, "2026-10-26", "2026-11-02"]
   );
   return Number(res.rows[0].n);
+}
+
+async function auditCount(wsId: string, action: string): Promise<number> {
+  const res = await query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = $2;`, [wsId, action]);
+  return Number(res.rows[0].n);
+}
+
+/**
+ * Makes an insert into `table` fail for the rows the condition names, until the returned function is called. A database-level
+ * fixture: the service sees a real database error, not a stub. Each call uses its own function and trigger name.
+ */
+async function refuseInserts(table: "analytics_reports" | "effects", condition: string, name: string): Promise<() => Promise<void>> {
+  await query(`CREATE OR REPLACE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused by test fixture'; END $$;`);
+  await query(`CREATE TRIGGER ${name} BEFORE INSERT ON ${table} FOR EACH ROW WHEN (${condition}) EXECUTE FUNCTION ${name}();`);
+  return async () => {
+    await query(`DROP TRIGGER IF EXISTS ${name} ON ${table};`);
+    await query(`DROP FUNCTION IF EXISTS ${name}();`);
+  };
 }
 
 describe("the owner's notice: at most once, naming nothing", () => {
@@ -192,11 +260,11 @@ describe("crash safety", () => {
     await generateReport(wsId, { accountId, kind: "weekly", periodStart: PERIOD_START, periodEnd: PERIOD_END }, SYSTEM_ACTOR, NOW);
     expect(noticesTo(address)).toHaveLength(0);
 
-    const replay = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
-    expect(replay.errors.filter((e) => e.includes(wsId))).toEqual([]);
+    const replay = await pass([wsId]);
+    expect(replay.errors).toEqual([]);
     expect(noticesTo(address)).toHaveLength(1);
-    const again = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
-    expect(again.errors.filter((e) => e.includes(wsId))).toEqual([]);
+    const again = await pass([wsId]);
+    expect(again.errors).toEqual([]);
     expect(noticesTo(address)).toHaveLength(1);
     expect(await weeklyReportsFor(wsId)).toBe(1);
   });
@@ -213,8 +281,7 @@ describe("crash safety", () => {
     // The injected crash is thrown after the provider answered: the ledger row is left started, so the outcome is unknown.
     // That is in doubt, not a refusal, and it is audited at once.
     expect(first).toMatchObject({ sent: 0, inDoubt: 1 });
-    const audited = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.in_doubt';`, [wsId]);
-    expect(Number(audited.rows[0].n)).toBe(1);
+    expect(await auditCount(wsId, "notification.in_doubt")).toBe(1);
     expect(noticesTo(address)).toHaveLength(1);
     expect(await ledgerRows(key)).toEqual([{ status: "started" }]);
 
@@ -223,8 +290,7 @@ describe("crash safety", () => {
     const second = await deliverReportNotice(wsId, generated.report.id);
     expect(second).toMatchObject({ sent: 0, alreadyRecorded: 1, inDoubt: 0 });
     expect(noticesTo(address)).toHaveLength(1);
-    const inDoubt = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.in_doubt';`, [wsId]);
-    expect(Number(inDoubt.rows[0].n)).toBe(1);
+    expect(await auditCount(wsId, "notification.in_doubt")).toBe(1);
   });
 
   it("a send the provider refuses is recorded as failed, and is not retried by the next delivery", async () => {
@@ -245,10 +311,13 @@ describe("crash safety", () => {
 
 describe("the weekly job: bounded, isolated, and replay-safe", () => {
   it("the worker does nothing with analytics unless it is switched on", async () => {
-    const { wsId } = await socialWorkspace();
-    const off = await runTick({ now: NOW });
+    const { wsId } = await workspaceWithAccount();
+    // The real clock: the tick's other steps run against the shared database, so they are never run at the fixture's clock.
+    const off = await runTick({});
     expect(off.analyticsReports.skipped).toBe(true);
     expect(await weeklyReportsFor(wsId)).toBe(0);
+    const reports = await query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM analytics_reports WHERE workspace_id = $1;`, [wsId]);
+    expect(Number(reports.rows[0].n)).toBe(0);
   });
 
   it("with the job on, a broken account is counted and the others still run; a replay does nothing new", async () => {
@@ -256,13 +325,14 @@ describe("the weekly job: bounded, isolated, and replay-safe", () => {
     const broken = await socialWorkspace();
     // The account was synced a moment ago, so it is throttled; clear its attempt time so the pass attempts it and it fails.
     await query(`UPDATE analytics_accounts SET provider = 'instagram', last_sync_attempt_at = NULL WHERE workspace_id = $1;`, [broken.wsId]);
-    const pass = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
-    expect(pass.failed).toBeGreaterThanOrEqual(1);
-    expect(pass.errors).toContain("ANALYTICS_PROVIDER_NOT_AVAILABLE");
+    const scope = [good.wsId, broken.wsId];
+    const first = await pass(scope);
+    expect(first.failed).toBeGreaterThanOrEqual(1);
+    expect(first.errors).toContain("ANALYTICS_PROVIDER_NOT_AVAILABLE");
     expect(await weeklyReportsFor(good.wsId)).toBe(1);
     expect(await weeklyReportsFor(broken.wsId)).toBe(0);
     const before = await query(`SELECT COUNT(*)::int AS n FROM analytics_reports WHERE workspace_id = $1;`, [good.wsId]);
-    await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+    await pass(scope);
     const after = await query(`SELECT COUNT(*)::int AS n FROM analytics_reports WHERE workspace_id = $1;`, [good.wsId]);
     expect(after.rows[0].n).toBe(before.rows[0].n);
   });
@@ -272,28 +342,34 @@ describe("the weekly job: bounded, isolated, and replay-safe", () => {
     await query(`UPDATE analytics_accounts SET status = 'disabled' WHERE workspace_id = $1;`, [disabled.wsId]);
     const demo = await socialWorkspace();
     await query(`UPDATE workspaces SET is_demo = TRUE, demo_expires_at = NOW() + INTERVAL '1 day' WHERE id = $1;`, [demo.wsId]);
-    const pass = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+    const scope = [disabled.wsId, demo.wsId];
+    const outcome = await pass(scope);
     // Neither account is selected, so neither is attempted and nothing fails for them (review W/X).
-    expect(pass.failed).toBe(0);
+    expect(outcome.failed).toBe(0);
     expect(await weeklyReportsFor(disabled.wsId)).toBe(0);
     expect(await weeklyReportsFor(demo.wsId)).toBe(0);
     await expect(syncAccount(disabled.wsId, disabled.accountId, SYNC_ACTOR, NOW)).rejects.toMatchObject({ code: "ANALYTICS_ACCOUNT_DISABLED" });
   });
 
   it("the job's sync step is bounded by its batch size", async () => {
-    await socialWorkspace();
-    await socialWorkspace();
-    const pass = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1 });
-    expect(pass.synced).toBeLessThanOrEqual(1);
+    const a = await workspaceWithAccount();
+    const b = await workspaceWithAccount();
+    const outcome = await pass([a.wsId, b.wsId], 1);
+    // One account is taken, not both: it is synced and its report written, and the other waits for the next pass.
+    expect(outcome.synced + outcome.skippedRecentSync).toBe(1);
+    expect(outcome.reports).toBe(1);
+    expect((await weeklyReportsFor(a.wsId)) + (await weeklyReportsFor(b.wsId))).toBe(1);
   });
 
   it("the worker runs the job, and reports it, when BIND_ANALYTICS_REPORTS is on", async () => {
-    const { wsId } = await socialWorkspace();
+    const { wsId } = await workspaceWithAccount();
     // The options come from the same function the entry point uses, so the environment decides the job, as in production.
-    const on = await runTick({ now: NOW, ...workerOptionsFromEnv({ BIND_ANALYTICS_REPORTS: "true" }) });
+    const on = await runTick({ ...workerOptionsFromEnv({ BIND_ANALYTICS_REPORTS: "true" }), analyticsWorkspaceIds: [wsId] });
     expect(on.analyticsReports.skipped).toBe(false);
     expect(on.analyticsReports.failed).toBe(0);
-    expect(await weeklyReportsFor(wsId)).toBe(1);
+    expect(on.analyticsReports.reports).toBe(1);
+    const reports = await query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM analytics_reports WHERE workspace_id = $1 AND kind = 'weekly';`, [wsId]);
+    expect(Number(reports.rows[0].n)).toBe(1);
   });
 });
 
@@ -304,19 +380,17 @@ describe("the weekly job reports what it could not do (review B1, S2)", () => {
     await verifiedOwner(wsId, address);
     const key = (): string => `${wsId}:notify:analytics_report:`;
     setEffectFault({ point: "after_call_before_complete", match: (spec) => spec.idempotencyKey.startsWith(key()) });
-    const first = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+    const first = await pass([wsId]);
     expect(noticesTo(address)).toHaveLength(1);
     const rows = await ledgerRows(`${wsId}:notify:analytics_report:${(await query<{ id: string }>(`SELECT id FROM analytics_reports WHERE workspace_id = $1 AND kind = 'weekly';`, [wsId])).rows[0].id}`);
     expect(rows).toEqual([{ status: "started" }]);
-    const inDoubt = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.in_doubt';`, [wsId]);
-    expect(Number(inDoubt.rows[0].n)).toBe(1);
+    expect(await auditCount(wsId, "notification.in_doubt")).toBe(1);
     expect(first.noticesInDoubt).toBeGreaterThanOrEqual(1);
 
-    const second = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+    const second = await pass([wsId]);
     expect(noticesTo(address)).toHaveLength(1);
     expect(second.failed).toBe(0);
-    const inDoubtAfter = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.in_doubt';`, [wsId]);
-    expect(Number(inDoubtAfter.rows[0].n)).toBe(1);
+    expect(await auditCount(wsId, "notification.in_doubt")).toBe(1);
   });
 
   it("a provider that refuses the notice is counted as failed and audited at once, and the next pass does not resend it", async () => {
@@ -326,18 +400,17 @@ describe("the weekly job reports what it could not do (review B1, S2)", () => {
     fake.status = 500;
     let first;
     try {
-      first = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+      first = await pass([wsId]);
     } finally {
       fake.status = 200;
     }
     expect(first.failed).toBeGreaterThanOrEqual(1);
-    const audited = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.failed';`, [wsId]);
-    expect(Number(audited.rows[0].n)).toBe(1);
+    expect(await auditCount(wsId, "notification.failed")).toBe(1);
     const rows = await query<{ status: string }>(`SELECT status FROM effects WHERE workspace_id = $1 AND operation = 'notifications.send_summary';`, [wsId]);
     expect(rows.rows).toEqual([{ status: "failed" }]);
     const requests = noticesTo(address).length;
 
-    const second = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+    const second = await pass([wsId]);
     expect(noticesTo(address)).toHaveLength(requests);
     expect(second.failed).toBe(0);
     expect(second.notices).toBe(0);
@@ -354,8 +427,8 @@ describe("the weekly job reports what it could not do (review B1, S2)", () => {
     await verifiedOwner(b.wsId, address);
     await generateReport(b.wsId, { accountId: b.accountId, kind: "weekly", periodStart: PERIOD_START, periodEnd: PERIOD_END }, SYSTEM_ACTOR, NOW);
 
-    for (let pass = 0; pass < 10 && noticesTo(address).length === 0; pass += 1) {
-      await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1 });
+    for (let p = 0; p < 10 && noticesTo(address).length === 0; p += 1) {
+      await pass([a.wsId, b.wsId], 1);
     }
     expect(noticesTo(address)).toHaveLength(1);
     const aLedger = await query(`SELECT COUNT(*)::int AS n FROM effects WHERE workspace_id = $1 AND operation = 'notifications.send_summary';`, [a.wsId]);
@@ -363,10 +436,62 @@ describe("the weekly job reports what it could not do (review B1, S2)", () => {
   });
 });
 
+describe("a notice that cannot be handed over is tried again, then audited (review S-D)", () => {
+  it("a recipient that fails before its ledger row exists is tried again on later passes, then audited once and stopped", async () => {
+    const { wsId, accountId } = await socialWorkspace();
+    const address = `owner.untried.${run}@notices.example.test`;
+    await verifiedOwner(wsId, address);
+    const generated = await generateReport(wsId, { accountId, kind: "weekly", periodStart: PERIOD_START, periodEnd: PERIOD_END }, SYSTEM_ACTOR, NOW);
+    const reportId = generated.report.id;
+    const restore = await refuseInserts("effects", `NEW.idempotency_key LIKE '${wsId}:notify:analytics_report:%'`, "analytics_test_refuse_notice_a");
+    const outcomes = [];
+    try {
+      for (let i = 0; i < MAX_NOTICE_ATTEMPTS; i += 1) outcomes.push(await deliverReportNotice(wsId, reportId));
+    } finally {
+      await restore();
+    }
+    // Each try finds the recipient untried. The report stays not done until the last try, which audits it once.
+    expect(outcomes.map((o) => o.untried)).toEqual([1, 1, 1]);
+    expect(outcomes.map((o) => o.failed)).toEqual([0, 0, 1]);
+    expect(noticesTo(address)).toHaveLength(0);
+    expect(await ledgerRows(`${wsId}:notify:analytics_report:${reportId}`)).toEqual([]);
+    expect(await auditCount(wsId, "notification.failed")).toBe(1);
+    const state = await query<{ done: boolean; attempts: number }>(
+      `SELECT notice_done AS done, notice_attempts AS attempts FROM analytics_reports WHERE workspace_id = $1 AND id = $2;`,
+      [wsId, reportId]
+    );
+    expect(state.rows[0]).toEqual({ done: true, attempts: MAX_NOTICE_ATTEMPTS });
+    // Done: the job does not look at it again, so a later pass neither sends nor audits anything.
+    const later = await pass([wsId]);
+    expect(later.notices).toBe(0);
+    expect(later.failed).toBe(0);
+    expect(await auditCount(wsId, "notification.failed")).toBe(1);
+  });
+
+  it("a recipient that fails once before its ledger row exists is sent on the next pass", async () => {
+    const { wsId, accountId } = await socialWorkspace();
+    const address = `owner.retried.${run}@notices.example.test`;
+    await verifiedOwner(wsId, address);
+    const generated = await generateReport(wsId, { accountId, kind: "weekly", periodStart: PERIOD_START, periodEnd: PERIOD_END }, SYSTEM_ACTOR, NOW);
+    const restore = await refuseInserts("effects", `NEW.idempotency_key LIKE '${wsId}:notify:analytics_report:%'`, "analytics_test_refuse_notice_b");
+    try {
+      const failed = await deliverReportNotice(wsId, generated.report.id);
+      expect(failed).toMatchObject({ untried: 1, sent: 0 });
+    } finally {
+      await restore();
+    }
+    const retried = await deliverReportNotice(wsId, generated.report.id);
+    expect(retried).toMatchObject({ untried: 0, sent: 1 });
+    expect(noticesTo(address)).toHaveLength(1);
+    expect(await auditCount(wsId, "notification.failed")).toBe(0);
+    const state = await query<{ done: boolean }>(`SELECT notice_done AS done FROM analytics_reports WHERE workspace_id = $1 AND id = $2;`, [wsId, generated.report.id]);
+    expect(state.rows[0].done).toBe(true);
+  });
+});
+
 describe("a failing account cannot starve the others (review S1)", () => {
   it("30 permanently broken accounts, all older than one healthy account: the healthy report is still written, and each broken account is tried once per backoff", async () => {
     const brokenWorkspaces: string[] = [];
-    const brokenAccounts: Array<{ ws: string; id: string }> = [];
     // The broken accounts are created first, so they are the oldest. Three workspaces of ten, the limit per workspace.
     for (let w = 0; w < 3; w += 1) {
       counter += 1;
@@ -375,21 +500,21 @@ describe("a failing account cannot starve the others (review S1)", () => {
       brokenWorkspaces.push(ws);
       await provisionWorkspace(ws, "Broken Brand", "social-v1");
       for (let i = 0; i < 10; i += 1) {
-        const account = await createAnalyticsAccount(ws, { provider: "simulated", brandLabel: `Broken ${i}` }, SYNC_ACTOR);
-        brokenAccounts.push({ ws, id: account.id });
+        await createAnalyticsAccount(ws, { provider: "simulated", brandLabel: `Broken ${i}` }, SYNC_ACTOR);
       }
     }
     await query(`UPDATE analytics_accounts SET provider = 'instagram' WHERE workspace_id = ANY($1::text[]);`, [brokenWorkspaces]);
     // The healthy account is the youngest.
     const healthy = await socialWorkspace();
+    const scope = [...brokenWorkspaces, healthy.wsId];
 
-    const first = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 25 });
+    const first = await pass(scope, 25);
     expect(first.failed).toBeGreaterThanOrEqual(25);
     const afterFirst = await query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM analytics_reports WHERE workspace_id = $1 AND kind = 'weekly';`, [healthy.wsId]);
     expect(Number(afterFirst.rows[0].n)).toBe(0);
 
-    for (let pass = 0; pass < 5 && (await weeklyReportsFor(healthy.wsId)) === 0; pass += 1) {
-      await runWeeklyAnalyticsReports({ now: NOW, batchSize: 25 });
+    for (let p = 0; p < 5 && (await weeklyReportsFor(healthy.wsId)) === 0; p += 1) {
+      await pass(scope, 25);
     }
     expect(await weeklyReportsFor(healthy.wsId)).toBe(1);
 
@@ -400,7 +525,178 @@ describe("a failing account cannot starve the others (review S1)", () => {
     );
     expect(counts.rows).toHaveLength(30);
     expect(counts.rows.every((r) => r.consecutive_failures === 1)).toBe(true);
-    const again = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 25 });
+    const again = await pass(scope, 25);
     expect(again.failed).toBe(0);
+  });
+
+  it("an account in backoff is not called again before it ends: six minutes later it waits, twelve hours later it is tried", async () => {
+    const { wsId, accountId } = await workspaceWithAccount();
+    let calls = 0;
+    const failing = createSimulatedProvider({ workspaceId: wsId, accountId });
+    setAnalyticsProviderForTests((account) => {
+      if (account.id !== accountId) return null;
+      return {
+        ...failing,
+        fetchPosts: async () => {
+          calls += 1;
+          throw new Error("the provider is down");
+        },
+      } satisfies PostAnalyticsProvider;
+    });
+    const first = await pass([wsId], 1000, NOW);
+    expect(first).toMatchObject({ failed: 1, synced: 0 });
+    expect(calls).toBe(1);
+    // The minimum interval is five minutes, so six minutes later the account is due by the throttle alone. Its backoff (12 hours,
+    // as a provider that is not available) is what keeps it waiting.
+    await pass([wsId], 1000, new Date(NOW.getTime() + 6 * MIN));
+    expect(calls).toBe(1);
+    await pass([wsId], 1000, new Date(NOW.getTime() + 12 * HOUR + MIN));
+    expect(calls).toBe(2);
+  });
+
+  it("the backoff grows with each failed report and stops at 12 hours, and the audit row is written only when a sync changes data (48 hours, simulated clock)", async () => {
+    const { wsId, accountId } = await socialWorkspace();
+    // The sync succeeds and the report always fails: the account must still back off, one step longer each time.
+    const restore = await refuseInserts("analytics_reports", `NEW.workspace_id = '${wsId}'`, "analytics_test_refuse_reports");
+    const inner = createSimulatedProvider({ workspaceId: wsId, accountId });
+    let clock = NOW;
+    const calls: number[] = [];
+    setAnalyticsProviderForTests((account) => {
+      if (account.id !== accountId) return null;
+      return {
+        ...inner,
+        fetchPosts: async (request) => {
+          calls.push(clock.getTime());
+          return inner.fetchPosts(request);
+        },
+      } satisfies PostAnalyticsProvider;
+    });
+    let passes = 0;
+    try {
+      // The worker wakes every 16 minutes for 48 hours, which is about once in every backoff step.
+      for (let t = NOW.getTime() + 16 * MIN; t <= NOW.getTime() + 48 * HOUR; t += 16 * MIN) {
+        clock = new Date(t);
+        await pass([wsId], 1000, clock);
+        passes += 1;
+      }
+    } finally {
+      await restore();
+    }
+    // Calls follow the schedule, not the passes: 15, 30, 60, 120, 240, 480 minutes, then 12 hours at most.
+    const gaps = calls.slice(1).map((t, i) => (t - calls[i]) / MIN);
+    expect(passes).toBe(180);
+    expect(calls.length).toBeLessThan(passes / 4);
+    expect(gaps.every((g, i) => i === 0 || g >= gaps[i - 1])).toBe(true);
+    expect(Math.max(...gaps)).toBe(12 * 60);
+    // Every failed report is one more failure: the count carries through the sync that succeeded before it.
+    const state = await query<{ consecutive_failures: number }>(`SELECT consecutive_failures FROM analytics_accounts WHERE workspace_id = $1 AND id = $2;`, [wsId, accountId]);
+    expect(state.rows[0].consecutive_failures).toBe(calls.length);
+    expect(await query(`SELECT 1 FROM analytics_reports WHERE workspace_id = $1;`, [wsId]).then((r) => r.rows.length)).toBe(0);
+    // The simulated window moves a day at a time, so the sync audit rows are at most one per call and one per day.
+    expect(await auditCount(wsId, "analytics.synced")).toBeLessThanOrEqual(calls.length + 1);
+  }, 120_000);
+
+  it("a sync that keeps failing with an ordinary provider error also stops at 12 hours (48 hours, simulated clock)", async () => {
+    const { wsId, accountId } = await workspaceWithAccount();
+    let clock = NOW;
+    const calls: number[] = [];
+    // An error that is not a refusal code: the account backs off from 15 minutes, doubling, on the plain sync-failure path.
+    setAnalyticsProviderForTests((account) => {
+      if (account.id !== accountId) return null;
+      return {
+        ...createSimulatedProvider({ workspaceId: wsId, accountId }),
+        fetchPosts: async () => {
+          calls.push(clock.getTime());
+          throw new Error("the provider is down");
+        },
+      } satisfies PostAnalyticsProvider;
+    });
+    for (let t = NOW.getTime() + 16 * MIN; t <= NOW.getTime() + 48 * HOUR; t += 16 * MIN) {
+      clock = new Date(t);
+      await pass([wsId], 1000, clock);
+    }
+    const gaps = calls.slice(1).map((t, i) => (t - calls[i]) / MIN);
+    // The steps reach 480 minutes and then the cap: 720 minutes is the longest gap, and no gap is longer.
+    expect(Math.max(...gaps)).toBe(12 * 60);
+    expect(gaps.every((g, i) => i === 0 || g >= gaps[i - 1])).toBe(true);
+    expect(calls.length).toBeLessThan(15);
+    const state = await query<{ consecutive_failures: number }>(`SELECT consecutive_failures FROM analytics_accounts WHERE workspace_id = $1 AND id = $2;`, [wsId, accountId]);
+    expect(state.rows[0].consecutive_failures).toBe(calls.length);
+  }, 120_000);
+
+  it("a provider that never answers is sent the abort signal at the timeout, and the sync stores nothing", async () => {
+    const { wsId, accountId } = await workspaceWithAccount();
+    let signal: AbortSignal | undefined;
+    setAnalyticsProviderForTests(
+      (account) => {
+        if (account.id !== accountId) return null;
+        const inner = createSimulatedProvider({ workspaceId: wsId, accountId });
+        return {
+          ...inner,
+          fetchPosts: (request) => {
+            signal = request.signal;
+            return new Promise<ProviderPost[]>(() => undefined);
+          },
+        } satisfies PostAnalyticsProvider;
+      },
+      50
+    );
+    await expect(syncAccount(wsId, accountId, SYNC_ACTOR, NOW)).rejects.toMatchObject({ code: "ANALYTICS_PROVIDER_UNAVAILABLE" });
+    expect(signal?.aborted).toBe(true);
+    const stored = await query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM analytics_posts WHERE workspace_id = $1;`, [wsId]);
+    expect(Number(stored.rows[0].n)).toBe(0);
+  });
+
+  it("the upsert arrays are in provider-id order, whatever order the provider answered in, and the input is not reordered", () => {
+    const make = (id: string): ProviderPost => ({
+      externalId: id,
+      publishedAt: new Date(NOW),
+      mediaType: "image" as ProviderPost["mediaType"],
+      metrics: { reach: 1, impressions: 2, likes: 0, comments: 0, saves: 0, shares: 0 },
+    });
+    const posts = [make("post-c"), make("post-a"), make("post-b")];
+    expect(upsertArrays(posts).externalIds).toEqual(["post-a", "post-b", "post-c"]);
+    expect(posts.map((p) => p.externalId)).toEqual(["post-c", "post-a", "post-b"]);
+  });
+
+  it("an account with no posts for the week is deferred an hour, not failed, and is not called again before then", async () => {
+    const { wsId, accountId } = await workspaceWithAccount();
+    let calls = 0;
+    const empty = createSimulatedProvider({ workspaceId: wsId, accountId });
+    setAnalyticsProviderForTests((account) => {
+      if (account.id !== accountId) return null;
+      return {
+        ...empty,
+        fetchPosts: async () => {
+          calls += 1;
+          return [];
+        },
+      } satisfies PostAnalyticsProvider;
+    });
+    const first = await pass([wsId], 1000, NOW);
+    expect(first).toMatchObject({ deferred: 1, failed: 0, reports: 0 });
+    expect(calls).toBe(1);
+    const soon = await pass([wsId], 1000, new Date(NOW.getTime() + 6 * MIN));
+    expect(soon).toMatchObject({ deferred: 0, failed: 0 });
+    expect(calls).toBe(1);
+    const later = await pass([wsId], 1000, new Date(NOW.getTime() + 61 * MIN));
+    expect(later).toMatchObject({ deferred: 1, failed: 0 });
+    expect(calls).toBe(2);
+  });
+
+  it("the weekly pass has a 120 second budget, and a pass already past its deadline starts nothing", async () => {
+    expect(ANALYTICS_PASS_DEADLINE_MS).toBe(120_000);
+    const { wsId } = await workspaceWithAccount();
+    const outcome = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000, deadlineMs: -1, workspaceIds: [wsId] });
+    expect(outcome).toMatchObject({ synced: 0, reports: 0, failed: 0 });
+    expect(await weeklyReportsFor(wsId)).toBe(0);
+  });
+
+  it("a re-sync that brings no new data stores nothing new and writes no analytics.synced row", async () => {
+    const { wsId, accountId } = await socialWorkspace();
+    expect(await auditCount(wsId, "analytics.synced")).toBe(1);
+    const again = await syncAccount(wsId, accountId, SYNC_ACTOR, new Date(NOW.getTime() + 6 * MIN));
+    expect(again).toMatchObject({ inserted: 0 });
+    expect(await auditCount(wsId, "analytics.synced")).toBe(1);
   });
 });

@@ -67,7 +67,7 @@ describe("Social media manager template (social-v1, docs/decisions/0084)", () =>
     expect(socialTemplate.description).toMatch(/separately approved capability/);
   });
 
-  it("declares the weekly and on-demand report triggers, and a report output only (docs/decisions/0090)", () => {
+  it("declares the weekly and on-demand report triggers, and a report output only (docs/decisions/0091)", () => {
     expect(socialTemplate.triggers?.map((t) => [t.id, t.kind])).toEqual([
       ["weekly_report", "schedule"],
       ["on_demand_report", "manual"],

@@ -60,7 +60,7 @@ export const ALLOWED_OPERATION_IDS = [
   "cancelCustomerOrder",
   "ingestFeedback",
   "proposeMenuChange",
-  // Post analytics reports: read only (docs/decisions/0090). The server has no analytics write through this endpoint.
+  // Post analytics reports: read only (docs/decisions/0091). The server has no analytics write through this endpoint.
   "listAnalyticsReports",
   "getAnalyticsReport",
 ] as const satisfies readonly OperationId[];

@@ -46,7 +46,7 @@ const OPERATION_FOR_KIND: Record<OwnerNoticeKind, string> = {
   order_held: "notifications.send_summary",
   order_declined: "notifications.send_summary",
   order_partially_available: "notifications.send_summary",
-  // "Your report is ready" for a post analytics report (docs/decisions/0090). It names no finding.
+  // "Your report is ready" for a post analytics report (docs/decisions/0091). It names no finding.
   analytics_report: "notifications.send_summary",
 };
 

@@ -272,7 +272,7 @@
       "economic": false,
       "stability": "preview",
       "flags": [],
-      "note": "Owner connects an analytics account. Only the simulated provider is available; its data is labelled simulated (docs/decisions/0090).",
+      "note": "Owner connects an analytics account. Only the simulated provider is available; its data is labelled simulated (docs/decisions/0091).",
       "idempotency": {
         "clientKey": true,
         "natural": "not documented"
@@ -296,7 +296,7 @@
       "economic": false,
       "stability": "preview",
       "flags": [],
-      "note": "Writes a report for a period, once per period. It sends no notice: the owner is told by the weekly job only (docs/decisions/0090).",
+      "note": "Writes a report for a period, once per period. It sends no notice: the owner is told by the weekly job only (docs/decisions/0091).",
       "idempotency": {
         "clientKey": false,
         "natural": "not documented"
@@ -522,7 +522,7 @@
       "economic": false,
       "stability": "preview",
       "flags": [],
-      "note": "One analytics report of a workspace (docs/decisions/0090).",
+      "note": "One analytics report of a workspace (docs/decisions/0091).",
       "idempotency": {
         "clientKey": false,
         "natural": "not documented"
@@ -1054,7 +1054,7 @@
       "economic": false,
       "stability": "preview",
       "flags": [],
-      "note": "Lists the analytics accounts of a workspace whose template has the module. Reads only (docs/decisions/0090).",
+      "note": "Lists the analytics accounts of a workspace whose template has the module. Reads only (docs/decisions/0091).",
       "idempotency": {
         "clientKey": false,
         "natural": "not documented"
@@ -1078,7 +1078,7 @@
       "economic": false,
       "stability": "preview",
       "flags": [],
-      "note": "The newest analytics reports of a workspace. The report text is generated from numbers and ids, never from platform text (docs/decisions/0090).",
+      "note": "The newest analytics reports of a workspace. The report text is generated from numbers and ids, never from platform text (docs/decisions/0091).",
       "idempotency": {
         "clientKey": false,
         "natural": "not documented"
@@ -2297,7 +2297,7 @@
       "economic": false,
       "stability": "preview",
       "flags": [],
-      "note": "Fetches an account's posts from its provider and stores them. Idempotent: a repeat leaves the rows as they were. Provider output is untrusted and validated (docs/decisions/0090).",
+      "note": "Fetches an account's posts from its provider and stores them. Idempotent: a repeat leaves the rows as they were. Provider output is untrusted and validated (docs/decisions/0091).",
       "idempotency": {
         "clientKey": true,
         "natural": "not documented"
