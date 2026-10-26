@@ -193,6 +193,10 @@ const PRIMITIVE_EXCEPTIONS: Record<string, string> = {
   "scripts/live-recovery-arc.ts":
     "Live recovery harness. Its viem transport forwards eth_sendRawTransaction to the real node in a timeout scenario, " +
     "and it drives the real settlement adapter. Operator code, not product code; not imported by src/ or mcp/.",
+  "scripts/live-tab-arc.ts":
+    "Live tab harness (ADR 0090). Its transport observes and forwards eth_sendRawTransaction so it can count broadcasts and enforce one " +
+    "payment per process; every payment goes through Bind's own TabLedger and settlement adapter, under a hard total cap, and needs " +
+    "--confirm-testnet-spend. Operator code, not product code; not imported by src/ or mcp/.",
 };
 
 /** Words the templates must never contain (agents read them as instructions). Checked on the raw text. */
@@ -375,6 +379,8 @@ const CHILD_PROCESS_EXCEPTIONS: Record<string, string> = {
     "Live operator check. Runs `cast call` (a read-only eth_call) for the revert gates (ADR 0077). No `cast send`.",
   "scripts/live-recovery-arc.ts":
     "Live recovery harness. Spawns a child copy of itself with tsx, for the crash-and-restart scenario.",
+  "scripts/live-tab-arc.ts":
+    "Live tab harness (ADR 0090). Spawns a child copy of itself with tsx for each phase (send, crash-after-send, recover), with a timeout.",
   "scripts/clean-test-fixtures.ts":
     "Operator cleanup. Runs `git ls-files` to refuse deleting a tracked template directory. No write to the chain.",
 };
@@ -740,6 +746,8 @@ const TRANSFER_CALLERS = ["src/workflows/settlement.ts", "src/tabs/ledger.ts"];
 const TRANSFER_EXCEPTIONS: Record<string, string> = {
   "scripts/live-recovery-arc.ts":
     "Live recovery harness. Wraps the real adapter's transferUSDC to count and time the calls it makes. Operator code only.",
+  "scripts/live-tab-arc.ts":
+    "Live tab harness (ADR 0090). Wraps the real adapter's transferUSDC to refuse a second payment in the same process. Operator code only.",
 };
 
 const TRANSFER_IDENTIFIER = /\btransferUSDC\b/;

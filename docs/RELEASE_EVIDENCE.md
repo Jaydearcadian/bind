@@ -807,3 +807,7 @@ Sonnet re-ran the claims in section 0d on private databases and approved a merge
 - **S-C.** `analytics-notices.test.ts` runs unscoped worker ticks on the shared DB with a clock 9 days ahead; the likely cause of the intermittent `worker.test.ts` expiry failure. The suite is not hermetic: of three full runs, one was fully green.
 - **S-D / S-E.** A recipient that fails before its ledger row exists is audited as failed and never retried; a real process crash after a send leaves a `started` row no pass audits (documented in ADR 0090).
 - Adapter work for a real provider (verified API facts, credential store, rate-limit-aware backoff, recorded fixtures, an authorised live read).
+
+### Guard test exceptions for the live tab harness (2026-10-27)
+
+The full gate on the merged branch failed three assertions in `tests/unit/no-value-moving-model-tools.test.ts`: `scripts/live-tab-arc.ts` (the live tab harness, ADR 0090) contains `sendRawTransaction`, spawns a child process and wraps `transferUSDC`, and was not listed as an operator-script exception. It is now listed in the three exception tables with a reason each, exactly as `scripts/live-recovery-arc.ts` is. This allows one more operator script to carry those primitives; it does not allow product code (`src/`, `mcp/`) to carry them, and every other rule in the test is unchanged. The harness itself is unreviewed for a live run and the live run is not approved.
