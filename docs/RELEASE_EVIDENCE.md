@@ -704,3 +704,10 @@ key was used by any of this work. The live run of the tab path (ADR 0081 item c)
 
 Known limits: the dropped decision can be wrong on a lagging node (fail-closed, the transfer is never re-sent, but a dropped order is not adopted automatically and needs an
 operator settle); the escrow and nanopayment ADRs (0086, 0083) are Proposed and decide nothing; ADR 0085's remaining prompt-injection surface (deepagents file tools) is recorded, not fixed.
+
+## 0e. Production deploy of main at 22b64fc (2026-10-26)
+
+- Pull request #3 merged to `main` (`22b64fc`); deployed to the `bind` Vercel project, target production (`dpl_7fQsHLCQE6d3MgkkmCqR5ZNTGfcY`, READY), aliased to bind-gilt.vercel.app.
+- Full local gate on the merged branch before the PR, private database: 18 of 19 passed (unit 1012, integration 909 with 16 skipped, contracts 32, Anvil 10 with 6 skipped, browser E2E, audit 0 vulnerabilities). The one failure, codebase map drift, was fixed by regenerating the map. The background-worker test "a tick is bounded by batch size" failed once under load in an earlier run and passed alone and in the later full run (timing-sensitive; not skipped or changed). Evidence class: LOCAL_PASS.
+- Live, unauthenticated (LIVE_READ_PASS): `/health`, `/api/public-config`, `/app/sign-in`, `/app/connect-agent`, `/app/vendor/privy.js` return 200; `POST /mcp` without a key returns 401 `UNAUTHENTICATED`; `GET /api/templates` lists kitchen-v1, agency-v1 and social-v1 (social-v1 with no stock and no suppliers modules); the CSP is unchanged (`script-src 'self'`, `connect-src 'self' https://auth.privy.io`).
+- NOT_RUN: `/mcp` with a real agent key and client; live Google sign-in and wallet creation on this build; live email sending (off in production); anything on chain.
