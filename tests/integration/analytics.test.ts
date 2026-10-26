@@ -307,9 +307,13 @@ describe("roles and tenancy", () => {
 
 describe("sync is an idempotent upsert", () => {
   it("syncing twice leaves the stored post count as it was: the second run inserts nothing", async () => {
+    const syncedRows = () => countRows(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'analytics.synced';`, [WS_SOCIAL]);
+    const auditBefore = await syncedRows();
     const first = await api("POST", `/api/workspaces/${WS_SOCIAL}/analytics/accounts/${accountId}/sync`, ownerSocial);
     expect(first.status).toBe(200);
     expect(first.body.simulated).toBe(true);
+    // The first sync stored new posts: exactly one audit row. (An at-least check here would let a duplicate row pass.)
+    expect((await syncedRows()) - auditBefore).toBe(1);
     expect(first.body.posts).toBeGreaterThan(40);
     expect(first.body.inserted).toBe(first.body.posts);
     expect(first.body.updated).toBe(0);
@@ -319,6 +323,8 @@ describe("sync is an idempotent upsert", () => {
     const second = await api("POST", `/api/workspaces/${WS_SOCIAL}/analytics/accounts/${accountId}/sync`, ownerSocial);
     expect(second.status).toBe(200);
     expect(second.body).toMatchObject({ posts: first.body.posts, inserted: 0, updated: first.body.posts });
+    // Nothing changed between the two syncs: no new audit row (exactly zero, not 'at most one').
+    expect((await syncedRows()) - auditBefore).toBe(1);
     const rowsAfterSecond = await countRows(`SELECT COUNT(*)::int AS n FROM analytics_posts WHERE workspace_id = $1 AND account_id = $2;`, [WS_SOCIAL, accountId]);
     expect(rowsAfterSecond).toBe(rowsAfterFirst);
   });
@@ -367,7 +373,9 @@ describe("sync is an idempotent upsert", () => {
     const after = await countRows(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'analytics.synced';`, [WS_SOCIAL]);
     // The sync is audited only when it changes a post, and the posts of this day are already stored, so the replay adds at most
     // one row. The replayed body and the throttle (a second real run would be refused with 429) show it ran once.
+    // Run once: one row when it inserted something, none when the stored posts already matched. Never two.
     expect(after - before).toBeLessThanOrEqual(1);
+    if (a.body.inserted > 0) expect(after - before).toBe(1);
   });
 
   it("a provider that is no longer available for a stored account is refused with a typed 400, and nothing changes", async () => {
