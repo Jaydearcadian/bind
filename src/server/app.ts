@@ -290,6 +290,7 @@ function decidedByOf(label: string): string {
  */
 function sendAnalyticsError(res: Response, err: unknown) {
   if (err instanceof AnalyticsError) {
+    if (err.retryAfterSeconds !== undefined) res.setHeader("Retry-After", String(err.retryAfterSeconds));
     res.status(err.status).json({ error: err.message, code: err.code });
     return;
   }

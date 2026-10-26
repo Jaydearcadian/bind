@@ -159,10 +159,27 @@ function groupOf(mediaType: MediaType): FormatGroup | null {
   return null;
 }
 
+/**
+ * Two values are "about the same" unless they differ by at least MATERIAL_RELATIVE_DIFFERENCE of the larger one. A five-post
+ * comparison can differ by a fraction of a percent by chance; that is not a finding. The inputs are the rounded values the text
+ * prints, so the text never says "did worse" for two numbers it shows as equal.
+ */
+export const MATERIAL_RELATIVE_DIFFERENCE = 0.05;
+
 function outcomeOf(subject: number, other: number): Outcome {
-  if (subject > other) return "did_better";
-  if (subject < other) return "did_worse";
-  return "about_the_same";
+  const base = Math.max(Math.abs(subject), Math.abs(other));
+  if (base === 0 || Math.abs(subject - other) / base < MATERIAL_RELATIVE_DIFFERENCE) return "about_the_same";
+  return subject > other ? "did_better" : "did_worse";
+}
+
+/** Reach is printed to one decimal place (whole numbers print without one). */
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/** A rate is printed as a percentage to one decimal place, so it is compared at 0.1% (0.001). */
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 function formatFindings(posts: readonly ProviderPost[], supplied: boolean): FormatFindings {
@@ -187,15 +204,19 @@ function formatFindings(posts: readonly ProviderPost[], supplied: boolean): Form
     const bothEnough = reel.enough && other.enough;
     const reach =
       bothEnough && reel.medianReach !== null && other.medianReach !== null
-        ? { outcome: outcomeOf(reel.medianReach, other.medianReach), reelMedian: reel.medianReach, otherMedian: other.medianReach }
+        ? (() => {
+            const reelMedian = round1(reel.medianReach);
+            const otherMedian = round1(other.medianReach);
+            return { outcome: outcomeOf(reelMedian, otherMedian), reelMedian, otherMedian };
+          })()
         : null;
     const engagement =
       bothEnough && reel.medianEngagementRate !== null && other.medianEngagementRate !== null
-        ? {
-            outcome: outcomeOf(reel.medianEngagementRate, other.medianEngagementRate),
-            reelRate: reel.medianEngagementRate,
-            otherRate: other.medianEngagementRate,
-          }
+        ? (() => {
+            const reelRate = round3(reel.medianEngagementRate);
+            const otherRate = round3(other.medianEngagementRate);
+            return { outcome: outcomeOf(reelRate, otherRate), reelRate, otherRate };
+          })()
         : null;
     return { against, reach, engagement };
   });
@@ -227,7 +248,8 @@ function hourFindings(posts: readonly ProviderPost[], timeZone: string, supplied
     eligibleHours,
     best,
     worst,
-    sameMedianReach: best.medianReach === worst.medianReach,
+    // "Same" is the materiality rule, on the values the text prints: two hours 1% apart do not stand out.
+    sameMedianReach: outcomeOf(round1(best.medianReach), round1(worst.medianReach)) === "about_the_same",
   };
 }
 
@@ -323,6 +345,11 @@ function count(value: number): string {
     .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+/** A median: a whole number as a count, anything else with one decimal place. */
+function amount(value: number): string {
+  return Number.isInteger(value) ? count(value) : value.toFixed(1);
+}
+
 function percent(share: number): string {
   return `${(share * 100).toFixed(1)}%`;
 }
@@ -354,7 +381,7 @@ function formatParagraph(formats: FormatFindings, minimum: number): string[] {
           "Reels and videos",
           otherName,
           "on median reach",
-          `${count(comparison.reach.reelMedian)} against ${count(comparison.reach.otherMedian)}`
+          `${amount(comparison.reach.reelMedian)} against ${amount(comparison.reach.otherMedian)}`
         )
       );
     } else {
@@ -385,7 +412,7 @@ function hoursParagraph(hours: HourFindings): string {
   if (hours.sameMedianReach) {
     return `No hour of the day stood out in ${hours.timeZone}: the median reach was the same for every hour with enough posts.`;
   }
-  return `Posts published at ${hourLabel(hours.best.hour)} in ${hours.timeZone} did better than posts published at ${hourLabel(hours.worst.hour)} on median reach (${count(hours.best.medianReach)} against ${count(hours.worst.medianReach)}).`;
+  return `Posts published at ${hourLabel(hours.best.hour)} in ${hours.timeZone} did better than posts published at ${hourLabel(hours.worst.hour)} on median reach (${amount(hours.best.medianReach)} against ${amount(hours.worst.medianReach)}).`;
 }
 
 function followersParagraph(followers: FollowerFindings): string {

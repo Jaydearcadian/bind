@@ -8,6 +8,7 @@ import { upsertSurfaceBinding } from "../../src/adapters/socialSurface.js";
 import { requestOwnerEmailVerification, verifyOwnerEmail } from "../../src/notifications/owner-emails.js";
 import { setEffectFault } from "../../src/effects/faults.js";
 import { runTick } from "../../src/workers/runner.js";
+import { workerOptionsFromEnv } from "../../src/workers/options.js";
 import {
   createAnalyticsAccount,
   deliverReportNotice,
@@ -135,7 +136,8 @@ describe("the owner's notice: at most once, naming nothing", () => {
     const sent = noticesTo(address);
     expect(sent).toHaveLength(1);
     const text = sent[0].body?.text ?? "";
-    expect(text).toContain("Your report is ready.");
+    // The account is simulated, so the notice says the report is sample data (review S5).
+    expect(text).toContain("Your report is ready (sample data).");
     expect(text).toContain("/app/");
     // The notice names no finding, no figure, no brand and no account.
     expect(text).not.toMatch(/%|median|reach|engagement|Brand|Simulated|posts/i);
@@ -167,7 +169,7 @@ describe("the owner's notice: at most once, naming nothing", () => {
     expect(fake.received).toHaveLength(0);
     const recorded = notificationEmitter.getSentNotifications("email");
     expect(recorded).toHaveLength(1);
-    expect(recorded[0]).toMatchObject({ title: "Your report is ready", message: "Your report is ready. Open Bind to read it." });
+    expect(recorded[0]).toMatchObject({ title: "Your report is ready (sample data).", message: "Your report is ready (sample data). Open Bind to read it." });
     expect(JSON.stringify(recorded[0])).not.toMatch(/%|median|reach/i);
   });
 
@@ -208,14 +210,18 @@ describe("crash safety", () => {
     // The send reaches the provider, and the process dies before the ledger records it.
     setEffectFault({ point: "after_call_before_complete", match: (spec) => spec.idempotencyKey === key });
     const first = await deliverReportNotice(wsId, generated.report.id);
-    // The injected crash is thrown after the provider answered: this call sees a failure, and the row is left started.
-    expect(first).toMatchObject({ sent: 0, failed: 1 });
+    // The injected crash is thrown after the provider answered: the ledger row is left started, so the outcome is unknown.
+    // That is in doubt, not a refusal, and it is audited at once.
+    expect(first).toMatchObject({ sent: 0, inDoubt: 1 });
+    const audited = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.in_doubt';`, [wsId]);
+    expect(Number(audited.rows[0].n)).toBe(1);
     expect(noticesTo(address)).toHaveLength(1);
     expect(await ledgerRows(key)).toEqual([{ status: "started" }]);
 
     // The next delivery finds the started row: it is reported in doubt and audited, and nothing is sent.
+    // A later delivery finds the row recorded: nothing is sent, and nothing is audited a second time.
     const second = await deliverReportNotice(wsId, generated.report.id);
-    expect(second).toMatchObject({ sent: 0, inDoubt: 1 });
+    expect(second).toMatchObject({ sent: 0, alreadyRecorded: 1, inDoubt: 0 });
     expect(noticesTo(address)).toHaveLength(1);
     const inDoubt = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.in_doubt';`, [wsId]);
     expect(Number(inDoubt.rows[0].n)).toBe(1);
@@ -231,7 +237,7 @@ describe("crash safety", () => {
     expect(first).toMatchObject({ sent: 0, failed: 1 });
     fake.status = 200;
     const second = await deliverReportNotice(wsId, generated.report.id);
-    expect(second).toMatchObject({ sent: 0, inDoubt: 1 });
+    expect(second).toMatchObject({ sent: 0, alreadyRecorded: 1 });
     // The provider saw one request (the refused one) and no later one.
     expect(noticesTo(address)).toHaveLength(1);
   });
@@ -248,10 +254,11 @@ describe("the weekly job: bounded, isolated, and replay-safe", () => {
   it("with the job on, a broken account is counted and the others still run; a replay does nothing new", async () => {
     const good = await socialWorkspace();
     const broken = await socialWorkspace();
-    await query(`UPDATE analytics_accounts SET provider = 'instagram' WHERE workspace_id = $1;`, [broken.wsId]);
+    // The account was synced a moment ago, so it is throttled; clear its attempt time so the pass attempts it and it fails.
+    await query(`UPDATE analytics_accounts SET provider = 'instagram', last_sync_attempt_at = NULL WHERE workspace_id = $1;`, [broken.wsId]);
     const pass = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
     expect(pass.failed).toBeGreaterThanOrEqual(1);
-    expect(pass.errors.some((e) => e.includes("not available"))).toBe(true);
+    expect(pass.errors).toContain("ANALYTICS_PROVIDER_NOT_AVAILABLE");
     expect(await weeklyReportsFor(good.wsId)).toBe(1);
     expect(await weeklyReportsFor(broken.wsId)).toBe(0);
     const before = await query(`SELECT COUNT(*)::int AS n FROM analytics_reports WHERE workspace_id = $1;`, [good.wsId]);
@@ -265,7 +272,9 @@ describe("the weekly job: bounded, isolated, and replay-safe", () => {
     await query(`UPDATE analytics_accounts SET status = 'disabled' WHERE workspace_id = $1;`, [disabled.wsId]);
     const demo = await socialWorkspace();
     await query(`UPDATE workspaces SET is_demo = TRUE, demo_expires_at = NOW() + INTERVAL '1 day' WHERE id = $1;`, [demo.wsId]);
-    await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+    const pass = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+    // Neither account is selected, so neither is attempted and nothing fails for them (review W/X).
+    expect(pass.failed).toBe(0);
     expect(await weeklyReportsFor(disabled.wsId)).toBe(0);
     expect(await weeklyReportsFor(demo.wsId)).toBe(0);
     await expect(syncAccount(disabled.wsId, disabled.accountId, SYNC_ACTOR, NOW)).rejects.toMatchObject({ code: "ANALYTICS_ACCOUNT_DISABLED" });
@@ -280,8 +289,118 @@ describe("the weekly job: bounded, isolated, and replay-safe", () => {
 
   it("the worker runs the job, and reports it, when BIND_ANALYTICS_REPORTS is on", async () => {
     const { wsId } = await socialWorkspace();
-    const on = await runTick({ now: NOW, analyticsReports: true });
+    // The options come from the same function the entry point uses, so the environment decides the job, as in production.
+    const on = await runTick({ now: NOW, ...workerOptionsFromEnv({ BIND_ANALYTICS_REPORTS: "true" }) });
     expect(on.analyticsReports.skipped).toBe(false);
+    expect(on.analyticsReports.failed).toBe(0);
     expect(await weeklyReportsFor(wsId)).toBe(1);
+  });
+});
+
+describe("the weekly job reports what it could not do (review B1, S2)", () => {
+  it("a send that started and then lost its outcome is audited as in doubt by the worker, and is not sent again", async () => {
+    const { wsId } = await socialWorkspace();
+    const address = `owner.wdoubt.${run}@notices.example.test`;
+    await verifiedOwner(wsId, address);
+    const key = (): string => `${wsId}:notify:analytics_report:`;
+    setEffectFault({ point: "after_call_before_complete", match: (spec) => spec.idempotencyKey.startsWith(key()) });
+    const first = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+    expect(noticesTo(address)).toHaveLength(1);
+    const rows = await ledgerRows(`${wsId}:notify:analytics_report:${(await query<{ id: string }>(`SELECT id FROM analytics_reports WHERE workspace_id = $1 AND kind = 'weekly';`, [wsId])).rows[0].id}`);
+    expect(rows).toEqual([{ status: "started" }]);
+    const inDoubt = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.in_doubt';`, [wsId]);
+    expect(Number(inDoubt.rows[0].n)).toBe(1);
+    expect(first.noticesInDoubt).toBeGreaterThanOrEqual(1);
+
+    const second = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+    expect(noticesTo(address)).toHaveLength(1);
+    expect(second.failed).toBe(0);
+    const inDoubtAfter = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.in_doubt';`, [wsId]);
+    expect(Number(inDoubtAfter.rows[0].n)).toBe(1);
+  });
+
+  it("a provider that refuses the notice is counted as failed and audited at once, and the next pass does not resend it", async () => {
+    const { wsId } = await socialWorkspace();
+    const address = `owner.wrefused.${run}@notices.example.test`;
+    await verifiedOwner(wsId, address);
+    fake.status = 500;
+    let first;
+    try {
+      first = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+    } finally {
+      fake.status = 200;
+    }
+    expect(first.failed).toBeGreaterThanOrEqual(1);
+    const audited = await query(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'notification.failed';`, [wsId]);
+    expect(Number(audited.rows[0].n)).toBe(1);
+    const rows = await query<{ status: string }>(`SELECT status FROM effects WHERE workspace_id = $1 AND operation = 'notifications.send_summary';`, [wsId]);
+    expect(rows.rows).toEqual([{ status: "failed" }]);
+    const requests = noticesTo(address).length;
+
+    const second = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1000 });
+    expect(noticesTo(address)).toHaveLength(requests);
+    expect(second.failed).toBe(0);
+    expect(second.notices).toBe(0);
+  });
+
+  it("an owner who cannot be mailed does not hold the batch: with a batch of one, the verified owner is still mailed", async () => {
+    // Workspace A has an owner email binding but no verified address, with email delivery on: no recipient, so nothing to send.
+    const a = await socialWorkspace();
+    await upsertSurfaceBinding(a.wsId, { surface: "email", actorId: `owner.binding.${run}@notices.example.test`, actorRole: "owner" }, SYNC_ACTOR);
+    await generateReport(a.wsId, { accountId: a.accountId, kind: "weekly", periodStart: PERIOD_START, periodEnd: PERIOD_END }, SYSTEM_ACTOR, NOW);
+    // Workspace B has a verified owner, and its report is written after A's, so A is the older one.
+    const b = await socialWorkspace();
+    const address = `owner.starve.${run}@notices.example.test`;
+    await verifiedOwner(b.wsId, address);
+    await generateReport(b.wsId, { accountId: b.accountId, kind: "weekly", periodStart: PERIOD_START, periodEnd: PERIOD_END }, SYSTEM_ACTOR, NOW);
+
+    for (let pass = 0; pass < 10 && noticesTo(address).length === 0; pass += 1) {
+      await runWeeklyAnalyticsReports({ now: NOW, batchSize: 1 });
+    }
+    expect(noticesTo(address)).toHaveLength(1);
+    const aLedger = await query(`SELECT COUNT(*)::int AS n FROM effects WHERE workspace_id = $1 AND operation = 'notifications.send_summary';`, [a.wsId]);
+    expect(Number(aLedger.rows[0].n)).toBe(0);
+  });
+});
+
+describe("a failing account cannot starve the others (review S1)", () => {
+  it("30 permanently broken accounts, all older than one healthy account: the healthy report is still written, and each broken account is tried once per backoff", async () => {
+    const brokenWorkspaces: string[] = [];
+    const brokenAccounts: Array<{ ws: string; id: string }> = [];
+    // The broken accounts are created first, so they are the oldest. Three workspaces of ten, the limit per workspace.
+    for (let w = 0; w < 3; w += 1) {
+      counter += 1;
+      const ws = `ws-ann-${run}-${counter}`;
+      wsIds.push(ws);
+      brokenWorkspaces.push(ws);
+      await provisionWorkspace(ws, "Broken Brand", "social-v1");
+      for (let i = 0; i < 10; i += 1) {
+        const account = await createAnalyticsAccount(ws, { provider: "simulated", brandLabel: `Broken ${i}` }, SYNC_ACTOR);
+        brokenAccounts.push({ ws, id: account.id });
+      }
+    }
+    await query(`UPDATE analytics_accounts SET provider = 'instagram' WHERE workspace_id = ANY($1::text[]);`, [brokenWorkspaces]);
+    // The healthy account is the youngest.
+    const healthy = await socialWorkspace();
+
+    const first = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 25 });
+    expect(first.failed).toBeGreaterThanOrEqual(25);
+    const afterFirst = await query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM analytics_reports WHERE workspace_id = $1 AND kind = 'weekly';`, [healthy.wsId]);
+    expect(Number(afterFirst.rows[0].n)).toBe(0);
+
+    for (let pass = 0; pass < 5 && (await weeklyReportsFor(healthy.wsId)) === 0; pass += 1) {
+      await runWeeklyAnalyticsReports({ now: NOW, batchSize: 25 });
+    }
+    expect(await weeklyReportsFor(healthy.wsId)).toBe(1);
+
+    // Every broken account failed once, and is now in backoff: a later pass at the same instant does not retry it.
+    const counts = await query<{ consecutive_failures: number }>(
+      `SELECT consecutive_failures FROM analytics_accounts WHERE workspace_id = ANY($1::text[]) AND provider = 'instagram';`,
+      [brokenWorkspaces]
+    );
+    expect(counts.rows).toHaveLength(30);
+    expect(counts.rows.every((r) => r.consecutive_failures === 1)).toBe(true);
+    const again = await runWeeklyAnalyticsReports({ now: NOW, batchSize: 25 });
+    expect(again.failed).toBe(0);
   });
 });

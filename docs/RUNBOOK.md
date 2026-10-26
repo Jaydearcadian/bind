@@ -44,6 +44,7 @@ variable.
 | `BIND_WORKER_ENABLED` | No | The worker runs | Only the exact value `false` disables it (ADR 0029). |
 | `BIND_RESTOCK_SWEEP` | No | **Off** | Only the exact value `true` enables it. It starts replenishments on its own, within policy (ADR 0030). Any other value is ignored. |
 | `BIND_ANALYTICS_REPORTS` | No | **Off** | Only the exact value `true` enables it. The worker then syncs each analytics account of a workspace whose template has a post analytics source, and writes that account's report for the last full ISO week, and tells the owner once that it is ready (docs/decisions/0090). The data is simulated until a real provider is built. Any other value is ignored. |
+| `BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS` | No | 300000 (5 minutes) | The shortest gap between two sync attempts of one analytics account, manual or by the worker. A manual sync inside it answers 429 `ANALYTICS_SYNC_TOO_SOON` with `Retry-After` (docs/decisions/0090). Integer, 0 to 86400000. |
 | `BIND_TRUST_PROXY` | Behind a proxy | `0`: the socket address is the client | Number of proxy hops that append to `X-Forwarded-For`. Must be a non-negative integer (ADR 0033). |
 | `BIND_PUBLIC_URL` | Yes, in production | The request's own host (wrong behind a proxy: see below) | The https origin of the deployment, for example `https://bind.example` (no path). It is the address `/mcp` reports and the only origin its Origin check accepts. `http` only for `127.0.0.1` and `localhost`. An invalid value stops startup. Precedence (ADR 0075, point 7): `BIND_PUBLIC_URL`; else an explicitly set `APP_BASE_URL` that is https (one setting is enough); else the request's host. Production with neither logs one startup warning naming `BIND_PUBLIC_URL`. |
 | `BIND_EMAIL_PROVIDER` | To send owner notices by email (ADR 0074) | Email is **simulated**: a notice is recorded in memory and labelled `simulated`, nothing is sent, and the owner email routes answer **503** `EMAIL_NOT_CONFIGURED` | Only `resend`. Startup is refused unless `BIND_EMAIL_API_KEY` and `BIND_EMAIL_FROM` are set and `APP_BASE_URL` is https (or local outside production). Live sending is `NOT_RUN` until tried against a real provider account. |
@@ -243,15 +244,23 @@ To turn it off, unset the variable and restart. Paused workspaces are not swept.
 ### 6.3 The weekly analytics reports (opt-in)
 
 `BIND_ANALYTICS_REPORTS=true` makes the worker, once each tick, look for analytics accounts of a real workspace (not a demo) whose
-template declares a post analytics data source, and that have no report yet for the last full ISO week (Monday to Monday, UTC). For
-each it syncs the account's posts from its provider, writes the week's report, and then tells the owner once, by the owner's
-notice path, that the report is ready. The notice names nothing in the report. At most 25 accounts and 25 notices are handled per
-tick, and each failure is counted in the tick report (`analyticsReports.failed`) and does not stop the others.
+template declares a post analytics data source, that have no report yet for the last full ISO week (Monday to Monday, UTC), and that
+are not in backoff. For each it syncs the account's posts from its provider (unless the account was attempted within the minimum
+interval), writes the week's report, and then tells the owner once, by the owner's notice path, that the report is ready. The notice
+names nothing in the report. At most 25 accounts and 25 notices are handled per tick, and the pass starts no new work after 120 seconds.
 
-Only the simulated provider exists in this release, so the data is fabricated and every report says so. Turning the flag on therefore
-writes simulated reports and sends the owner "Your report is ready" notices about them. Leave it off on a deployment that should show
-no simulated data. To turn it off, unset the variable and restart. Demo workspaces and disabled accounts are not touched. A failing
-account is retried each tick (about every 15 seconds) and its failures are counted until it is fixed or disabled.
+What an operator will see:
+- A failing account backs off: 15 minutes after the first failure, doubling, capped at 12 hours. A provider that is not available, or
+  that answers invalid data, waits 12 hours at once. The tick report counts these in `analyticsReports.failed`, and each failure is
+  logged with its error code only. A repeated failure of the same account does not repeat within its backoff.
+- A notice that the provider refused is audited as `notification.failed` in the pass that saw it. A notice whose send may have reached
+  the provider is audited as `notification.in_doubt`. Neither is sent again. Look for these rows in the owner's audit log.
+- A report with no stored posts yet is not written; the account is looked at again in an hour (`analyticsReports.deferred`).
+
+Only the simulated provider exists in this release, so the data is fabricated and every report says so, and the owner's notice says
+"Your report is ready (sample data)." Turning the flag on therefore writes simulated reports and sends notices about them. Leave it
+off on a deployment that should show no simulated data. To turn it off, unset the variable and restart. Demo workspaces and disabled
+accounts are not selected at all.
 
 ## 7. Recover a stuck workflow
 

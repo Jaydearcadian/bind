@@ -70,3 +70,17 @@ describe("the template declares its analytics data source (docs/decisions/0090)"
     }
   });
 });
+
+describe("the report-ready notice for simulated data (review S5)", () => {
+  it("says the report is sample data when the report is simulated, and names nothing else", () => {
+    const email = buildOwnerNoticeEmail({ kind: "analytics_report", metadata: { noticeKind: "analytics_report", simulated: true }, baseUrl: "https://bind.example" });
+    expect(email.text).toContain("Your report is ready (sample data).");
+    expect(email.text).not.toMatch(/%|median|reach|engagement|posts/i);
+  });
+
+  it("says nothing about sample data for a real report", () => {
+    const email = buildOwnerNoticeEmail({ kind: "analytics_report", metadata: { noticeKind: "analytics_report", simulated: false }, baseUrl: "https://bind.example" });
+    expect(email.text).toContain("Your report is ready.");
+    expect(email.text).not.toContain("sample data");
+  });
+});

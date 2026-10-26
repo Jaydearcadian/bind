@@ -1165,6 +1165,7 @@ export const ROUTES: RouteSpec[] = [
       403: err("A demo workspace does not change analytics (ANALYTICS_DEMO_REFUSED)."),
       404: err("No such analytics account in this workspace (ANALYTICS_ACCOUNT_NOT_FOUND)."),
       409: err("The account is disabled (ANALYTICS_ACCOUNT_DISABLED)."),
+      429: err("This account was attempted within the minimum interval (ANALYTICS_SYNC_TOO_SOON). Retry-After is set."),
       502: err(
         "The provider did not answer (ANALYTICS_PROVIDER_UNAVAILABLE), or its answer is not valid (ANALYTICS_PROVIDER_OUTPUT_INVALID). Nothing was stored."
       ),
@@ -1215,6 +1216,7 @@ export const ROUTES: RouteSpec[] = [
       ),
       403: err("A demo workspace does not change analytics (ANALYTICS_DEMO_REFUSED)."),
       404: err("No such analytics account in this workspace (ANALYTICS_ACCOUNT_NOT_FOUND), when an accountId is given."),
+      409: err("The period has no stored posts yet (ANALYTICS_NO_DATA_YET). Sync the account, then ask again. Nothing is stored for the period."),
     },
     contractTested: false,
     notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0090).",

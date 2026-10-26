@@ -56,6 +56,8 @@ export interface FetchPostsRequest {
   since: Date;
   /** Exclusive end instant. */
   until: Date;
+  /** Aborted when the caller gives up (the sync's timeout). A provider should stop its request when it fires. */
+  signal?: AbortSignal;
 }
 
 export interface PostAnalyticsProvider {
@@ -86,11 +88,14 @@ export class AnalyticsProviderOutputError extends Error {
 export class AnalyticsError extends Error {
   readonly code: string;
   readonly status: number;
+  /** Set when the caller should wait this long before asking again (sent as Retry-After). */
+  readonly retryAfterSeconds?: number;
 
-  constructor(code: string, status: number, message: string) {
+  constructor(code: string, status: number, message: string, retryAfterSeconds?: number) {
     super(message);
     this.name = "AnalyticsError";
     this.code = code;
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }

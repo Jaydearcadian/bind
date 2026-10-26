@@ -723,3 +723,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_analytics_reports_period
   ON analytics_reports (workspace_id, (COALESCE(account_id, '')), kind, period_start, period_end);
 CREATE INDEX IF NOT EXISTS idx_analytics_reports_created ON analytics_reports (workspace_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_analytics_reports_period ON analytics_reports (kind, period_start, period_end);
+
+-- Sync bookkeeping and backoff (docs/decisions/0090). `last_sync_attempt_at` is claimed by one conditional update, so the minimum
+-- interval between two attempts holds across the worker and the API. `next_attempt_at` and `consecutive_failures` hold a failing
+-- account back, so broken accounts cannot fill every batch of the weekly job.
+ALTER TABLE analytics_accounts ADD COLUMN IF NOT EXISTS last_sync_attempt_at TIMESTAMPTZ;
+ALTER TABLE analytics_accounts ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMPTZ;
+ALTER TABLE analytics_accounts ADD COLUMN IF NOT EXISTS consecutive_failures INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0);
+ALTER TABLE analytics_accounts ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
+-- A report whose owner recipients have all been dealt with (sent, failed, in doubt, or none to tell). The weekly job lists only the
+-- reports that are not done, so a workspace that cannot be told does not hold a batch slot forever.
+ALTER TABLE analytics_reports ADD COLUMN IF NOT EXISTS notice_done BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS idx_analytics_reports_notice_pending ON analytics_reports (kind, period_start, period_end) WHERE notice_done = FALSE;

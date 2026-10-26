@@ -8,7 +8,9 @@ import { query, closePool } from "../../src/db/client.js";
 import { runMigrations } from "../../src/db/migrate.js";
 import { provisionWorkspace } from "../../src/templates/registry.js";
 import { issueToken } from "../../src/auth/tokens.js";
-import { createAnalyticsAccount, generateReport, syncAccount } from "../../src/analytics/service.js";
+import { createAnalyticsAccount, generateReport, syncAccount, setAnalyticsProviderForTests } from "../../src/analytics/service.js";
+import { config } from "../../src/config/env.js";
+import { AnalyticsReportCreatedSchema, AnalyticsReportSchema, AnalyticsSyncResultSchema, AnalyticsAccountSchema } from "../../src/api/schemas.js";
 import { BindClient } from "../../sdk/src/index.js";
 import { createBindMcpServer } from "../../mcp/src/server.js";
 import { createLogger } from "../../mcp/src/logger.js";
@@ -25,7 +27,11 @@ const WS_OTHER = `ws-ana-o-${run}`;
 const WS_KITCHEN = `ws-ana-k-${run}`;
 const WS_DEMO = `ws-ana-d-${run}`;
 const WS_CAP = `ws-ana-c-${run}`;
-const ALL_WS = [WS_SOCIAL, WS_OTHER, WS_KITCHEN, WS_DEMO, WS_CAP];
+const WS_CONC = `ws-ana-p-${run}`;
+const WS_NY = `ws-ana-n-${run}`;
+const ALL_WS = [WS_SOCIAL, WS_OTHER, WS_KITCHEN, WS_DEMO, WS_CAP, WS_CONC, WS_NY];
+/** The tests run with no minimum gap between syncs; the throttle test sets its own. */
+const DEFAULT_MIN_SYNC_INTERVAL_MS = config.BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS;
 const BRAND = `Brand Label ${run}`;
 const DAY = 86400000;
 
@@ -61,6 +67,10 @@ function day(offset: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+async function ownerTokenFor(workspaceId: string): Promise<string> {
+  return (await issueToken(workspaceId, "owner", `owner-${workspaceId.slice(-8)}-${Math.random().toString(36).slice(2, 8)}`)).token;
+}
+
 async function countRows(sql: string, params: unknown[]): Promise<number> {
   const res = await query<{ n: number }>(sql, params);
   return Number(res.rows[0].n);
@@ -81,6 +91,9 @@ beforeAll(async () => {
   await provisionWorkspace(WS_KITCHEN, "Kitchen", "kitchen-v1");
   await provisionWorkspace(WS_DEMO, "Demo Brand", "social-v1");
   await provisionWorkspace(WS_CAP, "Cap Brand", "social-v1");
+  await provisionWorkspace(WS_CONC, "Concurrent Brand", "social-v1");
+  await provisionWorkspace(WS_NY, "New York Brand", "social-v1");
+  config.BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS = 0;
   ownerSocial = (await issueToken(WS_SOCIAL, "owner", "owner-social")).token;
   staffSocial = (await issueToken(WS_SOCIAL, "staff", "staff-social")).token;
   ownerOther = (await issueToken(WS_OTHER, "owner", "owner-other")).token;
@@ -90,6 +103,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  config.BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS = DEFAULT_MIN_SYNC_INTERVAL_MS;
+  setAnalyticsProviderForTests(null);
   await new Promise<void>((resolve) => server.close(() => resolve()));
   for (const id of ALL_WS) await query(`DELETE FROM workspaces WHERE id = $1;`, [id]);
   await closePool();
@@ -140,6 +155,27 @@ describe("roles and tenancy", () => {
     expect((await api("POST", `/api/workspaces/${WS_SOCIAL}/analytics/reports`, staffSocial, { kind: "on_demand" })).status).toBe(403);
   });
 
+  it("staff get 403 on every write route, and the write leaves no row and no audit row behind", async () => {
+    // The target account is made first, by the owner's service, so every count below is taken after it exists.
+    const own = await createAnalyticsAccount(WS_SOCIAL, { provider: "simulated", brandLabel: "Staff target" }, { type: "owner", id: "test" });
+    const accountsBefore = await countRows(`SELECT COUNT(*)::int AS n FROM analytics_accounts WHERE workspace_id = $1;`, [WS_SOCIAL]);
+    const reportsBefore = await countRows(`SELECT COUNT(*)::int AS n FROM analytics_reports WHERE workspace_id = $1;`, [WS_SOCIAL]);
+    const auditBefore = await countRows(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action LIKE 'analytics.%';`, [WS_SOCIAL]);
+    const writes: Array<[string, string, unknown?]> = [
+      ["POST", `/api/workspaces/${WS_SOCIAL}/analytics/accounts`, { provider: "simulated", brandLabel: "Staff brand" }],
+      ["POST", `/api/workspaces/${WS_SOCIAL}/analytics/accounts/${own.id}/sync`],
+      ["POST", `/api/workspaces/${WS_SOCIAL}/analytics/reports`, { kind: "on_demand" }],
+    ];
+    for (const [method, path, body] of writes) {
+      const res = await api(method, path, staffSocial, body);
+      expect(res.status, `${method} ${path}`).toBe(403);
+    }
+    expect(await countRows(`SELECT COUNT(*)::int AS n FROM analytics_accounts WHERE workspace_id = $1;`, [WS_SOCIAL])).toBe(accountsBefore);
+    expect(await countRows(`SELECT COUNT(*)::int AS n FROM analytics_posts WHERE workspace_id = $1 AND account_id = $2;`, [WS_SOCIAL, own.id])).toBe(0);
+    expect(await countRows(`SELECT COUNT(*)::int AS n FROM analytics_reports WHERE workspace_id = $1;`, [WS_SOCIAL])).toBe(reportsBefore);
+    expect(await countRows(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action LIKE 'analytics.%';`, [WS_SOCIAL])).toBe(auditBefore);
+  });
+
   it("another workspace's owner gets 404 for this workspace's routes, and cannot name its accounts", async () => {
     const created = await api("POST", `/api/workspaces/${WS_SOCIAL}/analytics/accounts`, ownerSocial, { provider: "simulated", brandLabel: BRAND });
     expect(created.status).toBe(201);
@@ -161,15 +197,14 @@ describe("roles and tenancy", () => {
   it("an owner sees the account, with its time zone, the simulated flag and no sync yet", async () => {
     const list = await api("GET", `/api/workspaces/${WS_SOCIAL}/analytics/accounts`, staffSocial);
     expect(list.status).toBe(200);
-    expect(list.body).toEqual([
-      expect.objectContaining({ id: accountId, provider: "simulated", brandLabel: BRAND, timeZone: "UTC", isSimulated: true, status: "active", postCount: 0, lastSyncedAt: null }),
-    ]);
+    const mine = list.body.find((a: { id: string }) => a.id === accountId);
+    expect(mine).toEqual(expect.objectContaining({ id: accountId, provider: "simulated", brandLabel: BRAND, timeZone: "UTC", isSimulated: true, status: "active", postCount: 0, lastSyncedAt: null }));
   });
 
   it("the account creation writes an audit row whose evidence holds ids and the provider name only", async () => {
     const rows = await query(
-      `SELECT actor_id, evidence::text AS evidence FROM audit_logs WHERE workspace_id = $1 AND action = 'analytics.account_created';`,
-      [WS_SOCIAL]
+      `SELECT actor_id, evidence::text AS evidence FROM audit_logs WHERE workspace_id = $1 AND action = 'analytics.account_created' AND evidence->>'accountId' = $2;`,
+      [WS_SOCIAL, accountId]
     );
     expect(rows.rows).toHaveLength(1);
     expect(rows.rows[0].actor_id).toBe("owner-social");
@@ -196,6 +231,32 @@ describe("roles and tenancy", () => {
     } finally {
       await query(`UPDATE workspaces SET is_demo = FALSE, demo_expires_at = NULL WHERE id = $1;`, [WS_DEMO]);
     }
+  });
+
+  it("20 concurrent connects give exactly 10 accounts: the rest are refused with 409 ANALYTICS_ACCOUNT_LIMIT", async () => {
+    const concToken = await ownerTokenFor(WS_CONC);
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) => api("POST", `/api/workspaces/${WS_CONC}/analytics/accounts`, concToken, { provider: "simulated", brandLabel: `Concurrent ${i}` }))
+    );
+    const created = results.filter((r) => r.status === 201).length;
+    const refused = results.filter((r) => r.status === 409 && r.body.code === "ANALYTICS_ACCOUNT_LIMIT").length;
+    expect(created).toBe(10);
+    expect(refused).toBe(10);
+    expect(await countRows(`SELECT COUNT(*)::int AS n FROM analytics_accounts WHERE workspace_id = $1;`, [WS_CONC])).toBe(10);
+  });
+
+  it("POST accounts honours Idempotency-Key: a repeat with the same key replays the first account", async () => {
+    const key = `acct-key-${run}`;
+    const body = { provider: "simulated", brandLabel: "Keyed brand" };
+    const token = await ownerTokenFor(WS_NY);
+    const first = await api("POST", `/api/workspaces/${WS_NY}/analytics/accounts`, token, body, { "Idempotency-Key": key });
+    expect(first.status).toBe(201);
+    for (let i = 0; i < 4; i += 1) {
+      const again = await api("POST", `/api/workspaces/${WS_NY}/analytics/accounts`, token, body, { "Idempotency-Key": key });
+      expect(again.status).toBe(201);
+      expect(again.body.id).toBe(first.body.id);
+    }
+    expect(await countRows(`SELECT COUNT(*)::int AS n FROM analytics_accounts WHERE workspace_id = $1 AND brand_label = 'Keyed brand';`, [WS_NY])).toBe(1);
   });
 
   it("a workspace holds at most 10 accounts (409 ANALYTICS_ACCOUNT_LIMIT beyond that)", async () => {
@@ -234,12 +295,15 @@ describe("sync is an idempotent upsert", () => {
     const after = await query<{ latest: Date }>(`SELECT MAX(synced_at) AS latest FROM analytics_posts WHERE workspace_id = $1 AND account_id = $2;`, [WS_SOCIAL, accountId]);
     expect(new Date(after.rows[0].latest).getTime()).toBeGreaterThan(new Date(before.rows[0].latest).getTime());
     expect(new Date(after.rows[0].latest).toISOString()).toBe(later.toISOString());
+    // The attempt was recorded at a future time; clear it so the next sync of this account is not throttled.
+    await query(`UPDATE analytics_accounts SET last_sync_attempt_at = NULL WHERE workspace_id = $1 AND id = $2;`, [WS_SOCIAL, accountId]);
   });
 
   it("the account lists when it was last synced, and how many posts it holds", async () => {
     const list = await api("GET", `/api/workspaces/${WS_SOCIAL}/analytics/accounts`, ownerSocial);
-    expect(list.body[0].postCount).toBeGreaterThan(40);
-    expect(list.body[0].lastSyncedAt).toEqual(expect.any(String));
+    const mine = list.body.find((a: { id: string }) => a.id === accountId);
+    expect(mine.postCount).toBeGreaterThan(40);
+    expect(mine.lastSyncedAt).toEqual(expect.any(String));
   });
 
   it("the sync audit row holds counts and ids only", async () => {
@@ -306,7 +370,7 @@ describe("reports: once per period", () => {
   });
 
   it("ten concurrent requests for one new period write exactly one report and one audit row", async () => {
-    const body = { kind: "on_demand", accountId, periodStart: day(6), periodEnd: day(3) };
+    const body = { kind: "on_demand", accountId, periodStart: day(14), periodEnd: day(7) };
     const results = await Promise.all(Array.from({ length: 10 }, () => api("POST", `/api/workspaces/${WS_SOCIAL}/analytics/reports`, ownerSocial, body)));
     const statuses = results.map((r) => r.status).sort();
     expect(statuses.filter((s) => s === 201)).toHaveLength(1);
@@ -320,7 +384,7 @@ describe("reports: once per period", () => {
   });
 
   it("an all-brands report (no account) is also written once: the NULL account does not defeat the unique key", async () => {
-    const body = { kind: "on_demand", periodStart: day(9), periodEnd: day(8) };
+    const body = { kind: "on_demand", periodStart: day(21), periodEnd: day(14) };
     const a = await api("POST", `/api/workspaces/${WS_SOCIAL}/analytics/reports`, ownerSocial, body);
     const b = await api("POST", `/api/workspaces/${WS_SOCIAL}/analytics/reports`, ownerSocial, body);
     expect([a.status, b.status].sort()).toEqual([200, 201]);
@@ -352,6 +416,19 @@ describe("reports: once per period", () => {
     expect((await api("GET", `/api/workspaces/${WS_OTHER}/analytics/reports/${list.body[0].id}`, ownerOther)).status).toBe(404);
   });
 
+  it("a report over a New York account reads its hours in New York time, not UTC", async () => {
+    const token = await ownerTokenFor(WS_NY);
+    const ny = await api("POST", `/api/workspaces/${WS_NY}/analytics/accounts`, token, { provider: "simulated", brandLabel: "NY", timeZone: "America/New_York" });
+    expect(ny.status).toBe(201);
+    expect(ny.body.timeZone).toBe("America/New_York");
+    const synced = await api("POST", `/api/workspaces/${WS_NY}/analytics/accounts/${ny.body.id}/sync`, token);
+    expect(synced.status).toBe(200);
+    const report = await api("POST", `/api/workspaces/${WS_NY}/analytics/reports`, token, { kind: "on_demand", accountId: ny.body.id, periodStart: day(20), periodEnd: day(1) });
+    expect(report.status).toBe(201);
+    expect(report.body.findings.timeZone).toBe("America/New_York");
+    expect(report.body.findings.hours.timeZone).toBe("America/New_York");
+  });
+
   it("a report holds no brand label, no account label and no platform text", async () => {
     const list = await api("GET", `/api/workspaces/${WS_SOCIAL}/analytics/reports`, ownerSocial);
     const stored = await query(`SELECT findings::text AS findings, report_text FROM analytics_reports WHERE workspace_id = $1;`, [WS_SOCIAL]);
@@ -362,11 +439,16 @@ describe("reports: once per period", () => {
     expect(JSON.stringify(list.body)).not.toContain(BRAND);
   });
 
-  it("a report over a period with no posts says so, and is not a comparison", async () => {
+  it("a period with no stored posts is refused with 409 ANALYTICS_NO_DATA_YET, and no empty report is kept for it", async () => {
     const res = await api("POST", `/api/workspaces/${WS_CAP}/analytics/reports`, ownerCap, { kind: "on_demand", periodStart: day(40), periodEnd: day(39) });
-    expect(res.status).toBe(201);
-    expect(res.body.text).toContain("Not enough posts yet");
-    expect(res.body.findings.postCount).toBe(0);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("ANALYTICS_NO_DATA_YET");
+    expect(await countRows(`SELECT COUNT(*)::int AS n FROM analytics_reports WHERE workspace_id = $1 AND period_start = $2::date;`, [WS_CAP, day(40)])).toBe(0);
+    // Once the account has posts for the period, the same request writes the report.
+    const cap = await api("GET", `/api/workspaces/${WS_CAP}/analytics/accounts`, ownerCap);
+    await syncAccount(WS_CAP, cap.body[0].id, { type: "owner", id: "test" }, new Date());
+    const later = await api("POST", `/api/workspaces/${WS_CAP}/analytics/reports`, ownerCap, { kind: "on_demand", periodStart: day(21), periodEnd: day(14) });
+    expect([200, 201]).toContain(later.status);
   });
 
   it("the generator refuses a period that ends after today, through the service as well", async () => {
@@ -374,6 +456,133 @@ describe("reports: once per period", () => {
     await expect(
       generateReport(WS_SOCIAL, { accountId: null, kind: "on_demand", periodStart: new Date(now.getTime() - 2 * DAY), periodEnd: new Date(now.getTime() + 2 * DAY) }, { type: "owner", id: "t" }, now)
     ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+  });
+});
+
+describe("the responses of the routes the contract sweep does not reach match their schemas", () => {
+  it("create account, sync, create report and get report parse with the registry's schemas", async () => {
+    const token = await ownerTokenFor(WS_NY);
+    const created = await api("POST", `/api/workspaces/${WS_NY}/analytics/accounts`, token, { provider: "simulated", brandLabel: "Schema brand" });
+    expect(created.status).toBe(201);
+    expect(AnalyticsAccountSchema.safeParse(created.body).success).toBe(true);
+    const synced = await api("POST", `/api/workspaces/${WS_NY}/analytics/accounts/${created.body.id}/sync`, token);
+    expect(synced.status).toBe(200);
+    expect(AnalyticsSyncResultSchema.safeParse(synced.body).success).toBe(true);
+    const report = await api("POST", `/api/workspaces/${WS_NY}/analytics/reports`, token, { kind: "on_demand", accountId: created.body.id, periodStart: day(20), periodEnd: day(1) });
+    expect([200, 201]).toContain(report.status);
+    expect(AnalyticsReportCreatedSchema.safeParse(report.body).success).toBe(true);
+    const one = await api("GET", `/api/workspaces/${WS_NY}/analytics/reports/${report.body.id}`, token);
+    expect(one.status).toBe(200);
+    expect(AnalyticsReportSchema.safeParse(one.body).success).toBe(true);
+  });
+});
+
+describe("sync attempts: the minimum interval, the timeout and the backoff", () => {
+  const SAME_DAY = new Date("2026-11-04T10:00:00Z");
+
+  it("a second sync inside the minimum interval is refused with 429 ANALYTICS_SYNC_TOO_SOON and Retry-After; the throttle holds for the API", async () => {
+    const token = await ownerTokenFor(WS_OTHER);
+    const account = await createAnalyticsAccount(WS_OTHER, { provider: "simulated", brandLabel: "Throttle" }, { type: "owner", id: "test" });
+    config.BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS = 300_000;
+    try {
+      const first = await api("POST", `/api/workspaces/${WS_OTHER}/analytics/accounts/${account.id}/sync`, token);
+      expect(first.status).toBe(200);
+      const second = await fetch(`${baseUrl}/api/workspaces/${WS_OTHER}/analytics/accounts/${account.id}/sync`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(second.status).toBe(429);
+      expect(((await second.json()) as { code: string }).code).toBe("ANALYTICS_SYNC_TOO_SOON");
+      const retryAfter = Number(second.headers.get("retry-after"));
+      expect(retryAfter).toBeGreaterThan(0);
+      expect(retryAfter).toBeLessThanOrEqual(300);
+    } finally {
+      config.BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS = 0;
+    }
+  });
+
+  it("a provider that hangs is abandoned after the timeout: 502, nothing stored, and the account backs off", async () => {
+    const account = await createAnalyticsAccount(WS_OTHER, { provider: "simulated", brandLabel: "Hangs" }, { type: "owner", id: "test" });
+    setAnalyticsProviderForTests(
+      (acc) =>
+        acc.id === account.id
+          ? { id: "simulated", isSimulated: true, capabilities: { perPostReach: true, followerSplit: true, hourOfDay: true, country: true, mediaType: true }, listAccounts: async () => [], fetchPosts: () => new Promise(() => undefined) }
+          : null,
+      200
+    );
+    const started = Date.now();
+    try {
+      await expect(syncAccount(WS_OTHER, account.id, { type: "owner", id: "test" }, SAME_DAY)).rejects.toMatchObject({ code: "ANALYTICS_PROVIDER_UNAVAILABLE", status: 502 });
+    } finally {
+      setAnalyticsProviderForTests(null);
+    }
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(await countRows(`SELECT COUNT(*)::int AS n FROM analytics_posts WHERE workspace_id = $1 AND account_id = $2;`, [WS_OTHER, account.id])).toBe(0);
+    const row = await query<{ consecutive_failures: number; next_attempt_at: Date }>(
+      `SELECT consecutive_failures, next_attempt_at FROM analytics_accounts WHERE workspace_id = $1 AND id = $2;`,
+      [WS_OTHER, account.id]
+    );
+    expect(row.rows[0].consecutive_failures).toBe(1);
+    expect(new Date(row.rows[0].next_attempt_at).getTime()).toBe(SAME_DAY.getTime() + 15 * 60 * 1000);
+  });
+
+  it("backoff doubles per failure, capped at 12 hours; a provider that answers invalid data waits the longest at once", async () => {
+    const account = await createAnalyticsAccount(WS_OTHER, { provider: "simulated", brandLabel: "Backoff" }, { type: "owner", id: "test" });
+    const failing = (mode: "throws" | "invalid") => ({
+      id: "simulated",
+      isSimulated: true,
+      capabilities: { perPostReach: true, followerSplit: true, hourOfDay: true, country: true, mediaType: true },
+      listAccounts: async () => [],
+      fetchPosts: async () => {
+        if (mode === "throws") throw new Error("upstream said no");
+        return [{ externalId: "bad id with spaces", publishedAt: "x", mediaType: "reel", metrics: {} }] as unknown as never;
+      },
+    });
+    setAnalyticsProviderForTests((acc) => (acc.id === account.id ? failing("throws") : null), 1000);
+    const offsets: number[] = [];
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        const at = new Date(SAME_DAY.getTime() + i * 13 * 3600 * 1000);
+        await expect(syncAccount(WS_OTHER, account.id, { type: "owner", id: "test" }, at)).rejects.toMatchObject({ code: "ANALYTICS_PROVIDER_UNAVAILABLE" });
+        const row = await query<{ next_attempt_at: Date }>(`SELECT next_attempt_at FROM analytics_accounts WHERE workspace_id = $1 AND id = $2;`, [WS_OTHER, account.id]);
+        offsets.push((new Date(row.rows[0].next_attempt_at).getTime() - at.getTime()) / 1000);
+      }
+    } finally {
+      setAnalyticsProviderForTests(null);
+    }
+    expect(offsets).toEqual([15 * 60, 30 * 60, 60 * 60]);
+
+    setAnalyticsProviderForTests((acc) => (acc.id === account.id ? failing("invalid") : null), 1000);
+    const invalidAt = new Date(SAME_DAY.getTime() + 2 * 24 * 3600 * 1000);
+    try {
+      await expect(syncAccount(WS_OTHER, account.id, { type: "owner", id: "test" }, invalidAt)).rejects.toMatchObject({ code: "ANALYTICS_PROVIDER_OUTPUT_INVALID" });
+    } finally {
+      setAnalyticsProviderForTests(null);
+    }
+    const slow = await query<{ next_attempt_at: Date; consecutive_failures: number }>(
+      `SELECT next_attempt_at, consecutive_failures FROM analytics_accounts WHERE workspace_id = $1 AND id = $2;`,
+      [WS_OTHER, account.id]
+    );
+    expect(slow.rows[0].consecutive_failures).toBe(4);
+    expect((new Date(slow.rows[0].next_attempt_at).getTime() - invalidAt.getTime()) / 1000).toBe(12 * 3600);
+  });
+
+  it("a good sync after failures resets the backoff and writes exactly one analytics.synced row for that sync", async () => {
+    const account = await createAnalyticsAccount(WS_OTHER, { provider: "simulated", brandLabel: "Recovers" }, { type: "owner", id: "test" });
+    setAnalyticsProviderForTests((acc) => (acc.id === account.id ? { id: "simulated", isSimulated: true, capabilities: { perPostReach: true, followerSplit: true, hourOfDay: true, country: true, mediaType: true }, listAccounts: async () => [], fetchPosts: async () => { throw new Error("down"); } } : null), 1000);
+    try {
+      await expect(syncAccount(WS_OTHER, account.id, { type: "owner", id: "test" }, SAME_DAY)).rejects.toThrow();
+    } finally {
+      setAnalyticsProviderForTests(null);
+    }
+    const before = await countRows(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'analytics.synced' AND evidence->>'accountId' = $2;`, [WS_OTHER, account.id]);
+    const later = new Date(SAME_DAY.getTime() + 3 * 24 * 3600 * 1000);
+    await syncAccount(WS_OTHER, account.id, { type: "owner", id: "test" }, later);
+    const after = await countRows(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'analytics.synced' AND evidence->>'accountId' = $2;`, [WS_OTHER, account.id]);
+    expect(after - before).toBe(1);
+    const row = await query<{ consecutive_failures: number; next_attempt_at: Date | null }>(`SELECT consecutive_failures, next_attempt_at FROM analytics_accounts WHERE workspace_id = $1 AND id = $2;`, [WS_OTHER, account.id]);
+    expect(row.rows[0].consecutive_failures).toBe(0);
+    expect(row.rows[0].next_attempt_at).toBeNull();
   });
 });
 

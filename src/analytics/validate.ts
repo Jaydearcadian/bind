@@ -62,6 +62,8 @@ function parseInstant(value: unknown, field: string): Date {
   if (date === null || Number.isNaN(date.getTime())) fail(`${field} must be an ISO 8601 date and time`);
   const ms = date.getTime();
   if (ms < MIN_PUBLISHED_MS || ms >= MAX_PUBLISHED_MS) fail(`${field} is outside the allowed years`);
+  // "24" is not an hour of the day, although the parser would roll it to the next day.
+  if (typeof value === "string" && value.slice(11, 13) === "24") fail(`${field} must be an ISO 8601 date and time`);
   return date;
 }
 

@@ -33,6 +33,8 @@ export const IDEMPOTENT_ROUTES: ReadonlySet<string> = new Set([
   "POST /api/workspaces/:id/suppliers",
   // A sync writes the account's posts and an audit row, so a retried request replays its first answer (docs/decisions/0090).
   "POST /api/workspaces/:id/analytics/accounts/:accountId/sync",
+  // Connecting an account creates a row each call, so a retried request replays the first account (docs/decisions/0090).
+  "POST /api/workspaces/:id/analytics/accounts",
   // Tab ledger (ADR 0081): a charge is an obligation and a settle moves money, so a retried request replays its answer.
   "POST /api/workspaces/:id/tabs/charges",
   "POST /api/workspaces/:id/tabs/:counterpartyId/settle",

@@ -449,6 +449,22 @@
       "retryable": false,
       "existing": true,
       "note": "A demo workspace does not change analytics (docs/decisions/0090)."
+    },
+    {
+      "code": "ANALYTICS_SYNC_TOO_SOON",
+      "httpStatus": 429,
+      "category": "rate_limited",
+      "retryable": true,
+      "existing": true,
+      "note": "This analytics account was attempted within the minimum interval. Retry-After is set (docs/decisions/0090)."
+    },
+    {
+      "code": "ANALYTICS_NO_DATA_YET",
+      "httpStatus": 409,
+      "category": "conflict",
+      "retryable": true,
+      "existing": true,
+      "note": "The period has no stored posts yet. Nothing is stored for it (docs/decisions/0090)."
     }
   ]
 }

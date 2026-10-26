@@ -67,8 +67,20 @@ export interface TickReport {
   };
   /** `skipped` is true when the sweep did not run: it is off, or its lock was busy. */
   restockSweep: { skipped: boolean; started: number; failed: number };
-  /** The weekly analytics job (docs/decisions/0090). Off unless BIND_ANALYTICS_REPORTS=true. */
-  analyticsReports: { skipped: boolean; synced: number; reports: number; notices: number; failed: number };
+  /**
+   * The weekly analytics job (docs/decisions/0090). Off unless BIND_ANALYTICS_REPORTS=true. `failed` counts accounts and notices
+   * that did not complete in the pass; each one is recorded (backoff, or an audit row) and is not retried at once.
+   */
+  analyticsReports: {
+    skipped: boolean;
+    synced: number;
+    skippedRecentSync: number;
+    reports: number;
+    notices: number;
+    noticesInDoubt: number;
+    deferred: number;
+    failed: number;
+  };
   /** Removes stored API idempotency outcomes older than their retention (ADR 0049). */
   idempotencySweep: { skipped: boolean; removed: number };
   /** Deletes expired demo workspaces and their generated files (docs/decisions/0057). `failed` demos are retried next tick. */
@@ -126,6 +138,8 @@ const DEFAULT_RESTOCK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const ERROR_LIMIT = 200;
 /** The actor on the sweep's audit rows. */
 const SWEEP_ACTOR = "system:restock-sweep";
+/** The analytics pass starts no new work after this long (docs/decisions/0090). Each provider call has its own timeout. */
+export const ANALYTICS_PASS_DEADLINE_MS = 120_000;
 
 const STEP_KEY: Record<WorkerStep, keyof Omit<TickReport, "errors">> = {
   expiry: "expiry",
@@ -147,7 +161,7 @@ function emptyReport(): TickReport {
     stuckSettling: { skipped: false, toSubmitted: 0, toHold: 0, failed: 0 },
     tabSettlements: { skipped: false, resumed: 0, confirmed: 0, held: 0, cancelled: 0, endOfDay: 0, reconciled: 0, failed: 0 },
     restockSweep: { skipped: false, started: 0, failed: 0 },
-    analyticsReports: { skipped: false, synced: 0, reports: 0, notices: 0, failed: 0 },
+    analyticsReports: { skipped: false, synced: 0, skippedRecentSync: 0, reports: 0, notices: 0, noticesInDoubt: 0, deferred: 0, failed: 0 },
     idempotencySweep: { skipped: false, removed: 0 },
     demoExpiry: { skipped: false, removed: 0, failed: 0 },
     errors: [],
@@ -243,10 +257,14 @@ async function tabSettlementsStep(cfg: Resolved, report: TickReport): Promise<vo
  * the last full week, then tells the owner once per report. Each account and each notice is isolated; errors are bounded.
  */
 async function analyticsReportsStep(cfg: Resolved, report: TickReport): Promise<void> {
-  const result = await runWeeklyAnalyticsReports({ now: cfg.now, batchSize: cfg.batchSize });
+  // The pass starts no new account or notice after ANALYTICS_PASS_DEADLINE_MS, so one slow provider cannot hold the tick.
+  const result = await runWeeklyAnalyticsReports({ now: cfg.now, batchSize: cfg.batchSize, deadlineMs: ANALYTICS_PASS_DEADLINE_MS });
   report.analyticsReports.synced = result.synced;
+  report.analyticsReports.skippedRecentSync = result.skippedRecentSync;
   report.analyticsReports.reports = result.reports;
   report.analyticsReports.notices = result.notices;
+  report.analyticsReports.noticesInDoubt = result.noticesInDoubt;
+  report.analyticsReports.deferred = result.deferred;
   report.analyticsReports.failed = result.failed;
   for (const message of result.errors) {
     report.errors.push({ step: "analytics_reports", error: redactText(message).slice(0, ERROR_LIMIT) });

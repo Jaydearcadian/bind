@@ -6,72 +6,82 @@ that this task did not reproduce are kept, labelled, in the appendix at the end,
 **Commit the gates ran on:** `407533ac09f7121806836e25db4834be5c91c412` (HEAD of `claude/capabilities-overview-c6elxr` before the
 commit that adds this document; the working tree was clean at that commit).
 
-## 0d. Post analytics, first read-only slice (ADR 0090): gate run
+## 0d. Post analytics, first read-only slice (ADR 0090): gate run, second pass after review
 
-**Commit the gates ran on:** the working tree on top of `22b64fc` (origin/main at the start of this task), with this change uncommitted at the time of the runs. Integration runs used a private database, `bind_haiku_analytics`, created for this work and never the shared `bind_local`: `DATABASE_URL=postgres://bind_local:bind_local_only@127.0.0.1:5432/bind_haiku_analytics`.
-
-**Scope.** No real platform is contacted and no credential is read. Provider: simulated only. Every report and surface says it is simulated.
+**Commit the gates ran on:** the working tree on top of `6e4a8a2` (the first commit of this slice), with the review changes uncommitted at the time of the runs. Integration runs used a private database, `bind_haiku_analytics`, created for this work and dropped afterwards. `bind_local` was never used for analytics. No real platform is contacted and no credential is read; the provider is simulated only.
 
 | Command | Result | Class |
 | --- | --- | --- |
-| `npm run typecheck` | passes (root, SDK and MCP projects) | `LOCAL_PASS` |
+| `npm run typecheck` (root, SDK, MCP) | passes | `LOCAL_PASS` |
 | `npm run lint` | 0 errors; 3 warnings, all in `tests/integration/tab-dropped.test.ts` (existing, not changed) | `LOCAL_PASS` |
-| `npx vitest run tests/unit/` | 79 files, 1076 tests passed | `LOCAL_PASS` |
-| `DATABASE_URL=… npx vitest run tests/integration/` (private DB) | 92 files passed, 1 skipped (existing skips, ADR 0057); 948 tests passed, 16 skipped | `LOCAL_PASS` |
-| `npm run api:spec`, `npm run sdk:generate`, `npm run capabilities:generate` | regenerated; re-running them reproduces the committed files (no drift) | `LOCAL_PASS` |
-| `npm run build` (includes `sdk:build`) and `npm run mcp:build` | both succeed | `LOCAL_PASS` |
-| Analytics unit tests: `tests/unit/analytics-analyse.test.ts` (27), `analytics-validate.test.ts`, `analytics-simulated.test.ts`, `analytics-notice-and-template.test.ts` | pass; every expected value in the analysis tests was worked out by hand from the input, then checked against the code | `LOCAL_PASS` |
-| Analytics integration: `tests/integration/analytics.test.ts` (27) and `analytics-notices.test.ts` (12) | pass, on the private database | `LOCAL_PASS` |
-| Browser E2E (`playwright`) | not run in this worktree (the owner builds the screens later) | `NOT_RUN` |
-| Live Meta or any real provider | not contacted (out of scope) | `NOT_RUN` |
-| `docs/CODEBASE_MAP.md` | not regenerated (no `.ua` graph in a worktree) and not edited by hand | `NOT_RUN` |
+| `npx vitest run tests/unit/` | 81 files, 1090 tests passed | `LOCAL_PASS` |
+| `DATABASE_URL=…bind_haiku_analytics npx vitest run tests/integration/` | 92 files passed, 1 skipped (existing skip, ADR 0057); 961 tests passed, 16 skipped (existing skips) | `LOCAL_PASS` |
+| `npm run api:spec`, `sdk:generate`, `capabilities:generate` | regenerated; re-running reproduces the committed files | `LOCAL_PASS` |
+| `npm run build` (incl. `sdk:build`), `npm run mcp:build` | both pass | `LOCAL_PASS` |
+| Browser E2E | not run in this worktree (screens are the owner's) | `NOT_RUN` |
+| Any real provider or Meta | not contacted | `NOT_RUN` |
+| `docs/CODEBASE_MAP.md` | not regenerated (no `.ua` graph in a worktree), not edited by hand | `NOT_RUN` |
 
-**Contract and tenancy suites changed deliberately (not weakened):**
-- `api-contract.test.ts`: the excluded-GET list gained the report-by-id route, and the not-tested cap rose from 13 to 17 for four routes that need a workspace with the module (reasons recorded in the registry and in ADR 0090).
-- `auth-tenancy.test.ts`: the route inventory gained the six analytics routes, with their access.
-- `idempotency.test.ts`: the keyed-route check names the analytics sync as the one keyed route that is neither economic nor irreversible (the brief asks for its Idempotency-Key). It is listed, not hidden.
-- `sdk.test.ts`: `getAnalyticsReport` joins the routes that need their own ids (covered by `analytics.test.ts`).
-- `social-template` tests: the placeholder ids are replaced by the real ids (ADR 0090, section 11).
-- `mcp.test.ts`, `no-value-moving-model-tools.test.ts`, integration `mcp.test.ts`: the two read tools are documented.
+### What the review asked for, and what was done
 
-### Mutation checks (run against the test suite, then restored)
+- **B1, failed and in-doubt notices audited through the worker.** The weekly job now counts every notice it did not send and audits it at first sight: `notification.in_doubt` for a row left `started`, `notification.failed` for a refused row. Tests drive the worker itself (`runWeeklyAnalyticsReports` and `runTick`): a crash after the provider accepted the message (fault injection) gives one in-doubt audit row, ledger `started`, one mail, and no resend on the next pass; a provider 500 gives a failed count, a `failed` row, one failed audit row, and no resend. Both assert `failed` and `noticesInDoubt`.
+- **B2, connect limit under concurrency.** The count of accounts is taken under the workspace row lock. Test: 20 concurrent connects give exactly 10 `201` and 10 `409 ANALYTICS_ACCOUNT_LIMIT`, with 10 rows.
+- **B3, staff on every write route.** Test: staff get `403` on connect, sync and report creation, and the test checks the state too (no account row, no post row, no report row, no `analytics.%` audit row written). Mutation D (sync route opened to members) is killed.
+- **S7, ADR section 9.** Corrected: four routes are `contractTested: false`; their response schemas are checked by parsing real responses in `analytics.test.ts`; the cap is 17, and that is the true count. The cap is not lowered because the four routes cannot succeed on the kitchen fixture (see below).
+- **S1, backoff, timeout, minimum interval, audit once per real sync.** Columns `last_sync_attempt_at`, `last_sync_at`, `consecutive_failures`, `next_attempt_at` on `analytics_accounts`. Each sync attempt claims the account by one conditional update, so the minimum interval (`BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS`, default 5 minutes) holds across the API and the worker. A manual sync inside it gets `429 ANALYTICS_SYNC_TOO_SOON` with `Retry-After`. Backoff: 15 minutes, doubling, capped at 12 hours; 12 hours at once for `ANALYTICS_PROVIDER_NOT_AVAILABLE` and `ANALYTICS_PROVIDER_OUTPUT_INVALID`. A provider call has a 20-second timeout and an abort signal, and the weekly pass starts no new work after 120 seconds. `analytics.synced` is written only with a successful sync's rows. Tests: the throttle (`429` and `Retry-After`), a hanging provider (`502` in under 5 seconds, nothing stored, backoff recorded), the backoff sequence 15/30/60 minutes and the 12-hour slow case, a recovery that writes exactly one sync audit row, and the starvation scenario: 30 permanently broken accounts older than one healthy account. The healthy report is written, and each broken account has exactly one failure after the pass.
+- **S2 and S3, owners who cannot be mailed and partial multi-owner sends.** `analytics_reports.notice_done` marks a report whose owners have all been dealt with (sent, already sent, failed, in doubt, or none to tell). The weekly job lists only reports that are not done, so a workspace with no reachable owner never holds a batch slot. Test with a batch of one: the older report belongs to a workspace whose owner binding cannot be mailed, and the verified owner of the newer workspace is still mailed. A crash between recipients leaves the report not done; the next pass sends only the recipients with no row.
+- **S4, a period with no posts.** Refused with `409 ANALYTICS_NO_DATA_YET`, and nothing is stored. Test: no report row for the period; the same request works after a sync. The weekly job treats it as deferred (one hour), not as a failure.
+- **S5, the notice says "(sample data)" for simulated data.** "Your report is ready (sample data)." in the email, and the same in the WhatsApp or Telegram message. Tests cover the email text (simulated and real) and the delivered title and message.
+- **S6, idempotent connects.** `POST /accounts` is in `IDEMPOTENT_ROUTES`. Test: five requests with one key give one account, and the same id each time. The idempotency test names it, with the sync, as keyed for a reason other than economic.
+- **S8, the missing kills.** AH (report ignores the account's zone): killed by the New York test. AD (flag defaults on): the flag builder moved to `src/workers/options.ts`, tested with `"true"`, `"TRUE"`, `"1"`, `""`, `"false"`, `"on"`, and unset; mutation F is killed. W and X (demo and disabled accounts are swept): the due query excludes them, and tests assert `failed === 0` and that they are not attempted; mutations G and H are killed.
+- **S9, contract coverage.** The four routes that need a module-bearing workspace are checked by parsing real responses with the registry's schemas (`AnalyticsAccountSchema`, `AnalyticsSyncResultSchema`, `AnalyticsReportCreatedSchema`, `AnalyticsReportSchema`). Not moved into the sweep, because the sweep's fixture is a kitchen with no module.
+- **Nits.** N1, comparisons use the printed values (reach to one decimal, rates to 0.1%), and a median that is not whole prints with one decimal (`10.5 against 11`). N2, a difference under 5% is "about the same". N3, the ADR now states the one ordering that the code uses. N5, the count keys carry only numbers. N6, the provider's own message is not logged, only its error name. N7, a publish time at `24:00` is refused. N9, posts are sorted by provider id before the upsert.
 
-Each mutation was applied to the source, the relevant suites were run, and the file was restored. A mutation is KILLED when at least one test fails.
+### Mutation checks (second pass; each applied to the source, suites run, file restored)
+
+The table uses the full mutation list of this pass. A mutation is KILLED when at least one test fails.
 
 | # | Mutation | Verdict | Killing tests (examples) |
 | --- | --- | --- | --- |
-| M1 | Sample-size guard removed (format groups accept 1 post) | KILLED | "does not state a comparison from fewer than 5 posts in a group" |
-| M2 | `ON CONFLICT DO NOTHING` removed from the report insert | KILLED | "ten concurrent requests … write exactly one report" |
-| M3 | Owner notice sent before the effects ledger (no ledger guard) | KILLED | "ten concurrent deliveries … send one email", the crash-during-send test |
-| M4 | Delivery pre-check ignores completed rows | KILLED | "a verified owner is emailed once …" (the `alreadySent` count) |
-| M5 | Re-sync keeps the old sync time (`synced_at` not updated) | KILLED after a test was added (first run survived; the test was missing from the run, see below) | "a later sync updates the stored rows, not only their count" |
-| M6 | Account lookup loses the workspace scope | KILLED | 25 failing tests (tenancy and notices) |
-| M7 | Staff allowed to create reports (owner route becomes member) | KILLED | "anonymous gets 401; staff can read and cannot write (403)" |
-| M8 | Demo refusal removed for writes | KILLED | "a demo workspace reads analytics and refuses every change" |
-| M9 | NaN accepted as a count | KILLED | "refuses NaN and infinities", "refuses a fraction, a numeric string and a boolean" |
-| M10 | Free-text fields kept (raw object spread) | KILLED | "drops a caption, a comment and any other text field …" |
-| M11 | Template refusal removed from account creation | KILLED | "a workspace with no analytics module reads as empty, and every write is 400 …" |
-| M12 | Weekly job's pending-notice step ignores the ledger row (no `NOT EXISTS`) | **SURVIVED** | none (see below) |
+| A | Report `ON CONFLICT` removed | KILLED | concurrent report requests write one row |
+| B | Format sample guard removed (1 post) | KILLED | "does not state a comparison from fewer than 5 posts" |
+| C | Workspace row lock removed (B2) | KILLED | 20 concurrent connects give exactly 10 |
+| D | Staff allowed to sync (O) | KILLED | staff get 403 on every write, state unchanged |
+| E | Report ignores the account time zone (AH) | KILLED | New York report reports `America/New_York` |
+| F | Worker flag defaults on (AD) | KILLED | worker-options unit test (`"TRUE"`, `"1"`, unset) |
+| G | Demo accounts swept (W) | KILLED | demo test: `failed === 0` and not attempted |
+| H | Disabled accounts swept (X) | KILLED | disabled test: `failed === 0` |
+| I | Connect not keyed (S6) | KILLED | five requests with one key give one account |
+| J | Throttle claim always succeeds | KILLED | second sync inside the interval is refused |
+| K | Provider call not raced against the timeout | KILLED | hanging provider test (times out in the test) |
+| L | Due query ignores backoff (starvation) | KILLED | 30 broken accounts; healthy report written |
+| M | Backoff does not double | KILLED | backoff sequence 15/30/60 minutes |
+| N | Provider-level failures wait the short time | KILLED | 12-hour case for invalid output |
+| O | Failed and in-doubt notices not audited at first sight | KILLED | worker in-doubt and failed audit tests |
+| P | `notice_done` filter removed | KILLED | batch-of-one test: verified owner still mailed |
+| Q | Zero-post period stored (no refusal) | KILLED | 409 `ANALYTICS_NO_DATA_YET`, nothing stored |
+| R | Simulated notice says nothing about sample data (S5) | KILLED | notice text and delivered title |
+| S | Materiality threshold removed (N2) | KILLED | 3,000 against 2,900 is about the same (unit) |
+| T | Engagement rate compared unrounded (N1), after the new test | KILLED | 5.5% against 5.2% (unit) |
+| U | Count keys accept text (N5) | KILLED | event allowlist test |
+| V | Publish time 24:00 accepted (N7) | KILLED | validator test |
+| W | Ledger bypassed for the owner notice (M3, from the first pass) | KILLED | ten concurrent deliveries; crash tests |
+| X | Delivery pre-check ignores completed rows (M4) | KILLED | "a verified owner is emailed once" |
+| Y | Re-sync keeps the old sync time (M5) | KILLED | "a later sync updates the stored rows" |
+| Z | Account lookup loses tenant scope (M6) | KILLED | 39 failing tests (tenancy and notices) |
+| AA | Staff allowed to create reports (M7) | KILLED | staff 403 on report creation |
+| AB | Demo refusal removed for writes (M8) | KILLED | demo test |
+| AC | NaN accepted as a count (M9) | KILLED | validator refusal tests |
+| AD | Free text kept by the validator (M10) | KILLED | caption test |
+| AE | Template refusal removed from connect (M11) | KILLED | template refusal tests |
 
-**M5 note:** the first run of M5 survived. The re-sync test had been written but not yet applied to the file, so the run used the old suite. After the test was applied, M5 is killed. The result above is the post-fix run; the survived run is recorded here so the history is visible.
+**Survivors and their explanation.** In the second pass, one mutant survived: the rounding of the reach medians (`round1`) was removed. It is an **equivalent mutant**: a median of whole-number reaches is always a whole number or a half, and one-decimal rounding does not change a half. The line that does matter, the engagement-rate rounding, survived in the first version of the suite, and a new test now kills it (mutation T). No other survivor.
 
-**M12 (survived), and why it is not a notice-safety gap:** the weekly job's second step lists reports whose primary recipient has no ledger row yet. Removing that `NOT EXISTS` makes the job re-visit already-delivered reports. The notice itself stays at most once, because `deliverReportNotice` skips completed rows and the effects ledger guards the send (M3 and M4 are killed). So M12 changes efficiency and the risk of starving other reports in a busy week, not whether an owner is emailed twice. No test measures that starvation. It is recorded as a known gap, with the batch-size limit as the only guard.
+**Earlier mutation sweep (first pass, before this review).** Its survivors were: the time-zone mutation of the account (now killed, AH), the flag default (now killed, F), staff sync (now killed, D), demo and disabled sweeps (now killed, G and H), the sync time (killed in both passes), and the weekly job's ledger-check removal (now replaced by `notice_done`, mutation P, killed). The first pass's in-doubt audit gap (B1) is closed, and its test now runs through the worker.
 
-### Defects found and fixed during the gate runs (recorded)
-- **In-doubt notices were not audited.** The delivery pre-check skipped any ledger row, so a started or failed notice was silently held back and left no audit row. It now skips completed rows only, and the dispatcher reports and audits a started or failed row as in doubt (`notification.in_doubt`). The worker's query still excludes reports with any row, so this does not repeat every tick.
-- **Analytics reads returned 400 on a workspace with no module.** They now return an empty list, as the stock reads do (ADR 0084). Writes still refuse with `TEMPLATE_HAS_NO_ANALYTICS`.
-- **`2026-02-30` passed the date check.** The validator now checks that the calendar date exists.
-- **A report over an in-progress period** is now refused in the generator as well as at the route.
+**Known limitations (ADR 0090).** A crash in the middle of one provider send leaves the row `started`; the owner's audit row is written by the pass that sees the failure, not by a later pass. Reports are fixed when written. The all-brands report pools brands. The backoff, timeout and throttle values are first choices, with fake providers only.
 
-**Known risks and limitations (recorded in ADR 0090, "Known limitations"):**
-- A crash between two owner recipients leaves the later ones untold by the weekly job (the on-demand route sends no notice).
-- A failing analytics account is retried each tick and its failures counted; there is no backoff.
-- An all-brands report pools the brands' posts and reads hours in UTC.
-- Reports are fixed when written and are not updated by later syncs.
-- No Meta requirement is verified. ADR 0090 lists what a real adapter must check, and asserts none of it.
-- The workspace time zone is per analytics account (no workspace time zone exists). Recorded as a reversible choice.
-
-**Evidence not claimed:** no `LIVE_READ_PASS`, `VERIFIED_REMOTE` or `BLOCKED` for this slice. The simulated provider is `LOCAL_PASS` only.
+**Not claimed:** no `LIVE_READ_PASS`, `VERIFIED_REMOTE` or `BLOCKED` for this slice. The simulated provider is `LOCAL_PASS` only.
 
 ## 0c. Embedded wallet for Google sign-in (ADR 0073): gate run and deployment
 

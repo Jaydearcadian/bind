@@ -4,16 +4,21 @@
  *
  * Guarantees:
  * - A sync is an idempotent upsert keyed by (workspace, account, external post id). Running it twice leaves the row count as it was.
+ * - A sync attempt is claimed by one conditional update, so two attempts of one account are at least the minimum interval apart,
+ *   whether they come from the API or the worker. A failing account backs off (15 minutes, doubling, capped at 12 hours; 12 hours
+ *   for a provider that is not available or answers invalid data). A timeout bounds the provider call.
  * - A report is written at most once per (workspace, account or all brands, kind, period). Concurrent requests get the same row.
- * - The owner is told at most once per (workspace, report) and recipient, through the effects ledger (ADR 0017, ADR 0074). The
- *   notice names no finding, no brand and no account.
- * - Every query is scoped to the workspace. A id of another workspace is "not found".
+ *   A period with no stored posts is refused (ANALYTICS_NO_DATA_YET) rather than stored as an empty report.
+ * - The owner is told at most once per (workspace, report) and recipient, through the effects ledger (ADR 0017, ADR 0074). A send
+ *   that fails or is in doubt is audited at the first sight and is never sent again. The notice names no finding, no brand and no
+ *   account; for simulated data it says so.
+ * - Every query is scoped to the workspace. An id of another workspace is "not found".
  * - Only the simulated provider is available. Any other provider is refused before anything is read or written.
  */
 import type { PoolClient } from "pg";
 import { query, withTransaction } from "../db/client.js";
+import { config } from "../config/env.js";
 import { newId } from "../utils/ids.js";
-import { redactText } from "../utils/redact.js";
 import { log } from "../observability/logger.js";
 import { WorkflowEngine } from "../workflows/engine.js";
 import { EffectClass } from "../policy/effect-classifier.js";
@@ -29,19 +34,32 @@ import {
   AnalyticsError,
   AnalyticsProviderOutputError,
   PROVIDER_NOT_AVAILABLE_CODE,
+  PROVIDER_OUTPUT_INVALID_CODE,
+  type FetchPostsRequest,
   type PostAnalyticsProvider,
   type ProviderPost,
 } from "./types.js";
 
 export const TEMPLATE_NO_ANALYTICS_CODE = "TEMPLATE_HAS_NO_ANALYTICS" as const;
+export const SYNC_TOO_SOON_CODE = "ANALYTICS_SYNC_TOO_SOON" as const;
+export const NO_DATA_CODE = "ANALYTICS_NO_DATA_YET" as const;
+export const PROVIDER_UNAVAILABLE_CODE = "ANALYTICS_PROVIDER_UNAVAILABLE" as const;
 export const MAX_ACCOUNTS_PER_WORKSPACE = 10;
 /** The window a sync reads: the last 90 UTC days, ending at the start of the sync's day. */
 export const SYNC_WINDOW_DAYS = 90;
+/** The longest a provider call may take before the sync gives up (the provider is also sent the abort signal). */
+export const SYNC_TIMEOUT_MS = 20_000;
+/** Backoff after a failed sync or report: 15 minutes, doubling, capped at 12 hours. */
+export const BACKOFF_BASE_SECONDS = 15 * 60;
+export const BACKOFF_CAP_SECONDS = 12 * 60 * 60;
+/** A report that has no posts yet is looked at again in an hour. It is not a failure. */
+export const NO_DATA_DEFER_SECONDS = 60 * 60;
 /** The weekly report's actor, on its audit rows. */
 export const SYSTEM_ACTOR = { type: "system" as const, id: "system:analytics" };
 const ENGINE = new WorkflowEngine();
 const BRAND_LABEL_MAX = 80;
 const MAX_LIST = 50;
+const SLOW_FAILURE_CODES: ReadonlySet<string> = new Set([PROVIDER_NOT_AVAILABLE_CODE, PROVIDER_OUTPUT_INVALID_CODE]);
 
 export interface AnalyticsActor {
   type: "owner" | "system";
@@ -108,7 +126,7 @@ export async function assertAnalyticsModule(workspaceId: string): Promise<{ isDe
   return { isDemo: state.isDemo };
 }
 
-/** The module check, then the demo refusal for every write. A demo workspace is read-only for analytics. Used by every write. */
+/** The module check, then the demo refusal for every write. A demo workspace is read-only for analytics. */
 async function assertWritable(workspaceId: string): Promise<void> {
   const { isDemo } = await assertAnalyticsModule(workspaceId);
   if (isDemo) {
@@ -132,8 +150,25 @@ interface AccountRow {
   created_at: Date;
 }
 
+/**
+ * Test seam: replaces the provider for accounts, so a test can make a provider hang or fail. It works only when NODE_ENV is
+ * `test`; production code cannot arm it.
+ */
+let providerOverride: ((account: { workspace_id: string; id: string; provider: string }) => PostAnalyticsProvider | null) | null = null;
+let syncTimeoutMs = SYNC_TIMEOUT_MS;
+export function setAnalyticsProviderForTests(
+  override: ((account: { workspace_id: string; id: string; provider: string }) => PostAnalyticsProvider | null) | null,
+  timeoutMs?: number
+): void {
+  if (process.env.NODE_ENV !== "test") throw new Error("The analytics provider can only be replaced when NODE_ENV is 'test'");
+  providerOverride = override;
+  syncTimeoutMs = timeoutMs ?? SYNC_TIMEOUT_MS;
+}
+
 /** The provider for a stored account. Only `simulated` exists in this slice; any other stored value is refused, not guessed. */
 export function providerForAccount(account: Pick<AccountRow, "workspace_id" | "id" | "provider">): PostAnalyticsProvider {
+  const overridden = providerOverride?.(account) ?? null;
+  if (overridden) return overridden;
   if (account.provider === SIMULATED_PROVIDER_ID) {
     return createSimulatedProvider({ workspaceId: account.workspace_id, accountId: account.id });
   }
@@ -197,7 +232,8 @@ export async function listAnalyticsAccounts(workspaceId: string): Promise<Analyt
 
 /**
  * Connects an analytics account. Only the simulated provider is accepted; anything else is refused with
- * ANALYTICS_PROVIDER_NOT_AVAILABLE before the workspace is read. The audit row holds ids and the provider's name only.
+ * ANALYTICS_PROVIDER_NOT_AVAILABLE before the workspace is read. The count of accounts is taken under the workspace's row lock,
+ * so concurrent requests cannot take the account count past the limit. The audit row holds ids and the provider's name only.
  */
 export async function createAnalyticsAccount(
   workspaceId: string,
@@ -218,6 +254,8 @@ export async function createAnalyticsAccount(
   const id = newId("ana");
   const externalAccountId = simulatedExternalAccountId(workspaceId, id);
   return withTransaction(async (client: PoolClient) => {
+    // The workspace row is locked for the rest of this transaction: two creates for one workspace run one after the other.
+    await client.query(`SELECT id FROM workspaces WHERE id = $1 FOR UPDATE;`, [workspaceId]);
     const count = await client.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM analytics_accounts WHERE workspace_id = $1;`, [workspaceId]);
     if ((count.rows[0]?.n ?? 0) >= MAX_ACCOUNTS_PER_WORKSPACE) {
       throw new AnalyticsError("ANALYTICS_ACCOUNT_LIMIT", 409, `A workspace can have at most ${MAX_ACCOUNTS_PER_WORKSPACE} analytics accounts.`);
@@ -242,6 +280,72 @@ export async function createAnalyticsAccount(
     );
     return toAccountView(inserted.rows[0]);
   });
+}
+
+/* ---------------------------------------------------------------------------------------------------------------------------
+ * Sync attempts: the throttle, the timeout and the backoff
+ * ------------------------------------------------------------------------------------------------------------------------- */
+
+/**
+ * Claims the account's next sync attempt. One conditional update: it succeeds only when the last attempt is at least the minimum
+ * interval old, so two attempts (API or worker) cannot both pass. Returns the seconds to wait when it refuses.
+ */
+async function claimSyncAttempt(workspaceId: string, accountId: string, now: Date): Promise<{ claimed: true } | { claimed: false; retryAfterSeconds: number }> {
+  const minIntervalMs = config.BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS;
+  const claimed = await query(
+    `UPDATE analytics_accounts SET last_sync_attempt_at = $3::timestamptz
+     WHERE workspace_id = $1 AND id = $2 AND (last_sync_attempt_at IS NULL OR last_sync_attempt_at <= $4::timestamptz)
+     RETURNING id;`,
+    [workspaceId, accountId, now.toISOString(), new Date(now.getTime() - minIntervalMs).toISOString()]
+  );
+  if ((claimed.rowCount ?? 0) === 1) return { claimed: true };
+  const last = await query<{ last: Date }>(`SELECT last_sync_attempt_at AS last FROM analytics_accounts WHERE workspace_id = $1 AND id = $2;`, [workspaceId, accountId]);
+  const lastMs = last.rows[0]?.last ? new Date(last.rows[0].last).getTime() : now.getTime();
+  return { claimed: false, retryAfterSeconds: Math.max(1, Math.ceil((lastMs + minIntervalMs - now.getTime()) / 1000)) };
+}
+
+/** Records a failed attempt: the account waits before its next attempt. Provider-level failures wait the longest. */
+async function recordFailure(workspaceId: string, accountId: string, code: string, now: Date): Promise<void> {
+  await query(
+    `UPDATE analytics_accounts
+     SET consecutive_failures = consecutive_failures + 1,
+         next_attempt_at = $3::timestamptz + make_interval(secs => CASE WHEN $4::boolean
+           THEN $5::float8
+           ELSE LEAST($6::float8 * power(2::float8, consecutive_failures::float8), $5::float8) END)
+     WHERE workspace_id = $1 AND id = $2;`,
+    [workspaceId, accountId, now.toISOString(), SLOW_FAILURE_CODES.has(code), BACKOFF_CAP_SECONDS, BACKOFF_BASE_SECONDS]
+  );
+}
+
+/** Puts the account off for a fixed time without counting a failure (a report with no posts yet). */
+async function deferAccount(workspaceId: string, accountId: string, now: Date, seconds: number): Promise<void> {
+  await query(
+    `UPDATE analytics_accounts SET next_attempt_at = $3::timestamptz + make_interval(secs => $4::float8) WHERE workspace_id = $1 AND id = $2;`,
+    [workspaceId, accountId, now.toISOString(), seconds]
+  );
+}
+
+/** The provider's answer within the timeout, validated. A provider that hangs is abandoned with a fixed message. */
+async function fetchWithTimeout(provider: PostAnalyticsProvider, request: Omit<FetchPostsRequest, "signal">): Promise<ProviderPost[]> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new AnalyticsError(PROVIDER_UNAVAILABLE_CODE, 502, "The analytics provider did not answer in time. Nothing was stored."));
+    }, syncTimeoutMs);
+  });
+  try {
+    const raw = await Promise.race([provider.fetchPosts({ ...request, signal: controller.signal }), timeout]);
+    return parseProviderPosts(raw);
+  } catch (err) {
+    if (err instanceof AnalyticsError || err instanceof AnalyticsProviderOutputError) throw err;
+    // The provider's own message is not logged or repeated: with a real provider it is untrusted text.
+    log.warn("analytics.provider_failed", { provider: provider.id, reason: err instanceof Error ? err.name : "unknown" });
+    throw new AnalyticsError(PROVIDER_UNAVAILABLE_CODE, 502, "The analytics provider did not answer. Nothing was stored.");
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 /* ---------------------------------------------------------------------------------------------------------------------------
@@ -294,30 +398,41 @@ function postArrays(posts: readonly ProviderPost[]) {
   };
 }
 
+/** Sorted by the provider's id, so two syncs take the upsert's row locks in the same order. */
+function byExternalId(a: ProviderPost, b: ProviderPost): number {
+  return a.externalId < b.externalId ? -1 : a.externalId > b.externalId ? 1 : 0;
+}
+
 /**
- * Fetches the account's recent posts from its provider and stores them. The provider's answer is validated first; a malformed
- * answer stores nothing. The write and its audit row share one transaction.
+ * Fetches the account's recent posts from its provider and stores them. An attempt is claimed first (the minimum interval). A
+ * failed fetch or an invalid answer stores nothing and puts the account into backoff. A good sync writes its rows, its audit row
+ * (`analytics.synced`, once per real sync) and resets the backoff, in one transaction.
  */
 export async function syncAccount(workspaceId: string, accountId: string, actor: AnalyticsActor, now: Date = new Date()): Promise<SyncResult> {
   await assertWritable(workspaceId);
   const account = await loadAccount(workspaceId, accountId);
   if (account.status !== "active") throw new AnalyticsError("ANALYTICS_ACCOUNT_DISABLED", 409, "This analytics account is disabled.");
-  const provider = providerForAccount(account);
+
+  const claim = await claimSyncAttempt(workspaceId, accountId, now);
+  if (!claim.claimed) {
+    throw new AnalyticsError(SYNC_TOO_SOON_CODE, 429, "This account was synced too recently. Try again later.", claim.retryAfterSeconds);
+  }
 
   const until = startOfUtcDay(now);
   const since = addDays(until, -SYNC_WINDOW_DAYS);
-  let raw: unknown;
+  let posts: ProviderPost[];
+  let provider: PostAnalyticsProvider;
   try {
-    raw = await provider.fetchPosts({ accountId: account.external_account_id, since, until });
+    // A stored provider that is no longer available is a failure like any other: the account backs off.
+    provider = providerForAccount(account);
+    posts = await fetchWithTimeout(provider, { accountId: account.external_account_id, since, until });
   } catch (err) {
-    if (err instanceof AnalyticsProviderOutputError) throw err;
-    // The provider's own message is not repeated: it can carry text the owner never sent.
-    log.warn("analytics.provider_failed", { provider: provider.id, error: redactText(err instanceof Error ? err.message : String(err)).slice(0, 200) });
-    throw new AnalyticsError("ANALYTICS_PROVIDER_UNAVAILABLE", 502, "The analytics provider did not answer. Nothing was stored.");
+    const code = err instanceof AnalyticsError || err instanceof AnalyticsProviderOutputError ? err.code : PROVIDER_UNAVAILABLE_CODE;
+    await recordFailure(workspaceId, accountId, code, now);
+    throw err;
   }
-  const posts = parseProviderPosts(raw);
+  posts.sort(byExternalId);
   const arrays = postArrays(posts);
-  const syncedAt = now;
 
   return withTransaction(async (client: PoolClient) => {
     let inserted = 0;
@@ -325,7 +440,7 @@ export async function syncAccount(workspaceId: string, accountId: string, actor:
       const res = await client.query<{ inserted: boolean }>(UPSERT_POSTS, [
         workspaceId,
         accountId,
-        syncedAt.toISOString(),
+        now.toISOString(),
         arrays.externalIds,
         arrays.mediaTypes,
         arrays.publishedAt,
@@ -343,6 +458,11 @@ export async function syncAccount(workspaceId: string, accountId: string, actor:
       inserted = res.rows.filter((row) => row.inserted).length;
     }
     const updated = posts.length - inserted;
+    await client.query(
+      `UPDATE analytics_accounts SET last_sync_at = $3::timestamptz, consecutive_failures = 0, next_attempt_at = NULL
+       WHERE workspace_id = $1 AND id = $2;`,
+      [workspaceId, accountId, now.toISOString()]
+    );
     await ENGINE.recordAudit(
       workspaceId,
       null,
@@ -355,7 +475,7 @@ export async function syncAccount(workspaceId: string, accountId: string, actor:
       undefined,
       client
     );
-    return { accountId, posts: posts.length, inserted, updated, syncedAt: syncedAt.toISOString(), simulated: provider.isSimulated };
+    return { accountId, posts: posts.length, inserted, updated, syncedAt: now.toISOString(), simulated: provider.isSimulated };
   });
 }
 
@@ -448,10 +568,21 @@ export interface GenerateResult {
   created: boolean;
 }
 
+async function findReportRow(workspaceId: string, accountId: string | null, kind: string, start: Date, end: Date): Promise<ReportRow | null> {
+  const existing = await query<ReportRow>(
+    `SELECT ${REPORT_COLUMNS} FROM analytics_reports
+     WHERE workspace_id = $1 AND COALESCE(account_id, '') = $2 AND kind = $3
+       AND period_start = $4::date AND period_end = $5::date;`,
+    [workspaceId, accountId ?? "", kind, dayString(start), dayString(end)]
+  );
+  return existing.rows[0] ?? null;
+}
+
 /**
- * Writes the report for one period, once. The posts are read from storage (no provider call). The insert is `ON CONFLICT DO
- * NOTHING` on the period key; when nothing was inserted, the existing row is returned. The audit row is written only with the
- * insert, in the same transaction.
+ * Writes the report for one period, once. A period that already has its report returns that row. Otherwise the stored posts of
+ * the period are analysed; a period with no stored posts is refused (409 ANALYTICS_NO_DATA_YET) and nothing is written, so an
+ * empty report is never kept for the period. The insert is `ON CONFLICT DO NOTHING` on the period key; the audit row is written
+ * only with the insert, in the same transaction.
  */
 export async function generateReport(
   workspaceId: string,
@@ -465,6 +596,9 @@ export async function generateReport(
   const end = input.periodEnd;
   if (!(end.getTime() > start.getTime())) throw new AnalyticsError("INVALID_INPUT", 400, "periodEnd must be after periodStart");
   if (end.getTime() > startOfUtcDay(now).getTime()) throw new AnalyticsError("INVALID_INPUT", 400, "A period must end on or before today (UTC)");
+
+  const stored = await findReportRow(workspaceId, input.accountId, input.kind, start, end);
+  if (stored) return { report: toReportView(stored), created: false };
 
   let timeZone = "UTC";
   if (input.accountId !== null) {
@@ -481,12 +615,12 @@ export async function generateReport(
      ORDER BY p.published_at ASC, p.external_id ASC;`,
     [workspaceId, input.accountId, start.toISOString(), end.toISOString()]
   );
+  if (rows.rows.length === 0) {
+    throw new AnalyticsError(NO_DATA_CODE, 409, "No posts are stored for this period yet. Sync the account, then ask again.");
+  }
   const simulated = rows.rows.some((row) => row.is_simulated);
   // A report over all brands is read in UTC: each brand has its own zone, and one hour must mean one thing.
-  const findings = analysePosts(
-    rows.rows.map(rowToPost),
-    { timeZone: input.accountId === null ? "UTC" : timeZone, simulated }
-  );
+  const findings = analysePosts(rows.rows.map(rowToPost), { timeZone: input.accountId === null ? "UTC" : timeZone, simulated });
   const text = renderReportText(findings);
 
   const id = newId("rpt");
@@ -513,18 +647,10 @@ export async function generateReport(
     );
     return true;
   });
-  if (written) {
-    return { report: await loadReportView(workspaceId, id), created: true };
-  }
-  const existing = await query<ReportRow>(
-    `SELECT ${REPORT_COLUMNS} FROM analytics_reports
-     WHERE workspace_id = $1 AND COALESCE(account_id, '') = $2 AND kind = $3
-       AND period_start = $4::date AND period_end = $5::date;`,
-    [workspaceId, input.accountId ?? "", input.kind, dayString(start), dayString(end)]
-  );
-  const row = existing.rows[0];
-  if (!row) throw new Error("The report for this period is not available; retry later.");
-  return { report: toReportView(row), created: false };
+  if (written) return { report: await loadReportView(workspaceId, id), created: true };
+  const existing = await findReportRow(workspaceId, input.accountId, input.kind, start, end);
+  if (!existing) throw new Error("The report for this period is not available; retry later.");
+  return { report: toReportView(existing), created: false };
 }
 
 async function loadReportView(workspaceId: string, reportId: string): Promise<AnalyticsReportView> {
@@ -561,30 +687,42 @@ export interface NoticeOutcome {
   recipients: number;
   /** Sent by this call. */
   sent: number;
-  /** A send that started before and has no recorded outcome. It is not sent again; the dispatcher audits it (ADR 0074). */
+  /** A send that started and has no recorded outcome. Not sent again; audited as `notification.in_doubt`. */
   inDoubt: number;
   skipped: number;
   /** Already sent to this recipient by an earlier call: nothing was sent now. */
   alreadySent: number;
-  /** The provider refused, or the call failed before it was recorded. The ledger holds the row as failed. */
+  /** The provider refused, or the call failed before it was recorded. Audited as `notification.failed`; not sent again. */
   failed: number;
+  /** A started or failed send recorded by an earlier call: not sent again, and not audited again. */
+  alreadyRecorded: number;
 }
 
 /**
  * Tells the owner that a report is ready. Each recipient is told at most once, through the effects ledger: a recipient whose row
- * is completed is not contacted again. A row that started or failed is not sent again either; the dispatcher reports it in doubt
- * and audits it. The message names no finding. It goes out through the same owner-notice path as the approval notices, so email
- * delivery off or simulated, and demo refusal, apply as they do there (ADR 0074).
+ * is completed is not contacted again, and a row that started or failed is not sent again either. A failure or an in-doubt send is
+ * audited at the first sight (the dispatcher audits an in-doubt result it sees itself; a thrown failure is audited here). When every
+ * recipient has been dealt with, the report is marked done, so the weekly job stops looking at it.
+ *
+ * The message names no finding and no brand. For simulated data it says "(sample data)". The owner-notice path is the one approval
+ * notices use, so email delivery off or simulated, and demo refusal, apply as they do there (ADR 0074).
  */
 export async function deliverReportNotice(workspaceId: string, reportId: string): Promise<NoticeOutcome> {
-  await loadReportView(workspaceId, reportId);
+  const report = await loadReportView(workspaceId, reportId);
   const recipients = await resolveOwnerRecipients(workspaceId);
-  const outcome: NoticeOutcome = { recipients: recipients.length, sent: 0, inDoubt: 0, skipped: 0, alreadySent: 0, failed: 0 };
+  const outcome: NoticeOutcome = { recipients: recipients.length, sent: 0, inDoubt: 0, skipped: 0, alreadySent: 0, failed: 0, alreadyRecorded: 0 };
+  const label = report.simulated ? "Your report is ready (sample data)." : "Your report is ready.";
   for (const recipient of recipients) {
     const key = ownerNoticeIdempotencyKey(workspaceId, "analytics_report", reportId, recipient.recipientId);
-    const existing = await query<{ status: string }>(`SELECT status FROM effects WHERE idempotency_key = $1;`, [key]);
-    if (existing.rows[0]?.status === "completed") {
+    const existing = await query<{ id: string; status: string }>(`SELECT id, status FROM effects WHERE idempotency_key = $1;`, [key]);
+    const status = existing.rows[0]?.status;
+    if (status === "completed") {
       outcome.alreadySent += 1;
+      continue;
+    }
+    if (status === "started" || status === "failed") {
+      // Already recorded by an earlier call: the send is not repeated, and the audit row written then stands.
+      outcome.alreadyRecorded += 1;
       continue;
     }
     try {
@@ -597,18 +735,37 @@ export async function deliverReportNotice(workspaceId: string, reportId: string)
           workspaceId,
           channel: recipient.channel,
           recipient: recipient.recipient,
-          title: "Your report is ready",
-          message: "Your report is ready. Open Bind to read it.",
+          title: label,
+          message: `${label} Open Bind to read it.`,
+          metadata: { simulated: report.simulated },
         },
       });
       if (result.sent) outcome.sent += 1;
       else if (result.reason === "in_doubt") outcome.inDoubt += 1;
       else outcome.skipped += 1;
     } catch (err) {
-      outcome.failed += 1;
-      log.warn("analytics.notice_failed", { workspaceId, reportId, error: redactText(err instanceof Error ? err.message : String(err)).slice(0, 200) });
+      // The ledger says which it was: a row left `started` is in doubt (the send may have happened); a row marked `failed` is a refusal.
+      const after = await query<{ id: string; status: string }>(`SELECT id, status FROM effects WHERE idempotency_key = $1;`, [key]);
+      const row = after.rows[0];
+      const inDoubt = row?.status === "started";
+      const evidence: Record<string, unknown> = { kind: "analytics_report", refId: reportId };
+      if (row) evidence.effectId = row.id;
+      await ENGINE.recordAudit(
+        workspaceId,
+        null,
+        "system",
+        SYSTEM_ACTOR.id,
+        EffectClass.EXTERNAL_REQUEST,
+        inDoubt ? "notification.in_doubt" : "notification.failed",
+        PolicyDecision.ALLOW,
+        evidence
+      );
+      if (inDoubt) outcome.inDoubt += 1;
+      else outcome.failed += 1;
+      log.warn("analytics.notice_not_sent", { workspaceId, reportId, outcome: inDoubt ? "in_doubt" : "failed", reason: err instanceof Error ? err.name : "unknown" });
     }
   }
+  await query(`UPDATE analytics_reports SET notice_done = TRUE WHERE workspace_id = $1 AND id = $2;`, [workspaceId, reportId]);
   return outcome;
 }
 
@@ -617,10 +774,17 @@ export async function deliverReportNotice(workspaceId: string, reportId: string)
  * ------------------------------------------------------------------------------------------------------------------------- */
 
 export interface WeeklyReportsResult {
+  /** Accounts whose sync was stored in this pass. */
   synced: number;
+  /** Accounts whose sync was skipped because it was attempted within the minimum interval. */
+  skippedRecentSync: number;
   reports: number;
   notices: number;
+  noticesInDoubt: number;
+  /** Accounts or notices that failed in this pass (each one is audited or recorded, and backs off or is not retried). */
   failed: number;
+  /** Accounts that had no posts yet for the period; looked at again later, and not a failure. */
+  deferred: number;
   errors: string[];
 }
 
@@ -629,78 +793,98 @@ export function templateIdsWithAnalytics(): string[] {
   return listTemplates().filter(templateHasAnalytics).map((t) => t.templateId);
 }
 
+function errorCode(err: unknown): string | null {
+  return err instanceof AnalyticsError || err instanceof AnalyticsProviderOutputError ? err.code : null;
+}
+
 /**
- * One pass of the weekly job. The period is the last full ISO week (Monday to Monday, UTC). Step one syncs and writes the report
- * for each active account of a real analytics workspace that has none for that week. Step two tells the owner about each weekly
- * report of that week that no recipient was told about yet. Both steps are bounded by `batchSize`, and each account or report
- * is isolated: one failure is counted and does not stop the rest. Replaying a pass does nothing that was already done.
+ * One pass of the weekly job. The period is the last full ISO week (Monday to Monday, UTC).
+ *
+ * Step one takes the active accounts of real analytics workspaces that have no weekly report for that week and are not in backoff,
+ * oldest-due first, at most `batchSize` of them. For each it syncs (unless the account was attempted within the minimum interval) and
+ * writes the week's report. A failing account is recorded and backs off, so the next pass serves the others. Step two tells the owner
+ * about each weekly report of that week that is not yet done. Both steps stop starting new work after `deadlineMs`.
+ * A replay of a pass does nothing that was already done.
  */
-export async function runWeeklyAnalyticsReports(opts: { now: Date; batchSize: number }): Promise<WeeklyReportsResult> {
-  const result: WeeklyReportsResult = { synced: 0, reports: 0, notices: 0, failed: 0, errors: [] };
+export async function runWeeklyAnalyticsReports(opts: { now: Date; batchSize: number; deadlineMs?: number }): Promise<WeeklyReportsResult> {
+  const result: WeeklyReportsResult = { synced: 0, skippedRecentSync: 0, reports: 0, notices: 0, noticesInDoubt: 0, failed: 0, deferred: 0, errors: [] };
   const templateIds = templateIdsWithAnalytics();
   if (templateIds.length === 0) return result;
   const periodEnd = startOfIsoWeek(opts.now);
   const periodStart = addDays(periodEnd, -7);
-  const fail = (err: unknown) => {
-    result.failed += 1;
-    result.errors.push(redactText(err instanceof Error ? err.message : String(err)).slice(0, 200));
-  };
+  const startedAt = Date.now();
+  const outOfTime = () => opts.deadlineMs !== undefined && Date.now() - startedAt > opts.deadlineMs;
+  const note = (err: unknown) => result.errors.push(`${errorCode(err) ?? "ERROR"}`);
 
   const due = await query<{ workspace_id: string; id: string }>(
     `SELECT a.workspace_id, a.id
      FROM analytics_accounts a
      JOIN workspaces w ON w.id = a.workspace_id
      WHERE a.status = 'active' AND NOT w.is_demo AND w.template_id = ANY($1::text[])
+       AND (a.next_attempt_at IS NULL OR a.next_attempt_at <= $5::timestamptz)
        AND NOT EXISTS (
          SELECT 1 FROM analytics_reports r
          WHERE r.workspace_id = a.workspace_id AND r.account_id = a.id AND r.kind = 'weekly'
            AND r.period_start = $2::date AND r.period_end = $3::date)
-     ORDER BY a.created_at ASC, a.id ASC
+     ORDER BY a.next_attempt_at ASC NULLS FIRST, a.created_at ASC, a.id ASC
      LIMIT $4;`,
-    [templateIds, dayString(periodStart), dayString(periodEnd), opts.batchSize]
+    [templateIds, dayString(periodStart), dayString(periodEnd), opts.batchSize, opts.now.toISOString()]
   );
   for (const row of due.rows) {
+    if (outOfTime()) break;
+    let stage: "sync" | "report" | "notice" = "sync";
     try {
-      await syncAccount(row.workspace_id, row.id, SYSTEM_ACTOR, opts.now);
-      result.synced += 1;
-      const generated = await generateReport(
-        row.workspace_id,
-        { accountId: row.id, kind: "weekly", periodStart, periodEnd },
-        SYSTEM_ACTOR,
-        opts.now
-      );
+      try {
+        await syncAccount(row.workspace_id, row.id, SYSTEM_ACTOR, opts.now);
+        result.synced += 1;
+      } catch (err) {
+        // A sync refused for the interval is not a failure: the report is written from the posts already stored.
+        if (errorCode(err) !== SYNC_TOO_SOON_CODE) throw err;
+        result.skippedRecentSync += 1;
+      }
+      stage = "report";
+      const generated = await generateReport(row.workspace_id, { accountId: row.id, kind: "weekly", periodStart, periodEnd }, SYSTEM_ACTOR, opts.now);
       if (generated.created) result.reports += 1;
+      stage = "notice";
       const notice = await deliverReportNotice(row.workspace_id, generated.report.id);
       result.notices += notice.sent;
+      result.noticesInDoubt += notice.inDoubt;
+      result.failed += notice.failed;
     } catch (err) {
-      fail(err);
+      if (errorCode(err) === NO_DATA_CODE) {
+        result.deferred += 1;
+        await deferAccount(row.workspace_id, row.id, opts.now, NO_DATA_DEFER_SECONDS);
+        continue;
+      }
+      result.failed += 1;
+      note(err);
+      // A sync failure was recorded by syncAccount. A failure after it is recorded here, so the account backs off.
+      if (stage !== "sync") await recordFailure(row.workspace_id, row.id, errorCode(err) ?? "ERROR", opts.now);
     }
   }
 
-  // Reports of this week whose primary recipient has no ledger row yet. A row is a send, a failure or an in-doubt send, and
-  // none of those is tried again. A report whose workspace has no owner contact is not listed.
+  // Weekly reports of this week whose owners have not all been dealt with. Oldest first, bounded by the same batch size.
   const pending = await query<{ workspace_id: string; id: string }>(
     `SELECT r.workspace_id, r.id
      FROM analytics_reports r
      JOIN workspaces w ON w.id = r.workspace_id
      WHERE r.kind = 'weekly' AND r.period_start = $1::date AND r.period_end = $2::date
        AND NOT w.is_demo AND w.template_id = ANY($3::text[])
-       AND NOT EXISTS (SELECT 1 FROM effects e WHERE e.idempotency_key = r.workspace_id || ':notify:analytics_report:' || r.id)
-       AND (
-         EXISTS (SELECT 1 FROM owner_emails oe WHERE oe.workspace_id = r.workspace_id AND oe.verified_at IS NOT NULL AND oe.removed_at IS NULL)
-         OR EXISTS (SELECT 1 FROM surface_bindings sb WHERE sb.workspace_id = r.workspace_id AND sb.actor_role = 'owner'
-                    AND sb.surface IN ('whatsapp', 'telegram', 'email'))
-       )
+       AND r.notice_done = FALSE
      ORDER BY r.created_at ASC, r.id ASC
      LIMIT $4;`,
     [dayString(periodStart), dayString(periodEnd), templateIds, opts.batchSize]
   );
   for (const row of pending.rows) {
+    if (outOfTime()) break;
     try {
       const notice = await deliverReportNotice(row.workspace_id, row.id);
       result.notices += notice.sent;
+      result.noticesInDoubt += notice.inDoubt;
+      result.failed += notice.failed;
     } catch (err) {
-      fail(err);
+      result.failed += 1;
+      note(err);
     }
   }
   return result;

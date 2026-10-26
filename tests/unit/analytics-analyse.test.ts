@@ -312,3 +312,48 @@ describe("the report text", () => {
     expect(MIN_GROUP_POSTS).toBe(5);
   });
 });
+
+describe("engagement rates are compared at the precision they are printed (review N1)", () => {
+  it("5.46% against 5.2% is a difference, because the text shows 5.5% against 5.2%; unrounded it would read as about the same", () => {
+    // Reels: reach 5,000 and 273 engagements per post, a rate of 0.0546. Images: reach 500 and 26 engagements, a rate of 0.052.
+    const reels = [0, 1, 2, 3, 4].map((i) => post({ id: `e${i}`, at: `2026-08-0${i + 1}T12:00:00Z`, type: "reel", reach: 5000, likes: 273 }));
+    const images = [0, 1, 2, 3, 4].map((i) => post({ id: `f${i}`, at: `2026-08-1${i}T12:00:00Z`, type: "image", reach: 500, likes: 26 }));
+    const text = renderReportText(analysePosts([...reels, ...images], { timeZone: "UTC" }));
+    expect(text).toContain("Reels and videos did better than images on engagement rate (5.5% against 5.2%).");
+  });
+});
+
+describe("rounding and materiality (review N1, N2)", () => {
+  it("compares the values the text prints: a median of 10.5 against 11 is about the same, never 'did worse (11 against 11)'", () => {
+    const reels = [10, 10, 10, 11, 11, 11].map((reach, i) => post({ id: `m${i}`, at: `2026-08-0${i + 1}T12:00:00Z`, type: "reel", reach }));
+    const images = [11, 11, 11, 11, 11].map((reach, i) => post({ id: `i${i}`, at: `2026-08-1${i}T12:00:00Z`, type: "image", reach }));
+    const f = analysePosts([...reels, ...images], { timeZone: "UTC" });
+    const text = renderReportText(f);
+    expect(text).toContain("Reels and videos had about the same median reach as images (10.5 against 11).");
+    expect(text).not.toContain("(11 against 11)");
+    expect(text).not.toMatch(/did worse than images on median reach/);
+  });
+
+  it("does not state a difference under 5 percent: 3,000 against 2,900 is about the same", () => {
+    const reels = [0, 1, 2, 3, 4].map((i) => post({ id: `r${i}`, at: `2026-08-0${i + 1}T12:00:00Z`, type: "reel", reach: 3000 }));
+    const images = [0, 1, 2, 3, 4].map((i) => post({ id: `g${i}`, at: `2026-08-1${i}T12:00:00Z`, type: "image", reach: 2900 }));
+    const text = renderReportText(analysePosts([...reels, ...images], { timeZone: "UTC" }));
+    expect(text).toContain("Reels and videos had about the same median reach as images (3,000 against 2,900).");
+  });
+
+  it("states a difference of 5 percent or more", () => {
+    const reels = [0, 1, 2, 3, 4].map((i) => post({ id: `r${i}`, at: `2026-08-0${i + 1}T12:00:00Z`, type: "reel", reach: 3000 }));
+    const images = [0, 1, 2, 3, 4].map((i) => post({ id: `g${i}`, at: `2026-08-1${i}T12:00:00Z`, type: "image", reach: 2800 }));
+    const text = renderReportText(analysePosts([...reels, ...images], { timeZone: "UTC" }));
+    expect(text).toContain("Reels and videos did better than images on median reach (3,000 against 2,800).");
+  });
+
+  it("does not call two hours different when their medians are within 5 percent", () => {
+    const posts: ProviderPost[] = [];
+    for (let i = 0; i < 5; i += 1) posts.push(post({ id: `h${i}`, at: `2026-04-0${i + 1}T09:00:00Z`, type: "image", reach: 1000 }));
+    for (let i = 0; i < 5; i += 1) posts.push(post({ id: `k${i}`, at: `2026-04-0${i + 1}T10:00:00Z`, type: "image", reach: 1030 }));
+    const f = analysePosts(posts, { timeZone: "UTC" });
+    expect(f.hours.sameMedianReach).toBe(true);
+    expect(renderReportText(f)).toContain("No hour of the day stood out in UTC");
+  });
+});

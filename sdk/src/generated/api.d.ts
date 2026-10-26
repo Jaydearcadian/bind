@@ -4692,7 +4692,10 @@ export interface operations {
     createAnalyticsAccount: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
             path: {
                 id: string;
             };
@@ -4715,6 +4718,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                poll?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
                         brandLabel: string;
                         /** Format: date-time */
                         createdAt: string;
@@ -4930,7 +4970,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            /** @description This account was attempted within the minimum interval (ANALYTICS_SYNC_TOO_SOON). Retry-After is set. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -5282,6 +5322,15 @@ export interface operations {
             };
             /** @description No such analytics account in this workspace (ANALYTICS_ACCOUNT_NOT_FOUND), when an accountId is given. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The period has no stored posts yet (ANALYTICS_NO_DATA_YET). Sync the account, then ask again. Nothing is stored for the period. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -5532,6 +5532,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -5573,6 +5583,120 @@
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "poll": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
                     "brandLabel": {
                       "type": "string"
                     },
@@ -5969,7 +6093,7 @@
                 }
               }
             },
-            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+            "description": "This account was attempted within the minimum interval (ANALYTICS_SYNC_TOO_SOON). Retry-After is set."
           },
           "500": {
             "content": {
@@ -6767,6 +6891,16 @@
               }
             },
             "description": "No such analytics account in this workspace (ANALYTICS_ACCOUNT_NOT_FOUND), when an accountId is given."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The period has no stored posts yet (ANALYTICS_NO_DATA_YET). Sync the account, then ask again. Nothing is stored for the period."
           },
           "413": {
             "content": {

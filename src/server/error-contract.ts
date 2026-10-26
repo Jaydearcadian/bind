@@ -79,6 +79,8 @@ export const ERROR_CODES: Readonly<Record<string, ErrorShape>> = {
   ANALYTICS_ACCOUNT_DISABLED: { category: "conflict", retryable: false },
   ANALYTICS_ACCOUNT_LIMIT: { category: "conflict", retryable: false },
   ANALYTICS_DEMO_REFUSED: { category: "policy", retryable: false },
+  ANALYTICS_SYNC_TOO_SOON: { category: "rate_limited", retryable: true },
+  ANALYTICS_NO_DATA_YET: { category: "conflict", retryable: true },
   RATE_LIMITED: { category: "rate_limited", retryable: true },
   TOO_MANY_STREAMS: { category: "rate_limited", retryable: true },
   UNAVAILABLE: { category: "unavailable", retryable: true },

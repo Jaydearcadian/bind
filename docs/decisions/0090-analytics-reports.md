@@ -46,24 +46,29 @@ owner's notice are built and tested against a simulated provider. A real adapter
   list and the post ranking.
 - **Engagement rate** is (likes + comments + saves + shares) / reach. A post with no reach has no rate and is left out of every rate.
   No division by zero is possible.
-- **Ties** are broken by a fixed order: the hour (lower first) for hours, the provider's post id for posts. When every eligible hour
-  has the same median reach, the text says no hour stood out.
+- **Materiality.** Two values are "about the same" unless they differ by at least 5% of the larger one (`MATERIAL_RELATIVE_DIFFERENCE`).
+  The comparison uses the values the text prints: reach medians to one decimal place, rates to 0.1%. So the text never says "did worse"
+  for two numbers it prints as equal, and a five-post difference of a fraction of a percent is not reported as a finding.
+- **Ranking order.** Every post is placed once, in one fixed order: engagement rate descending, then the provider's post id ascending.
+  The top three are the head of that order. The bottom three are the tail of the same order, read from the end, so the two lists never
+  share a post. Ties are therefore broken by id, and the bottom list shows the highest id first among tied posts.
 - **Hours** are read in the account's time zone through `Intl` (`h23`). The tests cover a spring and an autumn daylight-saving change
-  in New York, and midnight as hour 0.
-- **Wording.** The text says "did better" or "did worse". It never gives a cause ("because", "due to" and similar are absent, and a
-  test checks it).
+  in New York, and midnight as hour 0. Ties between hours are broken by the lower hour first.
+- **Wording.** The text says "did better" or "did worse" (or "about the same"). It never gives a cause ("because", "due to" and similar
+  are absent, and a test checks it).
 - The findings are typed (`Findings`). `renderReportText` makes the plain-English text from them.
 
 ### 4. Storage: idempotent sync, one report per period
 - `analytics_accounts`, `analytics_posts` and `analytics_reports` (`src/db/schema.sql`, additive). Every table carries
   `workspace_id`; every foreign key to a workspace row is composite on `(workspace_id, id)`.
-- **A sync is an upsert** keyed by `(workspace_id, account_id, external_id)`, in one statement with `unnest`. The count of posts
-  inserted and updated is returned, and a second sync of the same window inserts nothing. The window is the last 90 UTC days,
-  ending at the start of the sync's day, so the same day gives the same window.
+- **A sync is an upsert** keyed by `(workspace_id, account_id, external_id)`, in one statement with `unnest`. The posts are sorted by
+  the provider's id first, so two syncs take the row locks in the same order. The count of posts inserted and updated is returned, and
+  a second sync of the same window inserts nothing. The window is the last 90 UTC days, ending at the start of the sync's day.
 - **A report is written at most once per period.** The key is `(workspace_id, account or all brands, kind, period)`. The insert is
   `ON CONFLICT DO NOTHING`; when nothing is inserted, the existing row is returned. The unique index uses `COALESCE(account_id, '')`,
-  because two NULLs are never equal in a plain unique index, and an all-brands report would otherwise be written twice. Ten concurrent
-  requests write one report and one audit row (tested).
+  because two NULLs are never equal in a plain unique index, and an all-brands report would otherwise be written twice.
+- **A period with no stored posts is refused, not stored.** `409 ANALYTICS_NO_DATA_YET`. Without this, a report asked for before the
+  first sync would keep an empty result for its period, and the owner could not correct it.
 - Periods are UTC days: `period_start` inclusive, `period_end` exclusive. A period is 1 to 92 days and ends by today.
 - The weekly report covers the last full ISO week (Monday to Monday, UTC).
 
@@ -71,44 +76,73 @@ owner's notice are built and tested against a simulated provider. A real adapter
 - A report is ready for the owner through the existing owner-notice path (`sendOwnerNotification`, ADR 0074). Its kind is
   `analytics_report`, its operation is `notifications.send_summary` (an external request), and its effects-ledger key is
   `${workspaceId}:notify:analytics_report:${reportId}`, with the recipient suffix ADR 0074 uses for an additional owner address.
-- The text is "Your report is ready." and a link to the app's front page. It names no finding, no figure, no account and no brand.
-  The closing line says that reading it changes nothing. The WhatsApp or Telegram message says the same.
+- The text is "Your report is ready." and a link to the app's front page. For simulated data it is "Your report is ready (sample
+  data)." The notice names no finding, no figure, no account and no brand. The closing line says that reading it changes nothing.
+  The WhatsApp or Telegram message says the same.
 - **At most once per (workspace, report, recipient).** A recipient whose ledger row is `completed` is not contacted again. A row that
-  is `started` or `failed` is not sent again: the dispatcher reports it in doubt, audits it as `notification.in_doubt`, and sends
-  nothing (ADR 0017). Replay after a crash before the notice sends it once; replay after a crash during the send does not send it
-  again (both tested with the fake provider and the fault injection that the effects ledger already has).
-- Email delivery off, or simulated, and demo refusal behave as the other owner notices do: the dispatcher and the recipient
-  resolver are unchanged.
+  is `started` or `failed` is not sent again either, and is not audited again.
+- **Failures are recorded at first sight.** Every notice the worker meets that is not sent is counted and audited in the same pass:
+  a row left `started` (the send may have reached the provider) is `notification.in_doubt`; a row marked `failed` (the provider
+  refused) is `notification.failed`. The worker's tick report counts them (`failed`, `noticesInDoubt`).
+- **Each report is done once.** `analytics_reports.notice_done` is set when every recipient has been dealt with: sent, already sent,
+  failed, in doubt, or none to tell. The weekly job lists only the reports that are not done. A workspace with no owner contact is done
+  at once, so it never holds a batch slot. A crash between two recipients leaves the report not done, and the next pass sends only the
+  recipients that have no row yet. Recipients with a row are never sent again.
+- Email delivery off, or simulated, and demo refusal behave as the other owner notices do: the dispatcher and the recipient resolver
+  are unchanged.
 
 ### 6. The weekly job (opt-in, worker step 6)
-- Off unless `BIND_ANALYTICS_REPORTS=true` (`docs/RUNBOOK.md`, section 6.3). Any other value is ignored, like the restock sweep.
-- Each pass syncs each active account of a workspace whose template declares an analytics data source, if that account has no weekly
-  report for the last full ISO week, then writes the report. A second step tells the owner about each weekly report of that week
-  whose primary recipient has no ledger row yet. Both steps are bounded by the worker's batch size (25), and each account or notice
-  is isolated: one failure is counted in `analyticsReports.failed` and the others still run.
-- Demo workspaces are not swept. A disabled account is not synced.
-- Replaying a pass does nothing that was already done (tested).
+- Off unless `BIND_ANALYTICS_REPORTS=true` (`docs/RUNBOOK.md`, section 6.3). The entry point builds the worker's options with
+  `workerOptionsFromEnv` (`src/workers/options.ts`), so the switch is one tested function. Any other value is ignored.
+- Each pass takes the active accounts of workspaces whose template has an analytics data source, that have no weekly report for the
+  last full ISO week and are not in backoff, oldest-due first, at most 25. For each it syncs (unless the account was attempted within
+  the minimum interval) and writes the week's report, then delivers the notice.
+- **Backoff.** A failed sync or report puts the account into backoff: 15 minutes after the first failure, doubling, capped at 12 hours.
+  A provider that is not available or that answers invalid data waits the full 12 hours at once. A successful sync resets the backoff.
+  Broken accounts therefore cannot fill every batch: they are retried later, and the healthy accounts are served first (tested with 30
+  broken accounts older than one healthy one).
+- **Minimum interval.** Each sync attempt, manual or by the worker, claims the account with one conditional update: it succeeds only
+  when the previous attempt is at least `BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS` old (default 5 minutes). The API answers a refused manual
+  sync with `429 ANALYTICS_SYNC_TOO_SOON` and `Retry-After`. The worker treats a refused sync as "already synced", and writes the report
+  from the posts stored.
+- **Timeout.** A provider call has 20 seconds, and the provider is sent an abort signal. A provider that does not answer in time is
+  abandoned with `502 ANALYTICS_PROVIDER_UNAVAILABLE`, nothing is stored, and the account backs off. The pass also starts no new
+  account or notice after 120 seconds (`ANALYTICS_PASS_DEADLINE_MS`), so one slow provider cannot hold the tick.
+- **Audit once per real sync.** `analytics.synced` is written only with a successful sync's rows, in the same transaction. A report
+  that fails after a good sync does not cause another sync until the backoff and the interval allow one.
+- A pass does nothing that was already done. Demo workspaces and disabled accounts are not selected at all (the query excludes them),
+  so they are not attempted and cannot fail.
 
 ### 7. Refusals and tenancy
-- A workspace whose template has no analytics data source gets `400 TEMPLATE_HAS_NO_ANALYTICS` on every analytics route, the same
-  way the stock routes refuse a template with no stock (ADR 0084). A workspace that names no template (a blank workspace) is refused
-  too: the module check fails closed.
+- A workspace whose template has no analytics data source gets `400 TEMPLATE_HAS_NO_ANALYTICS` on every write, the same way the stock
+  routes refuse a template with no stock (ADR 0084). The reads answer `[]` (accounts and reports) and `404` (one report), as the stock
+  reads answer `[]`. A workspace that names no template is refused too: the module check fails closed.
 - Writes are owner only (staff get 403). A demo workspace refuses every write with `403 ANALYTICS_DEMO_REFUSED`; its reads still work.
-- Every query is scoped to the workspace in the path. Another workspace's account or report id is `404`. An account of one workspace
-  named in another workspace's report request is `404 ANALYTICS_ACCOUNT_NOT_FOUND`.
-- A workspace holds at most 10 analytics accounts (`409 ANALYTICS_ACCOUNT_LIMIT`).
+- Every query is scoped to the workspace in the path. Another workspace's account or report id is `404`.
+- **Connecting accounts is bounded under concurrency.** The account count is taken under the workspace's row lock (`SELECT ... FOR UPDATE`
+  on the workspace row), so twenty concurrent connects give exactly ten accounts and ten `409 ANALYTICS_ACCOUNT_LIMIT`.
+- A connect request with an `Idempotency-Key` is replayed: the same key and body give the first account, not a second one (tested).
 
 ### 8. Audit, events and the evidence allowlist
-- Three audit actions: `analytics.account_created`, `analytics.synced` and `analytics.report_generated`. They are member-visible
-  (staff see them, as the spec's table requires), and their evidence holds ids, the provider's name, `status`, and counts only.
-- The event evidence allowlist gains three count keys: `posts`, `inserted` and `updated` (`src/api/events.ts`). They are numbers. The
-  allowlist's rule (no free text) is unchanged; `docs/EVENTS.md` names the new keys.
+- Three audit actions for the feature: `analytics.account_created`, `analytics.synced` and `analytics.report_generated` (member-visible).
+  Their evidence holds ids, the provider's name, `status`, and counts only. Two notice actions are reused: `notification.in_doubt` and
+  `notification.failed`, with the kind, the report id and the effect id.
+- The event evidence allowlist gains three count keys: `posts`, `inserted` and `updated`. **These keys carry numbers only**: a string
+  or a list under one of them is dropped (`src/api/events.ts`, tested). The rule that no free text leaves the server is unchanged.
 - The sync audit row is written in the same transaction as the upsert.
 
 ### 9. API and MCP
-- Six routes (`src/api/registry.ts`, `src/server/app.ts`): `GET` and `POST` accounts, `POST` sync (owner, `Idempotency-Key`, added to
-  `IDEMPOTENT_ROUTES`), `GET` reports and report, and `POST` reports (owner, `kind: "on_demand"` only, idempotent per period). Every
-  route is contract-tested with a sample body where its preconditions are safe, so the contract sweep needs no raised cap.
+- Six routes (`src/api/registry.ts`, `src/server/app.ts`): `GET` and `POST` accounts, `POST` sync (owner, `Idempotency-Key`), `GET`
+  reports and report, and `POST` reports (owner, `kind: "on_demand"` only, idempotent per period).
+- **Contract coverage, as built.** Four of the six routes are `contractTested: false`: the account creation, the sync, the report
+  creation and the report by id. The shared contract fixture is a kitchen workspace, which has no analytics module, so these routes
+  cannot succeed there. Their reasons are recorded in the registry. Their response schemas are checked instead by
+  `tests/integration/analytics.test.ts`, which parses real responses with the registry's schemas. The excluded-GET list in
+  `tests/integration/api-contract.test.ts` gained the report-by-id route, and `MAX_NOT_CONTRACT_TESTED` rose from 13 to 17 for the four
+  routes (ADR 0052 and 0074 set the same kind of cap for their routes). The two read routes are contract-tested on the kitchen fixture:
+  they answer `[]`.
+- Idempotency-Key: the sync and the account creation are in `IDEMPOTENT_ROUTES`. The idempotency test names both as keyed for a reason
+  other than economic (a provider call, and a row per call). Neither is economic or irreversible.
 - The exposure classification (`docs/ecosystem/exposure.json`) is `preview` for all six. The sync is `external_request`; the account
   creation is `owner_configuration`; the report write is `operational`.
 - Two read-only MCP tools: `list_analytics_reports` and `get_analytics_report`. Both are `read`. Neither writes an audit row (tested),
@@ -118,7 +152,7 @@ owner's notice are built and tested against a simulated provider. A real adapter
 - New codes in `src/server/error-contract.ts` and `docs/ecosystem/spec/error-catalogue.json`: `TEMPLATE_HAS_NO_ANALYTICS`,
   `ANALYTICS_PROVIDER_NOT_AVAILABLE`, `ANALYTICS_PROVIDER_OUTPUT_INVALID` (502), `ANALYTICS_PROVIDER_UNAVAILABLE` (502),
   `ANALYTICS_ACCOUNT_NOT_FOUND`, `ANALYTICS_REPORT_NOT_FOUND`, `ANALYTICS_ACCOUNT_DISABLED`, `ANALYTICS_ACCOUNT_LIMIT`,
-  `ANALYTICS_DEMO_REFUSED`.
+  `ANALYTICS_DEMO_REFUSED`, `ANALYTICS_SYNC_TOO_SOON` (429, with `Retry-After`) and `ANALYTICS_NO_DATA_YET` (409).
 
 ### 11. The template
 - `social-v1` now names its real ids: data source `post_analytics` (kind `post_analytics`, read only, labelled simulated until a
@@ -131,9 +165,16 @@ owner's notice are built and tested against a simulated provider. A real adapter
 ### 12. Time zone: per account, because the workspace has none
 - The brief asks for the workspace time zone. No workspace has one today. Adding one to `workspaces` would change a core table and its
   seeding for one feature. The zone is stored on the analytics account (`time_zone`, default `UTC`, an IANA name, checked by Intl),
-  and a report over one account reads its hours in that zone.
+  and a report over one account reads its hours in that zone. This is tested end to end: a New York account's report reports
+  `America/New_York`.
 - An all-brands report pools the accounts' posts and reads hours in UTC: one hour has to mean one thing across brands.
 - This is a reversible choice. A workspace-level zone can replace the account column later, with the report code unchanged.
+
+### 13. Test seams
+- `setAnalyticsProviderForTests` replaces the provider for chosen accounts, and sets the sync timeout. It works only when `NODE_ENV` is
+  `test`, and production code cannot arm it. Tests use it to make a provider hang or refuse, and to check the backoff sequence.
+- `BIND_ANALYTICS_MIN_SYNC_INTERVAL_MS` is a configuration value that the analytics integration test sets to zero (no throttle) for
+  its repeated syncs, and to 5 minutes for the throttle test. The vitest configuration is not changed.
 
 ## What a real Meta adapter will need (not built; to be verified against Meta's current documentation)
 This slice makes no call to Meta and asserts no Meta API detail. Before a real adapter is built and reviewed, each of the following
@@ -151,18 +192,14 @@ must be checked against Meta's current documentation, with the date checked:
 Until then, every report says it is simulated.
 
 ## Known limitations (recorded, not handled in this slice)
-- **Several owner addresses and a crash between two of them.** The weekly job's second step decides "already told" from the primary
-  recipient's ledger row. If the process dies after the first recipient is told and before a later one, the later recipients are not
-  told in a later pass. The report is in the app either way. The on-demand route sends no notice.
-- **A workspace with no owner contact.** Its weekly reports are not listed by the second step, so they are not revisited. The report is
-  written and readable. No notice is recorded, which is correct.
-- **The weekly job retries a failing account on every tick** (every 15 seconds), counting each failure. It does not back off. A broken
-  account therefore produces a bounded but repeated error count until it is fixed or disabled. A backoff is the next step if this
-  shows up in the metrics.
-- **The all-brands report pools the posts of different brands,** so its medians mix brands. It is for an overview, not for comparing
-  brands. The report says nothing about which brand a post belongs to.
-- **A report is not updated when a later sync brings new posts for its period.** The period is fixed when the report is written, as
-  the brief asks. A correction is a new period, not a rewrite.
+- **A crash in the middle of one notice send.** If the process dies while the provider call is in flight, the ledger row stays
+  `started`. The next pass does not resend it and does not audit it either (the audit is written by the pass that saw the failure). The
+  owner sees the report in the app. This is the at-most-once rule (ADR 0017), not a gap in the audit.
+- **Reports are fixed when written.** A later sync that brings new posts for an already-written period does not update that report. A
+  correction is a new period, not a rewrite.
+- **The all-brands report pools the posts of different brands,** so its medians mix brands. It is for an overview. It names no brand.
+- **Real providers are not built.** The backoff, the timeout and the throttle are tested with fake providers. Their values (15 minutes,
+  12 hours, 20 seconds, 5 minutes) are a first choice, to be revisited when a real provider's rate limits are known.
 
 ## Consequences
 - The owner can connect a simulated account, sync, and read a report for any period. The weekly job is off until it is switched on.
@@ -171,14 +208,16 @@ Until then, every report says it is simulated.
 - Nothing in this slice moves money, posts, replies or runs an ad. The template still declares none of those.
 
 ## Verification
-- Unit: `tests/unit/analytics-analyse.test.ts` (27 tests: the group medians, the sample guards, zero reach, ties, the daylight-saving
-  hours, the follower and country breakdowns, the ranking, determinism and the text), `tests/unit/analytics-validate.test.ts` (the
-  rejects: NaN, infinity, negatives, fractions, huge counts, unknown media types, free-text ids, impossible dates; the caption that is
-  dropped without being read), `tests/unit/analytics-simulated.test.ts` (determinism, the window, validation of its own output, the
-  shape), `tests/unit/analytics-notice-and-template.test.ts` (the notice text, the ledger key, the template declaration).
-- Integration, on a private database: `tests/integration/analytics.test.ts` (the refusals, tenancy, roles, the demo refusal, the account
-  limit, the sync upsert and its replay, the report once-per-period under ten concurrent requests, the all-brands report, the period
-  rules, the MCP read tools writing no audit row) and `tests/integration/analytics-notices.test.ts` (the notice at most once, ten
-  concurrent deliveries, email off, no contact, the crash between report and notice, the crash during the send, a refused send, the
-  weekly job's gate, isolation, replay, disabled and demo accounts, and the worker flag).
+- Unit (`tests/unit/analytics-*.test.ts`, `worker-options.test.ts`): the analysis (golden text, the sample guards, zero reach, ties,
+  daylight-saving hours, materiality and rounding, the follower and country breakdowns, the ranking, determinism), the validator (the
+  rejects, the dropped text, the 24:00 rule), the simulator, the notice text (real and simulated), the template, the flag builder, and
+  the event allowlist's numeric keys.
+- Integration, on a private database: `tests/integration/analytics.test.ts` (refusals, tenancy, roles, staff refused on every write with
+  no row and no audit written, the demo refusal, the connect limit under 20 concurrent requests, idempotent connects, the sync upsert and
+  its replay, the minimum interval with `Retry-After`, a hanging provider and the backoff sequence, the report once per period under
+  concurrency, the zero-post refusal, the New York time zone, the response schemas of the four routes outside the contract sweep) and
+  `tests/integration/analytics-notices.test.ts` (the notice at most once, concurrent deliveries, email off, no contact, the crash between
+  report and notice, the crash during the send, a refused send, in-doubt and failed sends audited by the worker at first sight, the
+  weekly job's gate, isolation, replay, disabled and demo accounts, the batch of one with an owner who cannot be mailed, and 30 broken
+  accounts older than one healthy account).
 - The mutation checks and their results are in `docs/RELEASE_EVIDENCE.md`, section 0d.

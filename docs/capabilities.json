@@ -274,7 +274,7 @@
       "flags": [],
       "note": "Owner connects an analytics account. Only the simulated provider is available; its data is labelled simulated (docs/decisions/0090).",
       "idempotency": {
-        "clientKey": false,
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {

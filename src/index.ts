@@ -5,6 +5,7 @@ import { closePool } from "./db/client.js";
 import { provisionDemoWorkspace } from "./server/demo.js";
 import { createShutdown } from "./server/shutdown.js";
 import { startWorker, type Worker } from "./workers/runner.js";
+import { workerOptionsFromEnv } from "./workers/options.js";
 import { log } from "./observability/logger.js";
 import { closeAllEventStreams } from "./api/event-streams.js";
 
@@ -57,10 +58,10 @@ async function main() {
     // The restock sweep (ADR 0030) is OFF unless BIND_RESTOCK_SWEEP=true: it can place orders within policy without a
     // human, so the owner opts in (ADR 0030, "Default").
     if (config.BIND_WORKER_ENABLED !== "false") {
-      // The weekly analytics reports (docs/decisions/0090) are OFF unless BIND_ANALYTICS_REPORTS=true.
-      const analyticsReports = config.BIND_ANALYTICS_REPORTS === "true";
-      worker = startWorker({ restockSweep: config.BIND_RESTOCK_SWEEP === "true", analyticsReports });
-      log.info("worker.started", { restockSweep: config.BIND_RESTOCK_SWEEP === "true", analyticsReports });
+      // The restock sweep and the weekly analytics reports are OFF unless their variables are exactly "true" (workers/options.ts).
+      const options = workerOptionsFromEnv(config);
+      worker = startWorker(options);
+      log.info("worker.started", { restockSweep: options.restockSweep === true, analyticsReports: options.analyticsReports === true });
     }
   });
 

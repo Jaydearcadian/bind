@@ -152,3 +152,10 @@ describe("provider answers as a whole", () => {
     expect(message).not.toMatch(/secret value/);
   });
 });
+
+describe("a publish time at 24:00 is not an hour of the day (review N7)", () => {
+  it("refuses 2026-10-28T24:00:00Z and accepts 23:59:59Z", () => {
+    expect(() => parseProviderPost(good({ publishedAt: "2026-10-28T24:00:00Z" }))).toThrow(/ISO 8601/);
+    expect(parseProviderPost(good({ publishedAt: "2026-10-28T23:59:59Z" })).publishedAt.toISOString()).toBe("2026-10-28T23:59:59.000Z");
+  });
+});
