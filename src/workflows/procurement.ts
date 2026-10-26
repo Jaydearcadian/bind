@@ -23,6 +23,7 @@ import { getSettlementAdapter } from "../adapters/settlement/index.js";
 import type { SettlementAdapter } from "../adapters/settlement/types.js";
 import { generateIdempotencyKey } from "../utils/idempotency.js";
 import { resolveTemplateDir } from "../agents/bindTemplateAgent.js";
+import { NoStockModuleError, refusesStock } from "../templates/registry.js";
 import { assertDemoAdapterSimulated, DemoSafetyError, effectiveSettlementMode } from "../demo/policy.js";
 import { isDemoWorkspace } from "../demo/status.js";
 import { newId } from "../utils/ids.js";
@@ -33,6 +34,8 @@ import type { EvidenceLoader, ReconcileResult } from "./settlement.js";
 export interface ProcurementRunnerDeps {
   settlementFor?: (mode: string) => SettlementAdapter;
   supplierFor?: (id: string) => SupplierAdapter;
+  /** How long a submitted transfer must be unseen before it may be called dropped (docs/decisions/0087). Default 120 seconds. */
+  droppedAfterMs?: number;
 }
 
 export type { ReconcileResult } from "./settlement.js";
@@ -92,7 +95,7 @@ export class ProcurementWorkflowRunner {
     this.settlementFor =
       deps.settlementFor ?? ((mode: string) => getSettlementAdapter(mode as "local" | "arc-testnet"));
     this.supplierFor = deps.supplierFor ?? getSupplierAdapter;
-    this.settlement = new OrderSettlementService({ settlementFor: this.settlementFor });
+    this.settlement = new OrderSettlementService({ settlementFor: this.settlementFor, droppedAfterMs: deps.droppedAfterMs });
   }
 
   /**
@@ -105,9 +108,13 @@ export class ProcurementWorkflowRunner {
     opts?: { availableQuantity?: number }
   ): Promise<{ workflowId: string; state: WorkflowState; orderId?: string; approvalId?: string }> {
     // 0a. The owner's pause switch (ADR 0022). A paused workspace starts no workflow and asks no supplier for a quote.
-    const pauseRes = await query(`SELECT agents_paused FROM workspaces WHERE id = $1;`, [workspaceId]);
+    const pauseRes = await query(`SELECT agents_paused, template_id FROM workspaces WHERE id = $1;`, [workspaceId]);
     if (pauseRes.rows[0]?.agents_paused === true) {
       throw new AgentsPausedError();
+    }
+    // 0b. A template with no stock module has nothing to replenish (docs/decisions/0084). Refused before any workflow starts.
+    if (refusesStock(pauseRes.rows[0]?.template_id)) {
+      throw new NoStockModuleError();
     }
 
     // The number of earlier replenishments for this sku. It is read before the active-workflow check below, so a concurrent start

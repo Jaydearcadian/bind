@@ -1,8 +1,9 @@
 import { SettlementAdapter, TransferRequest, TransferResult } from "./types.js";
-import { SettlementRejectedError, assertPayableCentAmount } from "./errors.js";
+import { SettlementRejectedError, ZERO_ADDRESS_RECIPIENT, assertPayableCentAmount } from "./errors.js";
 import crypto from "crypto";
 
 const HASH_RE = /^0x[0-9a-fA-F]{64}$/;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 /**
  * In-process ledger for local development. It has no chain, so it holds no state across restarts.
@@ -27,12 +28,16 @@ export class LocalSettlementSimulator implements SettlementAdapter {
   }
 
   async getBalance(address: string): Promise<bigint> {
-    return this.balances.get(address.toLowerCase()) || 500000n; // Default $5,000.00
+    return this.balances.get(address.toLowerCase()) ?? 500000n; // Default $5,000.00
   }
 
   async transferUSDC(req: TransferRequest): Promise<TransferResult> {
     // Parity with the Arc adapter: refused before the replay lookup and before any balance change.
     assertPayableCentAmount(req.amountCents);
+    // Parity with the Arc adapter: a zero-address recipient is refused before anything else (docs/decisions/0087).
+    if (req.toAddress.toLowerCase() === ZERO_ADDRESS) {
+      throw new SettlementRejectedError(ZERO_ADDRESS_RECIPIENT, undefined, "the recipient is the zero address");
+    }
     const replay = this.transfersByKey.get(req.idempotencyKey) ?? this.transfersByOrder.get(req.orderId);
     if (replay) {
       this.transfersByKey.set(req.idempotencyKey, replay);
@@ -55,6 +60,11 @@ export class LocalSettlementSimulator implements SettlementAdapter {
     this.transfersByKey.set(req.idempotencyKey, result);
     this.transfersByOrder.set(req.orderId, result);
     return result;
+  }
+
+  /** True when a transfer was remembered for this order id: the memory the transfer itself was recorded in. */
+  async isOrderSettled(orderId: string): Promise<boolean> {
+    return this.transfersByOrder.has(orderId);
   }
 
   /** The transfer remembered for this order id, or null. Only in-process memory: a restart forgets it. */

@@ -92,7 +92,7 @@ $$\text{draft} \longrightarrow \text{request\_sent} \longrightarrow \text{quote\
 ## 5. Settlement & Custody: Arc L1 and Circle
 
 * **Arc L1** (vendor description, not measured here): stablecoin-native settlement with low gas paid in native USDC. The local simulator is the default; the Arc adapter is tested only against an in-process EVM (`docs/CONTRACT_SCOPE.md`).
-* **Circle Agent Stack** (vendor description): the Circle CLI adapter is disabled unless `ENABLE_LIVE_CIRCLE_CLI` is set, and it was not run here. Circle compliance screening is not implemented.
+* **Circle Agent Stack** (vendor description): no Circle CLI code path remains. The Circle wallet settlement path was removed (ADR 0085), and nothing here runs the Circle CLI. Circle compliance screening is not implemented.
 * **Onchain Contracts** (not implemented beyond `BindSettlement.sol`):
   * ERC-8004 for agent identity and reputation: no contract or adapter in this repository.
   * ERC-8183 for milestone-based deliverable escrow and settlement: the reference address is recorded in `docs/CONTRACT_SCOPE.md`, and its escrow calls throw `SettlementNotSupportedError`.

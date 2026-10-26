@@ -80,6 +80,22 @@ export function assertPayableCentAmount(
   }
 }
 
+/**
+ * Request code for a recipient that is the zero address. Raised before any network call (docs/decisions/0087, item 4): a
+ * native transfer to 0x0 reverts on Arc ("Zero address not allowed"), so it is refused here instead of being sent.
+ */
+export const ZERO_ADDRESS_RECIPIENT = "ZERO_ADDRESS_RECIPIENT";
+
+/**
+ * Refusal code for a transfer the contract could not deliver to the recipient (the contract's TransferFailed error, or
+ * Arc's "Zero address not allowed"). The recipient may be blocklisted or invalid (docs/decisions/0087). It is NOT a
+ * pre-send refusal: a revert does not prove that nothing was sent, so the ledger holds it with its clear.
+ */
+export const TRANSFER_FAILED_RECIPIENT = "TRANSFER_FAILED_RECIPIENT";
+
+/** The detail that goes with TRANSFER_FAILED_RECIPIENT. It names no address and no amount. */
+export const RECIPIENT_REFUSED_DETAIL = "the recipient may be blocklisted or invalid";
+
 /** The operation has no on-chain implementation in this adapter. It is never faked. */
 export class SettlementNotSupportedError extends Error {
   constructor(operation?: string) {

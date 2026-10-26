@@ -127,3 +127,29 @@ test("an owner or account key is not accepted by the agent endpoint, with a plai
   expect(res.status()).toBe(403);
   expect(await res.text()).toContain("staff key");
 });
+
+test("what an agent does shows in Activity under the name its key was given; staff see 'An agent key'", async ({ page, request }) => {
+  const ws = await makeWorkspace(request);
+  const made = await request.post(`/api/workspaces/${ws.id}/tokens`, { data: { role: "staff", label: "agent: Feedback reader" }, ...auth(ws.owner) });
+  const agentKey = (await made.json()).token as string;
+  const init = await mcp(request, agentKey, { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "t", version: "1" } } });
+  expect(init.status()).toBe(200);
+  const call = await mcp(request, agentKey, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "submit_feedback", arguments: { source: "pos", externalId: `act-${run}-${seq}`, text: "Soup was cold" } } });
+  expect(call.status()).toBe(200);
+
+  await page.goto("/app/sign-in");
+  await page.getByLabel("Access key").fill(ws.owner);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/app\/$/);
+  await page.goto("/app/activity");
+  await expect(page.getByText("Feedback reader made a request through its key.")).toBeVisible();
+
+  const staffPage = await (await page.context().browser()!.newContext()).newPage();
+  await staffPage.goto("/app/sign-in");
+  await staffPage.getByLabel("Access key").fill(ws.staff);
+  await staffPage.getByRole("button", { name: "Sign in" }).click();
+  await expect(staffPage).toHaveURL(/\/app\/$/);
+  await staffPage.goto("/app/activity");
+  await expect(staffPage.getByText("An agent key made a request through its key.")).toBeVisible();
+  await expect(staffPage.getByText("Feedback reader")).toHaveCount(0);
+});

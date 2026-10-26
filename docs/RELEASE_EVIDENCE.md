@@ -613,3 +613,94 @@ Limits of this evidence:
 - Each scenario was run once. The recovery lookup trusts the adapter's log read by order id; it does not check payer, supplier or amount (known follow-up from the review).
 - The harness and its guards were rehearsed offline (local simulator) and reviewed, then exercised live only in these runs. Crash recovery of a real business
   payment account is out of scope until the owner approves one and who holds its funds.
+
+## Tab ledger for sub-cent charges (ADR 0081), built 2026-10-23 and 2026-10-24
+
+Evidence class for everything in this section: LOCAL_PASS (local Postgres, a spy adapter and the local simulator). No live Arc run, no Anvil run, no real key
+and no payment were made for this work.
+
+| # | Check | Command | Observed | Class |
+| :--- | :--- | :--- | :--- | :--- |
+| T1 | Unit and integration suites on the merged branch | `NODE_ENV=test DATABASE_URL=<local> npx vitest run tests/unit tests/integration` | 149 files passed, 1 skipped (the Anvil settlement suite), 1666 tests passed, 10 skipped; `npx tsc --noEmit` clean | LOCAL_PASS |
+| T2 | Accrual, floor and carry-over, idempotency, gates (paused, unverified, no payee address, approval threshold in chunks, shared daily budget), cross-tenant refusal, API auth and validation | `tests/integration/tab-ledger.test.ts`, `tab-api.test.ts`, `tests/unit/tab-units.test.ts` | Passing, including that the adapter is never given a sub-cent or non-whole amount | LOCAL_PASS |
+| T3 | Crash and recovery: crash after the clear before the payment, after the adapter returned before "submitted" was recorded, between "submitted" and "confirmed"; rejected before send; failed confirm; lookup unavailable | `tests/integration/tab-recovery.test.ts`, `tab-fuzz.test.ts` | Passing; a tab is never paid twice and a payment that may have been sent is never reversed (two double-payment bugs found in review were reproduced, fixed and covered by regression tests that fail without the fix) | LOCAL_PASS |
+| T4 | Order and tab spend share one daily budget | `tests/integration/tab-budget-symmetry.test.ts` and the unchanged commitment-gate tests | Passing | LOCAL_PASS |
+| T5 | Live Arc settlement of a tab | None run | Not run. Required before any live use: an operator route to resolve held tab settlements, adoption of a hash lost to a busy lock, and a live Arc run (ADR 0081 addendum). | NOT_RUN |
+
+Known limits: held tab settlements keep their clear and have no exit route yet; above-threshold balances settle only in threshold-sized chunks; the replenishment
+pre-check still uses the database's local day and does not count tab spend; with N persistently failing tabs a batch of N can still be filled by them.
+
+## Tab ledger: the two live-use blockers (ADR 0081 items a and b), built 2026-10-24
+
+Evidence class for everything here: LOCAL_PASS (local Postgres, spy adapter, local simulator). No live Arc, no Anvil, no real key, no payment.
+
+| # | Check | Command | Observed | Class |
+| :--- | :--- | :--- | :--- | :--- |
+| H1 | Merged branch | `NODE_ENV=test DATABASE_URL=<local> npx vitest run tests/unit tests/integration`; `npx tsc --noEmit` | 155 files passed, 1 skipped (the Anvil suite), 1729 tests passed, 10 skipped; typecheck clean | LOCAL_PASS |
+| H2 | Lost-hash adoption: a payment sent whose hash was not recorded (busy lock, concurrent hold) is adopted from the effect record or the lookup, then confirmed through the adapter, with exactly one transfer | `tests/integration/tab-held-reconcile.test.ts` | Passing | LOCAL_PASS |
+| H3 | Exit for held settlements: worker adoption (never cancels), owner-only list and resolve routes, cancel-and-restore only under three proofs and an owner acknowledgement, exactly one reversal, repeat is a no-op, a refused attempt changes nothing; the duplicate-reverted case (first transfer paid, stored hash is the reverted duplicate) is refused | `tests/integration/tab-held-restore.test.ts`, `tab-held-worker.test.ts`, `tab-held-api.test.ts`, `tab-fuzz.test.ts` (held variant), `tests/unit/arc-is-order-settled.test.ts`, `held-responses.test.ts` | Passing. 24 mutation checks on a scratch copy, each caught by at least one failing test; backoff bounds the audit rows of a never-resolving hold to 6 attempts in 3 days | LOCAL_PASS |
+| H4 | Arc `isOrderSettled` and the held-settlement reads against the real contract | None run | Not run. Item (c) of ADR 0081, a live Arc run of the tab path, is still required before any live use. | NOT_RUN |
+
+Residuals: proof (iii) cannot exclude a transaction still in a mempool after 30 minutes, so it needs the owner's acknowledgement; the local simulator forgets payments on a process restart, so its proofs can restore a simulated payment after a restart (simulated money only).
+
+## 12. Change evidence: zod 4 and the high-severity audit (ADR 0089), 2026-10-25
+
+**Base:** `origin/claude/capabilities-overview-c6elxr` at `4685506` (the worktree was fast-forwarded to it; it was clean). **Database:** a private `bind_haiku_zod` (created for this run and dropped after; the shared `bind_local` was not used). **Node** 22.22.0, **npm** 10.9.4.
+
+**Before the change:** `npm audit --audit-level=high` reported 4 high-severity findings, all for zod (GHSA-mrhx-c7xc-m3w5, zod before 4.6.6). Typecheck, lint and unit tests passed. Integration on the private database: 87 files passed and 1 skipped; 878 tests passed and 10 skipped.
+
+| # | Check | Command | Observed | Class |
+| :--- | :--- | :--- | :--- | :--- |
+| Z1 | Clean install from the lockfile | `npm ci` | exit 0, 439 packages added | LOCAL_PASS |
+| Z2 | High-severity audit (the gate) | `npm audit --audit-level=high` | exit 0, "found 0 vulnerabilities" | LOCAL_PASS |
+| Z3 | Types, all three projects | `npm run typecheck` | exit 0 (root, `sdk/`, `mcp/`) | LOCAL_PASS |
+| Z4 | Lint | `npm run lint` | exit 0 | LOCAL_PASS |
+| Z5 | Unit tests | `npm run test:unit` | exit 0; 71 files, 944 tests passed (871 before, 73 new in `tests/unit/zod-4-migration.test.ts`) | LOCAL_PASS |
+| Z6 | Integration, private database | `DATABASE_URL=…/bind_haiku_zod npx vitest run tests/integration/` | exit 0; 88 files passed, 1 skipped (as in the baseline); 881 tests passed, 10 skipped (3 new in `tests/integration/zod-4-error-fields.test.ts`) | LOCAL_PASS |
+| Z7 | Error contract and API contract | included in Z6 (`error-contract`, `api-contract`) | passed | LOCAL_PASS |
+| Z8 | Generated OpenAPI document | `npm run api:spec` | exit 0. Drift against HEAD: `docs/openapi.json`, 2 hunks, both the `contactEmail` schema (the old `not: {}` artifact removed) | LOCAL_PASS |
+| Z9 | Generated SDK types | `npm run sdk:generate` | exit 0. Drift: `sdk/src/generated/api.d.ts`, 2 lines, `contactEmail` from `(unknown \| string) \| ""` to `string \| ""` | LOCAL_PASS |
+| Z10 | Generated capabilities | `npm run capabilities:generate` | exit 0. No drift | LOCAL_PASS |
+| Z11 | Production build | `npm run build` | exit 0 (`tsc` plus the SDK build) | LOCAL_PASS |
+| Z12 | MCP build | `npm run mcp:build` | exit 0 | LOCAL_PASS |
+| Z13 | Web bundle (Privy adapter) | `npm run web:bundle` | exit 0; `web/app/vendor/privy.js` 1,384,683 bytes | LOCAL_PASS |
+| Z14 | Vercel build, step by step | `npm run build:vercel`; `npm run sdk:build`; `web:bundle`; copy `web/` and the brand assets into `public/`; `node scripts/copy-sdk-browser.mjs public/sdk`; `test -s public/app/vendor/privy.js` | every step exit 0. Run as separate commands because the sandbox would not run `scripts/vercel-build.sh` as one unit; the steps are the script's own commands in its order | LOCAL_PASS |
+| Z15 | Browser (Playwright) tests | `npm run test:e2e` | Not run: Playwright browsers are not installed in worktrees | NOT_RUN |
+
+**Differential checks (LOCAL_PASS).** The zod 3 side is HEAD's source, with `from "zod"` rewritten to the `zod/v3` subpath of the same zod 4 package, and was checked against real zod 3.25.76 for the sampled cases.
+- **HTTP validation, all 96 registry routes:** 1,744 generated inputs (the sample body, missing and wrong-typed fields, unknown keys, scalars). Success and the `fields` the server answers with were compared. After the change, 10 inputs differ: 5 integers at or above 2^53 and 5 non-finite numbers (`1e400`). Both are the documented change in ADR 0087, decision 7. Before the `validationFields` fix there were 156 differing lines, most of them duplicated field names.
+- **MCP tool validation text, all 17 tools:** 436 inputs. The text the MCP SDK would report matches zod 3 except 4 non-finite inputs.
+- **Environment (`envSchema`), 31 cases:** same accept and refuse results, except `PORT=1e400` (accepted before, refused now). Other differences are default message wording at boot.
+- **Advertised MCP input schemas (17 tools):** differ in two ways only (ADR 0089, decision 9).
+- **`@privy-io/api-base` `APIError` schema:** identical results for six inputs under zod 3.25.76 and zod 4.6.7.
+- **Email:** 41 samples, identical to zod 3 (in the unit test).
+- **Offset date-time:** 21 samples, identical to zod 3 (in the unit test).
+
+**Performance check that chose the engine (LOCAL_PASS).** An array of 2,000,000 strings against `.max(200)`: zod 4.6.5 (vulnerable) 45 ms and 16 MB; zod 4.6.7 native 1 ms and 0 MB; zod 4.6.7 `zod/v3` subpath 516 ms and 176 MB. The `zod/v3` path was therefore not used.
+
+**Known risks and open items**
+- **Privy override.** `@privy-io/api-base` is overridden to zod `^4.6.7`. Its declared range (`^3.25.76`) does not allow it, which is outside the rule we set for overrides. The reasons are in ADR 0087, decision 4. It has to be accepted by the owner, or reverted (which fails the audit gate again until privy releases zod 4 support).
+- **Behaviour change, numbers.** Integers beyond ±(2^53 − 1) and non-finite numbers are refused with 400 and the field named (previously accepted). This is intended and recorded in ADR 0087, decision 7, but it is a change to the HTTP contract and needs the owner's acknowledgement.
+- **MCP advertised schema** changes in two places (ADR 0089, decision 9).
+- **Default message wording** for zod's own messages changed where we had no text. No HTTP response carries zod text.
+- **Not run:** Playwright browser tests (Z15). One integration test file is skipped, as in the baseline.
+- **Not verified live:** no live Arc, Privy or deployed environment was touched; this change is local only.
+## Arc and Circle hardening round (2026-10-25), merged branch
+
+Four local, code-only tasks from the owner's instruction of 2026-10-25, plus an Arc-aware local gate node. Nothing was sent on chain in this round and no
+key was used by any of this work. The live run of the tab path (ADR 0081 item c) is still not approved and not run.
+
+| # | Check | Command | Observed | Class |
+| :--- | :--- | :--- | :--- | :--- |
+| A1 | Merged branch, static gates | `npm run typecheck`, `npm run lint`, `npm run build` | Typecheck (root, sdk, mcp) clean; lint 0 errors and 3 warnings (unused variables in `tests/integration/tab-dropped.test.ts`); production build passes; code map, OpenAPI, SDK and capabilities regenerated and consistent | LOCAL_PASS |
+| A2 | Merged branch, unit and integration | `NODE_ENV=test npx vitest run tests/unit` and `tests/integration` on a private database | Unit: 73 files, 936 tests passed. Integration: 89 files passed, 1 skipped, 906 tests passed, 16 skipped (the Anvil suite, which is gated on a node) | LOCAL_PASS |
+| A3 | Anvil settlement suite against a local Arc-mode node (first time it ran in this environment; before this it was NOT_RUN) | `arc-anvil --network arc --chain-id 31337`, then `ANVIL_RPC_URL=<node> npx vitest run tests/integration/anvil-settlement.test.ts` | 16 of 16 passed: the 10 original tests plus 6 Arc-specific tests. On a standard-EVM node the Arc block reports NOT RUN, and with `ANVIL_EXPECT_ARC=1` 5 of the 6 fail, so the gate cannot pass silently on the wrong node | LOCAL_PASS |
+| A4 | Arc behaviour reproduced by the local Arc-mode node, and not by a standard EVM node | `cast` probes on both modes | Base fee 20 Gwei (standard: about 1 Gwei and falling); a transaction with `maxFeePerGas` 1 Gwei is rejected (standard: accepted); a native send of 1 wei to the zero address reverts with "Zero address not allowed" (standard: succeeds); a native send emits one log from the system emitter `0xffff…fffe` (standard: none). Local Arc mode is not live Arc. | LOCAL_PASS |
+| A5 | `isBlocklisted(address)` is not a method of the live USDC contract | `cast call 0x3600…0000 "isBlocklisted(address)(bool)"` on Arc testnet through Circle's public RPC, 2026-10-25 | Reverted. The same public RPC answered `eth_chainId` 5042002 without a token. | LIVE_READ_PASS |
+| A6 | ERC-8183 reference contract facts used by ADR 0086 | Public explorer API reads of the proxy and its implementation | `0x0747…4583` is an EIP-1967 proxy to a verified `AgenticCommerce` implementation; the admin and treasury at initialisation are one externally owned account. Current role holders were not readable. | LIVE_READ_PASS |
+| A7 | Fee floor and dropped outcome, zero-address and blocklist errors, decimals, emitter filtering (ADR 0087) | `tests/unit/arc-fee-floor.test.ts`, `arc-decimals-emitters.test.ts`, `settlement-dropped.test.ts`, `tests/integration/tab-dropped.test.ts`, `settlement-dropped-orders.test.ts` | Passing; 25 mutation checks on a scratch copy each caught by a failing test. A dropped transfer is held and never re-sent; the dropped decision needs all four conditions (node cannot find it, 120 s old, no transfer found for the order, contract does not show the order settled). | LOCAL_PASS |
+| A8 | No model-facing tool can move value (ADR 0085) | `tests/unit/no-value-moving-model-tools.test.ts` | Passing; mutation checks caught the tested bypasses. The scan is a text tripwire: string concatenation and runtime-built names are beyond it. | LOCAL_PASS |
+| A9 | Forge gates, Slither, the browser E2E run, CI on GitHub, the live Arc run of the tab path | None run in this round | Not run. CI still starts plain Anvil (ADR 0088 follow-up). | NOT_RUN |
+
+Known limits: the dropped decision can be wrong on a lagging node (fail-closed, the transfer is never re-sent, but a dropped order is not adopted automatically and needs an
+operator settle); the escrow and nanopayment ADRs (0086, 0083) are Proposed and decide nothing; ADR 0085's remaining prompt-injection surface (deepagents file tools) is recorded, not fixed.

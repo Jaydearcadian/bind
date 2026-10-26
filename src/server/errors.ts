@@ -27,6 +27,28 @@ export function isInfrastructureError(err: unknown): boolean {
 }
 
 /**
+ * The `fields` of a 400 answer: the path of each issue, in order. zod 4 also runs a field's length and format checks on a
+ * value of the wrong type (an empty array for a string with min(1) gives a type error and a too-small error), where zod 3
+ * stopped at the type error. So a field with a type error is named once, by that error, as it always was. A field that
+ * repeats for two checks on a right-typed value (an empty string fails min and the pattern) is still named twice, as before.
+ */
+export function validationFields(issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; code: string }>): string[] {
+  const fieldOf = (issue: { path: ReadonlyArray<PropertyKey> }) => issue.path.map(String).join(".");
+  const typed = new Set(issues.filter((issue) => issue.code === "invalid_type").map(fieldOf));
+  const named = new Set<string>();
+  const fields: string[] = [];
+  for (const issue of issues) {
+    const field = fieldOf(issue);
+    if (typed.has(field)) {
+      if (issue.code !== "invalid_type" || named.has(field)) continue;
+      named.add(field);
+    }
+    fields.push(field);
+  }
+  return fields;
+}
+
+/**
  * The message a route may send for an error. Zod errors name fields only (the route adds them), so the rule text is never
  * echoed. A plain Error keeps its message, redacted and cut to 300 characters.
  */

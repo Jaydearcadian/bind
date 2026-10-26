@@ -1,9 +1,8 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
-import { buildOpenApiDocument, serializeOpenApiDocument, API_VERSION } from "../../src/api/openapi.js";
+import { buildOpenApiDocument, serializeOpenApiDocument, API_VERSION, jsonSchema } from "../../src/api/openapi.js";
 import { ROUTES } from "../../src/api/registry.js";
 
 /** The OpenAPI document is generated from the route registry (docs/decisions/0034). These tests check its structure. */
@@ -102,7 +101,7 @@ describe("OpenAPI document generated from the route registry", () => {
     for (const route of withBody) {
       // An optional body is documented by its object schema (requestBody.required says whether it is needed).
       const inner = route.body instanceof z.ZodOptional ? route.body.unwrap() : route.body!;
-      const converted = zodToJsonSchema(inner, { target: "openApi3", $refStrategy: "none" }) as any;
+      const converted = jsonSchema(inner) as any;
       expect(typeof converted, `${route.method} ${route.path}`).toBe("object");
       // An object, or a union of objects (the webhook route takes a surface event or a standard event).
       const isObjectOrUnion = converted.type === "object" || Array.isArray(converted.anyOf) || Array.isArray(converted.oneOf);

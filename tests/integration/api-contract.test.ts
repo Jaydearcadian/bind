@@ -164,7 +164,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
   let ownerB: { id: string; token: string };
 
   /** Ids produced by the seeding that later tests read. */
-  const seeded: { workflowId?: string; orderId?: string; heldOrderId?: string; docId?: string; proposalId?: string; approvalId?: string } = {};
+  const seeded: { workflowId?: string; orderId?: string; heldOrderId?: string; docId?: string; proposalId?: string; approvalId?: string; tabCounterpartyId?: string } = {};
 
   function tokenFor(spec: RouteSpec): string | undefined {
     switch (spec.access) {
@@ -331,6 +331,13 @@ describe("API contract: one registry, checked against the running server (ADR 00
       note: "contract note",
     }, 201);
     seeded.heldOrderId = held.orderId;
+    // Tabs (ADR 0081): a charge against the kitchen's verified supplier, recorded again with the same key (answered 200), then
+    // settled. The settle is answered by the gates: it is a whole cent or more, so the answer is a settlement with its status.
+    seeded.tabCounterpartyId = `${WS_A}_supp-sysco-metro`;
+    const tabCharge = { counterpartyId: seeded.tabCounterpartyId, amountMicro: "250000", idempotencyKey: `contract-tab-${run}`, description: "Contract charge" };
+    await seedWrite("POST", "/api/workspaces/:id/tabs/charges", staff, tabCharge, 201);
+    await seedWrite("POST", "/api/workspaces/:id/tabs/charges", staff, tabCharge, 200);
+    await seedWrite("POST", "/api/workspaces/:id/tabs/:counterpartyId/settle", owner, undefined, 200, { counterpartyId: seeded.tabCounterpartyId });
     await seedWrite("POST", "/api/workspaces/:id/customer-orders/:orderId/accept", owner, undefined, 200, { orderId: held.orderId });
     const cancelled = await seedWrite("POST", "/api/workspaces/:id/customer-orders", staff, {
       externalRef: `contract-cancel-${run}`,
@@ -574,6 +581,7 @@ describe("API contract: one registry, checked against the running server (ADR 00
       "/api/workspaces/:id/workflows/:workflowId": { workflowId: seeded.workflowId ?? "" },
       "/api/workspaces/:id/orders/:orderId": { orderId: seeded.orderId ?? "" },
       "/api/workspaces/:id/approvals/:approvalId": { approvalId: seeded.approvalId ?? "" },
+      "/api/workspaces/:id/tabs/:counterpartyId": { counterpartyId: seeded.tabCounterpartyId ?? "" },
     };
 
     // Every GET route except the UI catch-all is read here.
@@ -809,8 +817,9 @@ function firstField(schema: z.ZodTypeAny): string {
       current = current.unwrap();
       continue;
     }
-    if (current instanceof z.ZodEffects) {
-      current = current.innerType();
+    // A transform or a preprocess is a pipe in zod 4: its input side is the body's shape.
+    if (current instanceof z.ZodPipe) {
+      current = current.in;
       continue;
     }
     const options = current?.options ?? current?._def?.options;

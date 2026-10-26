@@ -595,3 +595,64 @@ CREATE TABLE IF NOT EXISTS owner_email_failures (
   failed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_owner_email_failures_addr ON owner_email_failures(workspace_id, email, failed_at);
+
+-- Tab ledger (docs/decisions/0081). Sub-cent charges accrue per counterparty in micro-USDC (1e-6 USDC) and a tab is settled
+-- in whole cents through the settlement adapter. The counterparty is a supplier of the SAME workspace: the composite key
+-- below makes a cross-workspace counterparty a foreign-key error, not only a code check.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_suppliers_workspace_id ON suppliers (workspace_id, id);
+
+-- One row per settlement attempt that was cleared from a tab. The clear entry is written in the same transaction.
+-- Status: pending (cleared, not yet sent), submitted (sent, hash stored), confirmed (final), held (cleared, outcome not
+-- known or failed; never reversed here), cancelled (refused before anything was sent; its reversal entry restores the balance).
+-- A 'held' row with no clear entry is a settlement the gates refused: it owns no balance.
+CREATE TABLE IF NOT EXISTS tab_settlements (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  counterparty_id VARCHAR(64) NOT NULL,
+  amount_cents BIGINT NOT NULL CHECK (amount_cents > 0),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'submitted', 'confirmed', 'held', 'cancelled')),
+  tx_hash TEXT,
+  hold_reason TEXT,
+  submitted_at TIMESTAMPTZ,
+  confirmed_at TIMESTAMPTZ,
+  confirmed_block BIGINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (workspace_id, counterparty_id) REFERENCES suppliers (workspace_id, id)
+);
+CREATE INDEX IF NOT EXISTS idx_tab_settlements_status ON tab_settlements (status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_tab_settlements_tab ON tab_settlements (workspace_id, counterparty_id, created_at);
+-- Reconcile attempts on a held settlement (docs/decisions/0081): the backoff step of the next attempt of a SETTLEMENT_FAILED hold.
+ALTER TABLE tab_settlements ADD COLUMN IF NOT EXISTS reconcile_attempts INTEGER NOT NULL DEFAULT 0;
+
+-- Append-only: the code never updates or deletes a row. Balance(counterparty) = sum(charge) - sum(clear) + sum(reversal), in micro-USDC.
+-- idempotency_key is namespaced by kind ('charge:<client key>', 'clear:<settlement id>', 'reversal:<settlement id>'), so a client
+-- key can never collide with a settlement's entries.
+CREATE TABLE IF NOT EXISTS tab_entries (
+  id VARCHAR(64) PRIMARY KEY,
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  counterparty_id VARCHAR(64) NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('charge', 'clear', 'reversal')),
+  amount_micro BIGINT NOT NULL CHECK (amount_micro > 0),
+  idempotency_key TEXT NOT NULL,
+  settlement_id VARCHAR(64) REFERENCES tab_settlements(id),
+  description TEXT NOT NULL CHECK (char_length(description) BETWEEN 1 AND 200),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (workspace_id, counterparty_id) REFERENCES suppliers (workspace_id, id),
+  CONSTRAINT uq_tab_entries_idempotency UNIQUE (workspace_id, idempotency_key),
+  CONSTRAINT tab_entries_settlement_link CHECK ((kind = 'charge' AND settlement_id IS NULL) OR (kind <> 'charge' AND settlement_id IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_tab_entries_tab ON tab_entries (workspace_id, counterparty_id);
+CREATE INDEX IF NOT EXISTS idx_tab_entries_settlement ON tab_entries (settlement_id);
+
+-- Per counterparty: when the tab was last attempted, and on which UTC day its end-of-day attempt was claimed (ADR 0081).
+-- The claim is one conditional upsert in the same transaction as the reservation, so a crash rolls both back together and a
+-- second batch on the same day finds the day claimed. last_attempt_at orders the batch, so no tab starves the others.
+CREATE TABLE IF NOT EXISTS tab_attempts (
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  counterparty_id VARCHAR(64) NOT NULL,
+  last_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_utc_day DATE,
+  PRIMARY KEY (workspace_id, counterparty_id),
+  FOREIGN KEY (workspace_id, counterparty_id) REFERENCES suppliers (workspace_id, id)
+);

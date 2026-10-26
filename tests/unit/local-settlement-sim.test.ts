@@ -55,6 +55,41 @@ describe("LocalSettlementSimulator", () => {
     ).rejects.toThrow(/Insufficient USDC balance/);
     expect(await sim.getBalance(SUPPLIER)).toBe(500000n);
   });
+
+  it("an account drained to exactly zero stays at zero and cannot spend the default balance again", async () => {
+    // Regression: getBalance used `||`, so a stored 0n fell back to the 5,000.00 default and the drained account could spend again.
+    const sim = new LocalSettlementSimulator();
+    const DRAINED = "0x00000000000000000000000000000000000000d1";
+    await sim.transferUSDC({
+      fromAddress: TREASURY,
+      toAddress: DRAINED,
+      amountCents: 1000000n,
+      currency: "USDC",
+      orderId: "ord_drain_fund",
+      idempotencyKey: "idem_pay_ord_drain_fund",
+    });
+    await sim.transferUSDC({
+      fromAddress: DRAINED,
+      toAddress: SUPPLIER,
+      amountCents: 1000000n,
+      currency: "USDC",
+      orderId: "ord_drain_out",
+      idempotencyKey: "idem_pay_ord_drain_out",
+    });
+
+    expect(await sim.getBalance(DRAINED)).toBe(0n);
+    await expect(
+      sim.transferUSDC({
+        fromAddress: DRAINED,
+        toAddress: SUPPLIER,
+        amountCents: 1n,
+        currency: "USDC",
+        orderId: "ord_drain_again",
+        idempotencyKey: "idem_pay_ord_drain_again",
+      })
+    ).rejects.toThrow(/Insufficient USDC balance/);
+    expect(await sim.getBalance(DRAINED)).toBe(0n);
+  });
 });
 
 describe("LocalSettlementSimulator idempotency and transfer lookup", () => {

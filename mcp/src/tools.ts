@@ -8,6 +8,7 @@
  */
 import { z } from "zod";
 import { OPERATIONS, type OperationId } from "../../sdk/src/index.js";
+import { ISO_DATE_TIME_WITH_OFFSET } from "./isoDateTime.js";
 import type { AccessTable } from "./access.js";
 
 export type EffectClass = "read" | "external_request" | "commercial_commitment";
@@ -69,125 +70,189 @@ const UNTRUSTED_NOTE =
 const MAX_SKU = 120;
 const MAX_REF = 120;
 
+/** The type word zod 3 used in "Expected <type>, received <type>" for a value. */
+function receivedName(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  if (typeof value === "number" && Number.isNaN(value)) return "nan";
+  if (value instanceof Date) return "date";
+  return typeof value;
+}
+
+/**
+ * Zod 4 spelling of zod 3's `required_error` and `invalid_type_error`. A missing value gets the required text (zod 3's "Required"
+ * when none is given). Any other wrong type gets the invalid text, or zod 3's "Expected <type>, received <type>". Other issues
+ * keep zod's own messages.
+ */
+function typeErrors(invalid?: string, required?: string): { error: (issue: TypeIssue) => string | undefined } {
+  return { error: (issue) => typeText(issue, invalid, required) };
+}
+
+interface TypeIssue {
+  code: string;
+  input?: unknown;
+  expected?: unknown;
+}
+
+function typeText(issue: TypeIssue, invalid?: string, required?: string): string | undefined {
+  if (issue.code !== "invalid_type") return undefined;
+  if (issue.input === undefined) return required ?? "Required";
+  return invalid ?? `Expected ${String(issue.expected)}, received ${receivedName(issue.input)}`;
+}
+
+/**
+ * A check that runs only on a value of its own type. zod 3 stopped at a type error, so a wrong-typed value was named once; zod 4
+ * would also run a length or range check on it (an empty array for a string with min(1)), which this prevents.
+ */
+const isString = (payload: { value: unknown }) => typeof payload.value === "string";
+const isNumber = (payload: { value: unknown }) => typeof payload.value === "number" && Number.isFinite(payload.value);
+const isArray = (payload: { value: unknown }) => Array.isArray(payload.value);
+
+function check(when: (payload: { value: unknown }) => boolean, message: string): { error: string; when: typeof when } {
+  return { error: message, when };
+}
+
 function text(label: string, min: number, max: number): z.ZodString {
   return z
-    .string({ required_error: `${label} is required`, invalid_type_error: `${label} must be text` })
-    .min(min, `${label} must be at least ${min} character${min === 1 ? "" : "s"}`)
-    .max(max, `${label} must be at most ${max} characters`);
+    .string(typeErrors(`${label} must be text`, `${label} is required`))
+    .min(min, check(isString, `${label} must be at least ${min} character${min === 1 ? "" : "s"}`))
+    .max(max, check(isString, `${label} must be at most ${max} characters`));
 }
 
 function whole(label: string, min: number, max: number): z.ZodNumber {
   return z
-    .number({ required_error: `${label} is required`, invalid_type_error: `${label} must be a number` })
-    .int(`${label} must be a whole number`)
-    .min(min, `${label} must be at least ${min}`)
-    .max(max, `${label} must be at most ${max}`);
+    .number(typeErrors(`${label} must be a number`, `${label} is required`))
+    .int(check(isNumber, `${label} must be a whole number`))
+    .min(min, check(isNumber, `${label} must be at least ${min}`))
+    .max(max, check(isNumber, `${label} must be at most ${max}`));
 }
 
 function instant(label: string): z.ZodString {
   return z
-    .string({ invalid_type_error: `${label} must be text` })
-    .max(40, `${label} must be at most 40 characters`)
-    .datetime({ offset: true, message: `${label} must be an ISO 8601 date-time with an offset, such as 2026-01-01T00:00:00Z` });
+    .string(typeErrors(`${label} must be text`))
+    .max(40, check(isString, `${label} must be at most 40 characters`))
+    .regex(
+      ISO_DATE_TIME_WITH_OFFSET,
+      check(isString, `${label} must be an ISO 8601 date-time with an offset, such as 2026-01-01T00:00:00Z`)
+    )
+    .meta({ format: "date-time" });
 }
 
-const NO_INPUT = z.object({}).strict("this tool takes no arguments");
+/**
+ * Zod 4 spelling of zod 3's `.strict(message)`. An unknown field gets the given text (it never echoes the value, ADR 0037). A
+ * wrong-typed object gets zod 3's type text; every other issue keeps zod's own message.
+ */
+function closedObject<S extends z.ZodRawShape>(shape: S, message: string) {
+  return z.strictObject(shape, {
+    error: (issue) => (issue.code === "unrecognized_keys" ? message : typeText(issue)),
+  });
+}
 
-const SINCE = z.object({ since: instant("since").optional() }).strict("unknown field");
+const NO_INPUT = closedObject({}, "this tool takes no arguments");
 
-const POLL = z
-  .object({
+const SINCE = closedObject({ since: instant("since").optional() }, "unknown field");
+
+const POLL = closedObject(
+  {
     after: z
-      .string({ invalid_type_error: "after must be text" })
-      .max(40, "after must be at most 40 characters")
-      .regex(/^\d{1,19}\.\d{1,19}$/, "after must be an event cursor, such as 553696.29651")
+      .string(typeErrors("after must be text"))
+      .max(40, check(isString, "after must be at most 40 characters"))
+      .regex(/^\d{1,19}\.\d{1,19}$/, check(isString, "after must be an event cursor, such as 553696.29651"))
       .optional(),
     limit: whole("limit", 1, 100).optional(),
-  })
-  .strict("unknown field");
+  },
+  "unknown field"
+);
 
 /**
  * Optional on the tools whose command takes an Idempotency-Key. Without one the server makes a random key for the call, so a
  * network retry inside the call cannot run it twice. A caller that retries the call itself passes the same key again.
  */
 const IDEMPOTENCY_KEY = z
-  .string({ invalid_type_error: "idempotencyKey must be text" })
-  .regex(/^[A-Za-z0-9._:-]{1,128}$/, "idempotencyKey must be 1 to 128 characters from A-Z a-z 0-9 . _ : -")
+  .string(typeErrors("idempotencyKey must be text"))
+  .regex(/^[A-Za-z0-9._:-]{1,128}$/, check(isString, "idempotencyKey must be 1 to 128 characters from A-Z a-z 0-9 . _ : -"))
   .optional();
 
-const REPLENISH = z.object({ sku: text("sku", 1, MAX_SKU), idempotencyKey: IDEMPOTENCY_KEY }).strict("unknown field");
+const REPLENISH = closedObject({ sku: text("sku", 1, MAX_SKU), idempotencyKey: IDEMPOTENCY_KEY }, "unknown field");
 
-const LINE = z
-  .object({
+const LINE = closedObject(
+  {
     sku: text("sku", 1, MAX_SKU),
     quantity: whole("quantity", 1, 10000),
-  })
-  .strict("unknown field");
+  },
+  "unknown field"
+);
 
-const CUSTOMER_ORDER = z
-  .object({
+const CUSTOMER_ORDER = closedObject(
+  {
     externalRef: text("externalRef", 1, MAX_REF),
     lines: z
-      .array(LINE, { invalid_type_error: "lines must be a list", required_error: "lines is required" })
-      .min(1, "lines must have at least 1 line")
-      .max(200, "lines must have at most 200 lines"),
+      .array(LINE, typeErrors("lines must be a list", "lines is required"))
+      .min(1, check(isArray, "lines must have at least 1 line"))
+      .max(200, check(isArray, "lines must have at most 200 lines")),
     requestedFor: instant("requestedFor").optional(),
     note: text("note", 1, 5000).optional(),
     idempotencyKey: IDEMPOTENCY_KEY,
-  })
-  .strict("unknown field");
+  },
+  "unknown field"
+);
 
-const CANCEL_ORDER = z.object({ orderId: text("orderId", 1, MAX_REF), idempotencyKey: IDEMPOTENCY_KEY }).strict("unknown field");
+const CANCEL_ORDER = closedObject({ orderId: text("orderId", 1, MAX_REF), idempotencyKey: IDEMPOTENCY_KEY }, "unknown field");
 
-const FEEDBACK = z
-  .object({
+const FEEDBACK = closedObject(
+  {
     source: z
-      .string({ required_error: "source is required", invalid_type_error: "source must be text" })
+      .string(typeErrors("source must be text", "source is required"))
       .regex(
         /^[a-z][a-z0-9_.:-]{1,39}$/,
-        "source must be 2 to 40 characters: a lower case letter first, then lower case letters, digits, '_', '.', ':' or '-'"
+        check(isString, "source must be 2 to 40 characters: a lower case letter first, then lower case letters, digits, '_', '.', ':' or '-'")
       ),
     externalId: text("externalId", 1, 120),
     text: text("text", 1, 20000),
-  })
-  .strict("unknown field");
+  },
+  "unknown field"
+);
 
 const PRICE = whole("priceCents", 0, 1_000_000);
 
 const MENU_CHANGE = z.discriminatedUnion("type", [
-  z
-    .object({
+  closedObject(
+    {
       type: z.literal("add_item"),
       name: text("name", 1, 400),
-      description: z.string({ invalid_type_error: "description must be text" }).max(2000, "description must be at most 2000 characters").optional(),
+      description: z.string(typeErrors("description must be text")).max(2000, check(isString, "description must be at most 2000 characters")).optional(),
       priceCents: PRICE,
-    })
-    .strict("unknown field"),
-  z
-    .object({
+    },
+    "unknown field"
+  ),
+  closedObject(
+    {
       type: z.literal("update_price"),
       itemId: text("itemId", 1, 64),
       priceCents: PRICE,
-    })
-    .strict("unknown field"),
-  z
-    .object({
+    },
+    "unknown field"
+  ),
+  closedObject(
+    {
       type: z.literal("remove_item"),
       itemId: text("itemId", 1, 64),
-    })
-    .strict("unknown field"),
-]);
+    },
+    "unknown field"
+  ),
+], typeErrors());
 
-const MENU_PROPOSAL = z
-  .object({
+const MENU_PROPOSAL = closedObject(
+  {
     change: MENU_CHANGE,
-    rationale: z.string({ invalid_type_error: "rationale must be text" }).max(2000, "rationale must be at most 2000 characters").optional(),
+    rationale: z.string(typeErrors("rationale must be text")).max(2000, check(isString, "rationale must be at most 2000 characters")).optional(),
     sourceFeedbackIds: z
-      .array(text("sourceFeedbackIds", 1, 64), { invalid_type_error: "sourceFeedbackIds must be a list" })
-      .max(20, "sourceFeedbackIds must have at most 20 entries")
+      .array(text("sourceFeedbackIds", 1, 64), typeErrors("sourceFeedbackIds must be a list"))
+      .max(20, check(isArray, "sourceFeedbackIds must have at most 20 entries"))
       .optional(),
-  })
-  .strict("unknown field");
+  },
+  "unknown field"
+);
 
 // ---- The table ---------------------------------------------------------------------------------------------------------------
 

@@ -19,6 +19,13 @@ export interface TransferResult {
   blockNumber?: number;
   explorerUrl?: string;
   failureCode?: string;
+  /**
+   * Set only by the Arc adapter's confirm() on a `submitted` result: the node answered "transaction not found" for the hash
+   * (no receipt and no pending transaction). It is evidence, not a verdict. The services call a transfer dropped only after
+   * the age, findTransfer and isOrderSettled checks in src/adapters/settlement/dropped.ts (docs/decisions/0087, item 5).
+   * Never set on an error, and never by the local simulator.
+   */
+  notFoundOnNode?: boolean;
 }
 
 export interface SettlementAdapter {
@@ -32,6 +39,12 @@ export interface SettlementAdapter {
    * Optional: an adapter without it cannot reconcile a transfer whose outcome is unknown.
    */
   findTransfer?(req: { orderId: string }): Promise<TransferResult | null>;
+  /**
+   * Whether the settlement contract has settled this order id (a read; it sends nothing). Throws when the answer is
+   * unknown, for example an RPC failure: it never answers false for that. Optional. The tab ledger needs it to restore a
+   * held settlement whose outcome is unknown (docs/decisions/0081). An adapter without it cannot restore one.
+   */
+  isOrderSettled?(orderId: string): Promise<boolean>;
   depositEscrow(req: TransferRequest, milestoneId: string): Promise<TransferResult>;
   releaseEscrow(milestoneId: string, toAddress: string): Promise<TransferResult>;
 }

@@ -4,6 +4,7 @@
  * Privy's tokens and its PKCE state live in sessionStorage, so they last for this tab only. A wallet sign-in proves who the
  * person is. It never grants payment authority: spending limits and approvals are enforced by Bind's policy code.
  */
+import "./zod-config.js"; // First: it must run before the SDK builds any zod schema (ADR 0089).
 import PrivySDK from "@privy-io/js-sdk-core";
 
 /** The only provider this adapter starts. Fixed here, never read from the address bar. */

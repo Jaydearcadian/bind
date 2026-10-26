@@ -26,7 +26,16 @@ import {
   upsertAccount,
 } from "../accounts/service.js";
 import { authenticated, workspaceMember, workspaceOwner, anyWorkspaceOwner } from "../auth/middleware.js";
-import { provisionWorkspace, listTemplates } from "../templates/registry.js";
+import {
+  provisionWorkspace,
+  listTemplates,
+  NO_STOCK_CODE,
+  NO_STOCK_MESSAGE,
+  NoStockModuleError,
+  refusesStock,
+  templateHasStock,
+  templateHasSuppliers,
+} from "../templates/registry.js";
 import { createDemoWorkspace, resetDemoWorkspace, DemoError, DEMO_LOCK_WAIT_MS, type DemoCredentials } from "../demo/service.js";
 import { DEFAULT_DEMO_MAX_ACTIVE, demoEnabled, effectiveSettlementMode } from "../demo/policy.js";
 import { isDemoWorkspace } from "../demo/status.js";
@@ -95,7 +104,7 @@ import {
   rotateWebhookSecret,
 } from "../studio/workspaceControls.js";
 import { newId } from "../utils/ids.js";
-import { publicErrorMessage, rejectNulInput, requestErrorHandler, wrapAsyncHandlers } from "./errors.js";
+import { publicErrorMessage, rejectNulInput, requestErrorHandler, validationFields, wrapAsyncHandlers } from "./errors.js";
 import { errorContract } from "./error-contract.js";
 import { log } from "../observability/logger.js";
 import { redactText } from "../utils/redact.js";
@@ -106,7 +115,18 @@ import { checkReadiness } from "../observability/readiness.js";
 import { mountHostedMcp, UNWIRED_HOSTED_MCP, type HostedMcpOptions } from "./mcp-route.js";
 import { ROUTES } from "../api/registry.js";
 import { OwnerEmailError, listNotificationChannels, removeOwnerEmail, requestOwnerEmailVerification, verifyOwnerEmail } from "../notifications/owner-emails.js";
-import { OwnerEmailRequestBodySchema, OwnerEmailVerifyBodySchema } from "../api/schemas.js";
+import { OwnerEmailRequestBodySchema, OwnerEmailVerifyBodySchema, TabChargeBodySchema, TabResolveBodySchema } from "../api/schemas.js";
+import {
+  tabLedger,
+  type TabActor,
+  type HeldSettlementRow,
+  type SettleResult,
+  type TabEntry,
+  type TabSettlementRecord,
+} from "../tabs/ledger.js";
+import { TabError } from "../tabs/errors.js";
+import { parseChargeAmountMicro } from "../tabs/units.js";
+import { restoreAnswer } from "../tabs/held-responses.js";
 import { API_VERSION, buildOpenApiDocument, serializeOpenApiDocument } from "../api/openapi.js";
 import {
   ApprovalDecisionBodySchema,
@@ -154,7 +174,7 @@ const __dirname = path.dirname(__filename);
 function parseDecisionBody(req: Request, res: Response): { reason?: string } | null {
   const parsed = ApprovalDecisionBodySchema.safeParse(req.body ?? {});
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid request body", fields: parsed.error.issues.map((i) => i.path.join(".")) });
+    res.status(400).json({ error: "Invalid request body", fields: validationFields(parsed.error.issues) });
     return null;
   }
   return parsed.data;
@@ -194,7 +214,7 @@ function sendFulfilmentError(res: Response, err: unknown) {
     return res.status(status).json({ error: err.message, code: err.code });
   }
   if (err instanceof z.ZodError) {
-    return res.status(400).json({ error: "Invalid request body", fields: err.issues.map((i) => i.path.join(".")) });
+    return res.status(400).json({ error: "Invalid request body", fields: validationFields(err.issues) });
   }
   return res.status(500).json({ error: "Request could not be completed" });
 }
@@ -216,7 +236,7 @@ function sendMenuError(res: Response, err: unknown) {
     return res.status(status).json({ error: err.message, code: err.code });
   }
   if (err instanceof z.ZodError) {
-    return res.status(400).json({ error: "Invalid request body", fields: err.issues.map((i) => i.path.join(".")) });
+    return res.status(400).json({ error: "Invalid request body", fields: validationFields(err.issues) });
   }
   return res.status(500).json({ error: "Request could not be completed" });
 }
@@ -416,6 +436,88 @@ function requestSignatureValid(req: Request, secret: string): boolean {
   return verifySignature({ secret, timestamp: Number(timestamp), rawBody: raw, signature });
 }
 
+/** The audit actor of a tab write: the workspace token that made it, recorded by its role and label (never a body field). */
+function tabActorOf(req: Request): TabActor {
+  const actor = req.actor!;
+  return { type: actor.role === "owner" ? "owner" : "agent", id: `${actor.role}:${actor.label}` };
+}
+
+function sendTabError(res: Response, err: unknown): void {
+  if (err instanceof TabError) {
+    res.status(err.httpStatus).json({ error: err.message, code: err.code });
+    return;
+  }
+  throw err;
+}
+
+function entryJson(entry: TabEntry) {
+  return {
+    id: entry.id,
+    workspaceId: entry.workspaceId,
+    counterpartyId: entry.counterpartyId,
+    kind: entry.kind,
+    amountMicro: entry.amountMicro.toString(),
+    idempotencyKey: entry.idempotencyKey,
+    settlementId: entry.settlementId,
+    description: entry.description,
+    createdAt: entry.createdAt.toISOString(),
+  };
+}
+
+function settlementJson(row: TabSettlementRecord) {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    counterpartyId: row.counterpartyId,
+    amountCents: row.amountCents.toString(),
+    status: row.status,
+    txHash: row.txHash,
+    holdReason: row.holdReason,
+    submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
+    confirmedAt: row.confirmedAt ? row.confirmedAt.toISOString() : null,
+    confirmedBlock: row.confirmedBlock,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function heldSettlementJson(row: HeldSettlementRow) {
+  return {
+    id: row.id,
+    counterpartyId: row.counterpartyId,
+    amountCents: row.amountCents.toString(),
+    status: "held" as const,
+    holdReason: row.holdReason,
+    txHash: row.txHash,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    hasEffect: row.hasEffect,
+    effectStatus: row.effectStatus,
+  };
+}
+
+function settleResultJson(result: SettleResult) {
+  switch (result.outcome) {
+    case "below_threshold":
+      return { outcome: result.outcome, balanceMicro: result.balanceMicro.toString() };
+    case "needs_approval":
+      return { outcome: result.outcome, amountCents: result.amountCents.toString(), thresholdCents: result.thresholdCents.toString() };
+    case "refused":
+      return { outcome: result.outcome, reason: result.reason, balanceMicro: result.balanceMicro.toString() };
+    case "already_attempted":
+      return { outcome: result.outcome, utcDay: result.utcDay };
+    case "settlement":
+      return {
+        outcome: result.outcome,
+        settlementId: result.settlementId,
+        status: result.status,
+        amountCents: result.amountCents.toString(),
+        txHash: result.txHash,
+        holdReason: result.holdReason,
+      };
+  }
+}
+
 export function createApp(options: CreateAppOptions = {}): express.Express {
   const app = express();
   // Before any route: a rejected promise from a route reaches the central error handler, never an unhandled rejection.
@@ -586,8 +688,16 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.locals.closeHostedMcp = hostedMcp.close;
 
   // Templates & Blueprints
+  // `modules` says which optional parts a template has (docs/decisions/0084). It is derived, not stored.
   app.get("/api/templates", (_req: Request, res: Response) => {
-    res.json(jsonSafe(listTemplates()));
+    res.json(
+      jsonSafe(
+        listTemplates().map((t) => ({
+          ...t,
+          modules: { stock: templateHasStock(t), suppliers: templateHasSuppliers(t) },
+        }))
+      )
+    );
   });
 
   app.get("/api/templates/:id/blueprint", (req: Request, res: Response) => {
@@ -781,6 +891,11 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.post("/api/workspaces/:id/inventory", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
+      // A template with no stock module takes no stock rows (docs/decisions/0084). Checked before the body is read.
+      const tplRes = await query("SELECT template_id FROM workspaces WHERE id = $1;", [id]);
+      if (refusesStock(tplRes.rows[0]?.template_id)) {
+        return res.status(400).json({ error: NO_STOCK_MESSAGE, code: NO_STOCK_CODE });
+      }
       const item = InitialSupplyItemSchema.parse(req.body);
       const itemId = `inv_${id}_${item.sku}`;
       const ins = await query(
@@ -831,6 +946,10 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
     } catch (err: any) {
       // A paused workspace keeps the same 400 and message, and adds the typed code (ADR 0023, ADR 0040).
       if (err instanceof AgentsPausedError) {
+        return res.status(400).json({ error: publicErrorMessage(err), code: err.code });
+      }
+      // A template with no stock module has nothing to replenish (docs/decisions/0084).
+      if (err instanceof NoStockModuleError) {
         return res.status(400).json({ error: publicErrorMessage(err), code: err.code });
       }
       res.status(400).json({ error: publicErrorMessage(err) });
@@ -1183,7 +1302,7 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   app.post("/api/workspaces/:id/workflows/:workflowId/cancel", ...workspaceOwner, async (req: Request, res: Response) => {
     const parsed = CancelWorkflowBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid request body", fields: parsed.error.issues.map((i) => i.path.join(".")) });
+      res.status(400).json({ error: "Invalid request body", fields: validationFields(parsed.error.issues) });
       return;
     }
     try {
@@ -1246,6 +1365,141 @@ export function createApp(options: CreateAppOptions = {}): express.Express {
   });
 
   // Suppliers
+  // Tabs (docs/decisions/0081). A charge is an obligation, so staff and owner tokens may record one. Reading a tab and
+  // settling it are owner actions. Every route scopes to the workspace in the path; a counterparty of another workspace is
+  // COUNTERPARTY_NOT_FOUND. Amounts are decimal strings of micro-USDC.
+  app.post("/api/workspaces/:id/tabs/charges", ...workspaceMember, async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const raw = req.body ?? {};
+    if (typeof raw === "object" && raw !== null && "amountMicro" in raw && typeof (raw as { amountMicro: unknown }).amountMicro !== "string") {
+      res.status(400).json({ error: "amountMicro must be a decimal string of whole micro-USDC", code: "INVALID_CHARGE_AMOUNT" });
+      return;
+    }
+    const parsed = TabChargeBodySchema.safeParse(raw);
+    if (!parsed.success) {
+      res.status(400).json({ error: "The charge is missing a field or a field is invalid", code: "INVALID_CHARGE" });
+      return;
+    }
+    try {
+      const amountMicro = parseChargeAmountMicro(parsed.data.amountMicro);
+      const result = await tabLedger.accrueCharge({
+        workspaceId: id,
+        counterpartyId: parsed.data.counterpartyId,
+        amountMicro,
+        idempotencyKey: parsed.data.idempotencyKey,
+        description: parsed.data.description,
+        actor: tabActorOf(req),
+      });
+      res.status(result.created ? 201 : 200).json({ created: result.created, entry: entryJson(result.entry) });
+    } catch (err) {
+      sendTabError(res, err);
+    }
+  });
+
+  app.get("/api/workspaces/:id/tabs", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      const tabs = await tabLedger.listTabs(req.params.id);
+      res.json(
+        tabs.map((tab) => ({
+          counterpartyId: tab.counterpartyId,
+          name: tab.name,
+          entryCount: tab.entryCount,
+          balanceMicro: tab.balanceMicro.toString(),
+          settleableCents: tab.settleableCents.toString(),
+        }))
+      );
+    } catch (err) {
+      sendTabError(res, err);
+    }
+  });
+
+  // Held tab settlements (docs/decisions/0081, items a and b). Owner only; every read and write is inside the workspace in the path.
+  // `reconcile` only adopts and confirms a hash it can show; `cancel_and_restore` restores a clear only when it is provably
+  // unsent and answers 409 NOT_PROVABLY_UNSENT otherwise. Declared before the counterparty route, which would match "settlements".
+  app.get("/api/workspaces/:id/tabs/settlements", ...workspaceOwner, async (req: Request, res: Response) => {
+    if (req.query.status !== undefined && req.query.status !== "held") {
+      res.status(400).json({ error: "status must be held", code: "INVALID_STATUS" });
+      return;
+    }
+    try {
+      const rows = await tabLedger.listHeldSettlements(req.params.id);
+      res.json(rows.map(heldSettlementJson));
+    } catch (err) {
+      sendTabError(res, err);
+    }
+  });
+
+  app.post(
+    "/api/workspaces/:id/tabs/settlements/:settlementId/resolve",
+    ...workspaceOwner,
+    async (req: Request, res: Response) => {
+      const { id, settlementId } = req.params;
+      const raw = req.body ?? {};
+      const action = typeof raw === "object" && raw !== null ? (raw as { action?: unknown }).action : undefined;
+      if (action !== "reconcile" && action !== "cancel_and_restore") {
+        res.status(400).json({ error: "action must be reconcile or cancel_and_restore", code: "INVALID_ACTION" });
+        return;
+      }
+      const parsed = TabResolveBodySchema.safeParse(raw);
+      if (!parsed.success) {
+        res.status(400).json({ error: "acknowledgeNotSent must be true or false when it is given", code: "INVALID_RESOLVE" });
+        return;
+      }
+      try {
+        const row = await tabLedger.loadSettlement(settlementId, id);
+        if (!row) {
+          res.status(404).json({ error: "The settlement is not found in your workspace.", code: "SETTLEMENT_NOT_FOUND" });
+          return;
+        }
+        if (action === "reconcile") {
+          const outcome = await tabLedger.reconcileHeld(settlementId, tabActorOf(req));
+          if (outcome.kind === "busy") {
+            res.status(409).json({ error: "The settlement is being processed by another request. Retry later.", code: "SETTLEMENT_BUSY" });
+            return;
+          }
+          res.json({ action, outcome });
+          return;
+        }
+        const outcome = await tabLedger.cancelHeldAndRestore(settlementId, {
+          actor: tabActorOf(req),
+          acknowledgeNotSent: parsed.data.acknowledgeNotSent === true,
+        });
+        const answer = restoreAnswer(outcome);
+        res.status(answer.status).json(answer.body);
+      } catch (err) {
+        sendTabError(res, err);
+      }
+    }
+  );
+
+  app.get("/api/workspaces/:id/tabs/:counterpartyId", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      const detail = await tabLedger.tabDetail(req.params.id, req.params.counterpartyId);
+      res.json({
+        counterpartyId: detail.counterpartyId,
+        balanceMicro: detail.balanceMicro.toString(),
+        settleableCents: detail.settleableCents.toString(),
+        entries: detail.entries.map(entryJson),
+        settlements: detail.settlements.map(settlementJson),
+      });
+    } catch (err) {
+      sendTabError(res, err);
+    }
+  });
+
+  app.post("/api/workspaces/:id/tabs/:counterpartyId/settle", ...workspaceOwner, async (req: Request, res: Response) => {
+    try {
+      const result = await tabLedger.settleTab({
+        workspaceId: req.params.id,
+        counterpartyId: req.params.counterpartyId,
+        actor: tabActorOf(req),
+      });
+      res.json(settleResultJson(result));
+    } catch (err) {
+      sendTabError(res, err);
+    }
+  });
+
   app.get("/api/workspaces/:id/suppliers", ...workspaceMember, async (req: Request, res: Response) => {
     const { id } = req.params;
     const suppRes = await query(

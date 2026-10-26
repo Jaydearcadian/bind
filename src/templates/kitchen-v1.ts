@@ -97,4 +97,27 @@ export const kitchenTemplate: WorkspaceTemplate = {
       endpointUrl: "https://api-sandbox.baldorfoods.example.com/v1",
     },
   ],
+  // Descriptive metadata only (docs/decisions/0084). Nothing reads it yet.
+  dataSources: [
+    { id: "inventory_levels", label: "Stock levels and par levels", kind: "inventory", readOnly: true },
+  ],
+  triggers: [
+    {
+      id: "restock_sweep",
+      kind: "schedule",
+      description: "When the restock sweep is switched on, a worker checks stock levels on a timer and starts a reorder for any item below par.",
+    },
+    {
+      id: "owner_manual_replenish",
+      kind: "manual",
+      description: "The owner starts a reorder for one item.",
+    },
+  ],
+  outputs: [
+    {
+      id: "supplier_order",
+      kind: "order",
+      description: "A purchase order to a supplier, only within the spending limit and the owner's approval rules.",
+    },
+  ],
 };

@@ -13,6 +13,14 @@
  */
 import { z } from "zod";
 import {
+  TabChargeBodySchema,
+  TabChargeResultSchema,
+  TabDetailSchema,
+  TabHeldSettlementSchema,
+  TabResolveBodySchema,
+  TabResolveResultSchema,
+  TabSettleResultSchema,
+  TabSummarySchema,
   AgentRoleUpsertResultSchema,
   AgentRoleUpsertSchema,
   AgentsListSchema,
@@ -419,7 +427,12 @@ export const ROUTES: RouteSpec[] = [
     summary: "Add or update an inventory item by sku.",
     body: InitialSupplyItemSchema,
     sampleBody: { sku: "FOOD-CONTRACT-SAMPLE", name: "Contract Sample Item", currentQuantity: 4, parLevel: 2, reorderQuantity: 3, unitPriceCents: 150 },
-    responses: { 201: ok("The stored item.", InventoryItemSchema) },
+    responses: {
+      201: ok("The stored item.", InventoryItemSchema),
+      400: err(
+        "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). Also refused: a workspace whose template has no stock module (code TEMPLATE_HAS_NO_STOCK, ADR 0084)."
+      ),
+    },
     contractTested: true,
   }),
   withGenericErrors({
@@ -434,7 +447,7 @@ export const ROUTES: RouteSpec[] = [
     responses: {
       200: ok("The replenishment workflow, and its order or approval if one exists.", ReplenishResultSchema),
       400: err(
-        "Malformed JSON, a NUL character, or a missing or non-text sku. Also refused: a paused workspace (code AGENTS_PAUSED, ADR 0023), an unknown sku, and an item with sufficient stock."
+        "Malformed JSON, a NUL character, or a missing or non-text sku. Also refused: a paused workspace (code AGENTS_PAUSED, ADR 0023), a workspace whose template has no stock module (code TEMPLATE_HAS_NO_STOCK, ADR 0084), an unknown sku, and an item with sufficient stock."
       ),
     },
     contractTested: true,
@@ -878,6 +891,88 @@ export const ROUTES: RouteSpec[] = [
     responses: {
       201: ok("The stored supplier.", SupplierSchema),
       409: err("The supplier id belongs to another workspace. Nothing is changed."),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "recordTabCharge",
+    method: "post",
+    path: "/api/workspaces/:id/tabs/charges",
+    access: "member",
+    tags: ["Tabs"],
+    summary: "Record a charge against a counterparty's tab, in micro-USDC (ADR 0081). Settled later in whole cents.",
+    body: TabChargeBodySchema,
+    responses: {
+      201: ok("The charge was recorded.", TabChargeResultSchema),
+      200: ok("The same key with the same data was already recorded. Nothing was added.", TabChargeResultSchema),
+      400: err("The amount is not a positive whole number of micro-USDC within the 25 USDC limit (INVALID_CHARGE_AMOUNT), or a field is invalid (INVALID_CHARGE)."),
+      404: err("The counterparty is not found in your workspace (COUNTERPARTY_NOT_FOUND)."),
+      409: err("The counterparty is not verified (COUNTERPARTY_NOT_VERIFIED), or the key was used for a different charge (IDEMPOTENCY_CONFLICT)."),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "listTabs",
+    method: "get",
+    path: "/api/workspaces/:id/tabs",
+    access: "owner",
+    tags: ["Tabs"],
+    summary: "The tabs of the workspace: balance in micro-USDC and the whole cents a settlement would clear now.",
+    responses: { 200: ok("One row per counterparty with entries.", list(TabSummarySchema)) },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "getTab",
+    method: "get",
+    path: "/api/workspaces/:id/tabs/:counterpartyId",
+    access: "owner",
+    tags: ["Tabs"],
+    summary: "One tab: its balance, the latest entries and the latest settlements.",
+    responses: {
+      200: ok("The tab.", TabDetailSchema),
+      404: err("The counterparty is not found in your workspace (COUNTERPARTY_NOT_FOUND)."),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "settleTab",
+    method: "post",
+    path: "/api/workspaces/:id/tabs/:counterpartyId/settle",
+    access: "owner",
+    tags: ["Tabs"],
+    summary: "Settle the whole cents of a tab now, through the same gates as an order payment (ADR 0081).",
+    responses: {
+      200: ok("What the call did: nothing to settle, needs approval, refused, or a settlement with its status.", TabSettleResultSchema),
+      404: err("The counterparty is not found in your workspace (COUNTERPARTY_NOT_FOUND)."),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "listHeldTabSettlements",
+    method: "get",
+    path: "/api/workspaces/:id/tabs/settlements",
+    access: "owner",
+    tags: ["Tabs"],
+    summary: "The held tab settlements of the workspace, oldest change first, limited to 50. Read only (docs/decisions/0081).",
+    responses: {
+      200: ok("One row per held settlement, with its hold reason and whether an effect row exists.", list(TabHeldSettlementSchema)),
+      400: err("The status filter is not held (INVALID_STATUS)."),
+    },
+    contractTested: true,
+  }),
+  withGenericErrors({
+    operationId: "resolveTabSettlement",
+    method: "post",
+    path: "/api/workspaces/:id/tabs/settlements/:settlementId/resolve",
+    access: "owner",
+    tags: ["Tabs"],
+    summary: "Resolve a held tab settlement: reconcile (adopt and confirm a transfer the ledger or the chain can show) or cancel_and_restore (restore its clear only when it is provably unsent).",
+    body: TabResolveBodySchema,
+    responses: {
+      200: ok("The outcome. reconcile: adopted, or why nothing was adopted. cancel_and_restore: cancelled, or already_cancelled on a repeat.", TabResolveResultSchema),
+      400: err("The action is not reconcile or cancel_and_restore (INVALID_ACTION), or acknowledgeNotSent is not a boolean (INVALID_RESOLVE)."),
+      404: err("The settlement is not found in your workspace (SETTLEMENT_NOT_FOUND)."),
+      409: err("A restore is refused as not provably unsent (NOT_PROVABLY_UNSENT), the settlement is not held (SETTLEMENT_NOT_HELD), owns no balance (SETTLEMENT_OWNS_NO_BALANCE), or is being processed (SETTLEMENT_BUSY)."),
     },
     contractTested: true,
   }),

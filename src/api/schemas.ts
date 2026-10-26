@@ -13,6 +13,7 @@
  *   `fields` on a validation error). The request id is in the `x-request-id` header, not the body.
  */
 import { z } from "zod";
+import { isoDateTimeWithOffset } from "./isoDateTime.js";
 import {
   AgentRoleUpsertSchema,
   InitialSupplierSchema,
@@ -37,7 +38,7 @@ export { ConfirmDocumentInputSchema, ExtractDocumentInputSchema };
 export const Decimal = z.union([z.string(), z.number()]);
 
 /** An ISO 8601 date-time, as `Date.toJSON` writes it. */
-export const IsoDateTime = z.string().datetime({ offset: true });
+export const IsoDateTime = isoDateTimeWithOffset();
 
 /** `_meta` on the answers of the command operations (ADR 0050; docs/ecosystem/spec/response-meta-v1.schema.json). */
 export const ResponseMetaSchema = z
@@ -59,7 +60,7 @@ export const ResponseMetaSchema = z
       )
       .optional(),
     warnings: z.array(z.object({ code: z.string(), message: z.string() })).optional(),
-    links: z.record(z.string()).optional(),
+    links: z.record(z.string(), z.string()).optional(),
   })
   .describe("Outcome of the request in one vocabulary, and what the caller's role may do next.");
 
@@ -91,7 +92,7 @@ export const ErrorBody = z
     requestId: z.string(),
     retryAfterSeconds: z.number().int().optional(),
     reasonCodes: z.array(z.string()).optional(),
-    details: z.record(z.unknown()).optional(),
+    details: z.record(z.string(), z.unknown()).optional(),
     recovery: z
       .array(z.object({ action: z.string(), description: z.string(), href: z.string().optional() }).passthrough())
       .optional(),
@@ -157,7 +158,7 @@ export const ConnectorSetBodySchema = z.object({
 export const CustomerOrderBodySchema = z.object({
   externalRef: z.string().trim().min(1).max(120),
   lines: z.array(z.object({ sku: z.string().min(1).max(120), quantity: z.number() })).max(200),
-  requestedFor: z.string().datetime({ offset: true }).optional(),
+  requestedFor: isoDateTimeWithOffset().optional(),
   note: z.string().max(5000).optional(),
 });
 
@@ -166,8 +167,8 @@ export const KitchenCapacityBodySchema = z.object({
   slots: z
     .array(
       z.object({
-        startsAt: z.string().datetime({ offset: true }),
-        endsAt: z.string().datetime({ offset: true }),
+        startsAt: isoDateTimeWithOffset(),
+        endsAt: isoDateTimeWithOffset(),
         capacityUnits: z.number().int().min(0),
       })
     )
@@ -184,7 +185,7 @@ export const FeedbackBodySchema = z.object({
 
 /** GET /api/workspaces/:id/feedback/summary?since=... */
 export const FeedbackSummaryQuerySchema = z.object({
-  since: z.string().datetime({ offset: true }).optional(),
+  since: isoDateTimeWithOffset().optional(),
 });
 
 /** GET /api/workspaces/:id/accounting/ledger?format=csv returns CSV; the default is the JSON rows. */
@@ -220,7 +221,7 @@ export const CancelWorkflowBodySchema = z.object({
 export const StandardWebhookBodySchema = z.object({
   provider: z.string().trim().min(1).max(200),
   eventId: z.string().trim().min(1).max(200),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -353,7 +354,7 @@ export const WorkflowSchema = z
     workspace_id: z.string(),
     workflow_type: z.string(),
     state: z.string(),
-    context_data: z.record(z.unknown()),
+    context_data: z.record(z.string(), z.unknown()),
     error_message: z.string().nullable(),
     retry_count: z.number().int(),
     idempotency_key: z.string(),
@@ -400,7 +401,7 @@ export const StagedDocumentSchema = z
     doc_type: z.string(),
     source_label: z.string(),
     raw_text: z.string(),
-    extracted_data: z.record(z.unknown()),
+    extracted_data: z.record(z.string(), z.unknown()),
     warnings: z.array(z.string()),
     status: z.string(),
     linked_order_id: z.string().nullable(),
@@ -415,7 +416,7 @@ export const DocumentDraftSchema = StagedDocumentSchema.extend({
   docId: z.string(),
   docType: z.string(),
   provenance: z.string(),
-  extractedFields: z.record(z.unknown()),
+  extractedFields: z.record(z.string(), z.unknown()),
   warnings: z.array(z.string()),
 });
 
@@ -456,7 +457,7 @@ export const AuditEntrySchema = z
     effect_class: z.string(),
     action: z.string(),
     policy_decision: z.string(),
-    evidence: z.record(z.unknown()),
+    evidence: z.record(z.string(), z.unknown()),
     tx_hash: z.string().nullable(),
     created_at: IsoDateTime,
   })
@@ -495,7 +496,7 @@ export const EventEnvelopeSchema = z
     workflowId: z.string().optional(),
     object: z.object({ type: z.string(), id: z.string().nullable() }).optional(),
     correlationId: z.string().optional(),
-    data: z.record(z.unknown()),
+    data: z.record(z.string(), z.unknown()),
   })
   .passthrough();
 
@@ -612,7 +613,7 @@ export const MenuProposalSchema = z
     sourceFeedbackIds: z.array(z.string()),
     proposedBy: z.string(),
     decidedBy: z.string().nullable(),
-    applied: z.record(z.unknown()).nullable(),
+    applied: z.record(z.string(), z.unknown()).nullable(),
     createdAt: IsoDateTime,
     updatedAt: IsoDateTime,
   })
@@ -838,6 +839,14 @@ export const TemplateSummarySchema = z
     defaultDailyLimitCents: Decimal,
     defaultApprovalThresholdCents: Decimal,
     roles: z.array(z.object({ roleName: z.string() }).passthrough()),
+    /** Which optional parts the template has. A template with neither has no stock and no purchasing (docs/decisions/0084). */
+    modules: z.object({ stock: z.boolean(), suppliers: z.boolean() }).optional(),
+    /** Descriptive only (docs/decisions/0084): no behaviour reads these yet. */
+    dataSources: z.array(z.object({ id: z.string(), label: z.string(), kind: z.string(), readOnly: z.literal(true) })).optional(),
+    triggers: z
+      .array(z.object({ id: z.string(), kind: z.enum(["schedule", "event", "manual"]), description: z.string() }))
+      .optional(),
+    outputs: z.array(z.object({ id: z.string(), kind: z.enum(["report", "notice", "order"]), description: z.string() })).optional(),
   })
   .passthrough();
 
@@ -917,8 +926,8 @@ export const OpenApiDocumentSchema = z
   .object({
     openapi: z.literal("3.0.3"),
     info: z.object({ title: z.literal("Bind API"), version: z.string() }).passthrough(),
-    paths: z.record(z.record(z.unknown())),
-    components: z.object({ securitySchemes: z.record(z.unknown()) }).passthrough(),
+    paths: z.record(z.string(), z.record(z.string(), z.unknown())),
+    components: z.object({ securitySchemes: z.record(z.string(), z.unknown()) }).passthrough(),
   })
   .passthrough();
 
@@ -1007,3 +1016,114 @@ export const OwnerEmailVerifiedSchema = z
   .passthrough();
 
 export const OwnerEmailRemovedSchema = z.object({ id: z.string(), removed: z.literal(true) }).passthrough();
+
+/**
+ * Tab ledger (docs/decisions/0081). Amounts cross the API as decimal strings of micro-USDC, never JSON numbers. The
+ * charge body's amount is checked by the route (INVALID_CHARGE_AMOUNT), so a number reaches the route and is refused there.
+ */
+export const TabChargeBodySchema = z.object({
+  counterpartyId: z.string().min(1).max(64),
+  // Bounded only so a very long string is refused by the route as INVALID_CHARGE_AMOUNT, never as a shape error.
+  amountMicro: z.string().max(64),
+  idempotencyKey: z.string().min(1).max(128),
+  description: z.string().min(1).max(200),
+});
+
+const TabEntrySchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  counterpartyId: z.string(),
+  kind: z.enum(["charge", "clear", "reversal"]),
+  amountMicro: z.string(),
+  idempotencyKey: z.string(),
+  settlementId: z.string().nullable(),
+  description: z.string(),
+  createdAt: z.string(),
+});
+
+const TabSettlementRowSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  counterpartyId: z.string(),
+  amountCents: z.string(),
+  status: z.enum(["pending", "submitted", "confirmed", "held", "cancelled"]),
+  txHash: z.string().nullable(),
+  holdReason: z.string().nullable(),
+  submittedAt: z.string().nullable(),
+  confirmedAt: z.string().nullable(),
+  confirmedBlock: z.number().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+/** POST /api/workspaces/:id/tabs/charges: created true (201) or the same charge already recorded (200). */
+export const TabChargeResultSchema = z.object({ created: z.boolean(), entry: TabEntrySchema });
+
+/** GET /api/workspaces/:id/tabs: one row per counterparty that has entries. */
+export const TabSummarySchema = z.object({
+  counterpartyId: z.string(),
+  name: z.string(),
+  entryCount: z.number(),
+  balanceMicro: z.string(),
+  settleableCents: z.string(),
+});
+
+/** GET /api/workspaces/:id/tabs/:counterpartyId: the balance, the latest entries and settlements. */
+export const TabDetailSchema = z.object({
+  counterpartyId: z.string(),
+  balanceMicro: z.string(),
+  settleableCents: z.string(),
+  entries: z.array(TabEntrySchema),
+  settlements: z.array(TabSettlementRowSchema),
+});
+
+/**
+ * POST /api/workspaces/:id/tabs/settlements/:settlementId/resolve (docs/decisions/0081). `reconcile` finds and confirms the
+ * hash of a held settlement; `cancel_and_restore` restores its clear only when it is provably unsent. Owner only.
+ */
+export const TabResolveBodySchema = z.object({
+  action: z.enum(["reconcile", "cancel_and_restore"]),
+  acknowledgeNotSent: z.boolean().optional(),
+});
+
+/** GET /api/workspaces/:id/tabs/settlements?status=held: one row per held settlement, oldest change first (at most 50). */
+export const TabHeldSettlementSchema = z.object({
+  id: z.string(),
+  counterpartyId: z.string(),
+  amountCents: z.string(),
+  status: z.literal("held"),
+  holdReason: z.string().nullable(),
+  txHash: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  hasEffect: z.boolean(),
+  effectStatus: z.string().nullable(),
+});
+
+/**
+ * The answer to a resolve. `outcome.kind` names what happened: for `reconcile`, `adopted` (with its source, hash and final
+ * status) or one of the reasons nothing was adopted (`lookup_unavailable`, `nothing_found`, ...); for `cancel_and_restore`,
+ * `cancelled` or `already_cancelled`. A refusal is a 409 NOT_PROVABLY_UNSENT, not a body.
+ */
+export const TabResolveResultSchema = z.object({
+  action: z.enum(["reconcile", "cancel_and_restore"]),
+  outcome: z.object({ kind: z.string() }).passthrough(),
+});
+
+/**
+ * POST /api/workspaces/:id/tabs/:counterpartyId/settle. `outcome` says what the call did: nothing to settle (below_threshold),
+ * the amount needs approval, the workspace refused it (paused or over the daily budget), or a settlement was recorded with
+ * its status now.
+ */
+export const TabSettleResultSchema = z.object({
+  outcome: z.enum(["below_threshold", "needs_approval", "refused", "settlement", "already_attempted"]),
+  balanceMicro: z.string().optional(),
+  utcDay: z.string().optional(),
+  reason: z.string().optional(),
+  amountCents: z.string().optional(),
+  thresholdCents: z.string().optional(),
+  settlementId: z.string().optional(),
+  status: z.enum(["pending", "submitted", "confirmed", "held", "cancelled"]).optional(),
+  txHash: z.string().nullable().optional(),
+  holdReason: z.string().nullable().optional(),
+});

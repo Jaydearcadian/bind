@@ -198,6 +198,11 @@ async function main() {
   try {
     const ws = await bind.workspace(state.me.workspaceId);
     state.roles = new Map((ws.roles ?? []).map((r) => [r.role_name, r.display_name]));
+    // Owners can list keys, so an agent's calls show under the name it was given on Connect an agent. Staff cannot; they see "An agent key".
+    if (state.me.role === "owner") {
+      const tokens = await bind.call("listTokens", { params: { id: state.me.workspaceId } }).catch(() => []);
+      for (const t of tokens) if (t.role === "staff" && String(t.label).startsWith("agent: ")) state.roles.set(t.id, String(t.label).slice(7));
+    }
     showDemo({ bind, me: state.me, ws: ws.workspace });
     await loadHistory();
   } catch {

@@ -51,12 +51,14 @@ function wireTheme() {
 
 // ---- Workspace and sign-in --------------------------------------------------------------------------------------------
 
+const TEAM_NAMES = { "kitchen-v1": "Kitchen team", "social-v1": "Social media team" };
+
 function renderWorkspace(ws) {
   state.ws = ws;
   const fact = (k, v) => h("div", { class: "fact" }, h("dt", {}, k), h("dd", {}, v));
   $("ws-facts").replaceChildren(
     fact("Name", ws.name),
-    fact("Team", String(ws.template_id).startsWith("kitchen") ? "Kitchen team" : ws.template_id),
+    fact("Team", TEAM_NAMES[ws.template_id] || (String(ws.template_id).startsWith("kitchen") ? "Kitchen team" : ws.template_id)),
     fact("Started", new Date(ws.created_at).toLocaleDateString(undefined, { dateStyle: "long" })),
     fact("Your role", state.me.role === "owner" ? "Owner" : "Staff"),
     fact("Time zone", Intl.DateTimeFormat().resolvedOptions().timeZone || "Your device's")

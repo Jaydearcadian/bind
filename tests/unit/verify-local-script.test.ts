@@ -225,3 +225,29 @@ describe("CI workflow parity", () => {
     expect(doc.permissions).toEqual({ contents: "read" });
   });
 });
+
+describe("anvil node start: no leaked expectation, refusal, traps", () => {
+  it("never exports or unsets ANVIL_EXPECT_ARC; it is set inline on the arc-anvil vitest command only", () => {
+    const text = fs.readFileSync(SCRIPT, "utf8");
+    // Only a shell command at the start of a line counts; the BLOCKED message may name the variable in prose.
+    expect(text).not.toMatch(/^\s*export\s+ANVIL_EXPECT_ARC/m);
+    expect(text).not.toMatch(/^\s*unset\s+ANVIL_EXPECT_ARC/m);
+    expect(text).toContain('ANVIL_EXPECT_ARC=1 ANVIL_RPC_URL="$url" npx vitest run tests/integration/anvil-settlement.test.ts');
+  });
+
+  it("refuses a port that already answers, checks the node process while it starts, and stops its own node on every exit path", () => {
+    const text = fs.readFileSync(SCRIPT, "utf8");
+    expect(text).toContain("REFUSED: something already answers on 127.0.0.1");
+    expect(text).toContain('kill -0 "$pid"');
+    expect(text).toContain("trap cleanup EXIT");
+    expect(text).toContain("trap 'cleanup; exit 130' INT");
+    expect(text).toContain("trap 'cleanup; exit 143' TERM");
+  });
+
+  it("the summary states whether the Arc protocol block ran, was skipped, or did not apply", () => {
+    const text = fs.readFileSync(SCRIPT, "utf8");
+    expect(text).toContain("ARC_BLOCK=ran");
+    expect(text).toContain("ARC_BLOCK=skipped");
+    expect(text).toContain("ARC_BLOCK=n/a");
+  });
+});
