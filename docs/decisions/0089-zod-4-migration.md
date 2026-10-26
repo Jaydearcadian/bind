@@ -92,3 +92,11 @@ types are generated from it.
 - The OpenAPI document and the SDK types change only for `contactEmail`. Generated output is otherwise identical.
 - Future zod upgrades: check the `matchPreviousDocument` rules and the two differential checks described in
   `docs/RELEASE_EVIDENCE.md` section 12.
+
+## Addendum (2026-10-26): review and browser findings
+
+- **zod 4 and the CSP.** The first full browser run failed `tests/web/privy-bundle.spec.ts`: when a schema is built, zod 4 probes `new Function("")`, which the site's `script-src 'self'` reports as a CSP violation even though the probe is caught. The vendored Privy bundle builds a zod schema at import. `scripts/web-entry/zod-config.js` sets `z.config({ jitless: true })` and is imported first in `scripts/web-entry/privy.js`, so compilation is off before any schema exists (ES modules run imports in order). The CSP was not loosened and the test was not changed.
+- **Bundle size.** `web/app/vendor/privy.js` grew from 989,874 to 1,384,708 bytes (about +395 KB, about +79 KB gzipped) because zod 4 does not tree-shake. It stays under the 3 MB limit in the existing test.
+- **Privy override.** Reviewed as safe for the current versions: the server never imports `@privy-io/*`, `@privy-io/js-sdk-core` is a build-time dev dependency, and nothing parses with `APIError`. Conditions: keep `js-sdk-core` pinned, re-check `api-base`'s zod use on every bump, remove the override once Privy ships zod 4 support. `tests/unit/privy-api-base-zod.test.ts` now guards it.
+- **Field naming.** The statement that type-error fields are named once "as before" holds for type errors. A field that fails two non-type checks (for example an out-of-range integer on a cents field) is now named twice in `fields`, where zod 3 named it once. The answer is still a 400 with the same code; the list can repeat a name.
+- **Tests added:** the Privy override guard, and a customer order with 201 lines is refused (the collection cap named by the advisory).

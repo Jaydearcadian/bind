@@ -175,3 +175,14 @@ describe("numbers outside the range zod 4 accepts (a documented change, ADR 0089
     expect(InitialSupplyItemSchema.safeParse(body).success).toBe(false);
   });
 });
+
+describe("collection caps are enforced (ADR 0089, the audited advisory's pattern)", () => {
+  it("a customer order with 201 lines is refused and 200 is accepted", async () => {
+    const { CustomerOrderBodySchema } = await import("../../src/api/schemas.js");
+    const base = (n: number) => ({ externalRef: "ref-1", lines: Array.from({ length: n }, () => ({ sku: "SKU-1", quantity: 1 })) });
+    expect(CustomerOrderBodySchema.safeParse(base(200)).success).toBe(true);
+    const over = CustomerOrderBodySchema.safeParse(base(201));
+    expect(over.success).toBe(false);
+    expect(JSON.stringify(over.error?.issues.map((i) => i.path))).toContain("lines");
+  });
+});
