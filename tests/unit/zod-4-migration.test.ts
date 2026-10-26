@@ -7,7 +7,7 @@ import { ISO_DATE_TIME_WITH_OFFSET as MCP_ISO_DATE_TIME_WITH_OFFSET } from "../.
 import { TOOLS } from "../../mcp/src/tools.js";
 
 /**
- * Pins the behaviour that the move from zod 3 to zod 4 had to keep (ADR 0087). The expectations for the date-time rule are the
+ * Pins the behaviour that the move from zod 3 to zod 4 had to keep (ADR 0089). The expectations for the date-time rule are the
  * answers of zod 3.25.76 (`z.string().datetime({ offset: true })`), recorded when the move was made.
  */
 
@@ -47,7 +47,7 @@ describe("offset date-time rule (zod 3 semantics)", () => {
   });
 });
 
-describe("email validation (zod 3 semantics, ADR 0087)", () => {
+describe("email validation (zod 3 semantics, ADR 0089)", () => {
   // zod 3.25.76's answer for each sample (`z.string().email()`), recorded when the move was made.
   const truth: Array<[string, boolean]> = [
     ["a@b.co", true],
@@ -164,7 +164,7 @@ describe("MCP tool validation messages (the text an MCP client sees)", () => {
   });
 });
 
-describe("numbers outside the range zod 4 accepts (a documented change, ADR 0087)", () => {
+describe("numbers outside the range zod 4 accepts (a documented change, ADR 0089)", () => {
   it("an integer beyond the safe integer range is refused", () => {
     const body = { sku: "ABC-1", name: "Item", currentQuantity: 1, parLevel: 1, reorderQuantity: 1, unitPriceCents: 2 ** 53 };
     expect(InitialSupplyItemSchema.safeParse(body).success).toBe(false);

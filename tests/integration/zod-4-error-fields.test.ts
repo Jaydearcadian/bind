@@ -9,7 +9,7 @@ import { provisionWorkspace } from "../../src/templates/registry.js";
 import { issueToken } from "../../src/auth/tokens.js";
 
 /**
- * The `fields` a 400 names, from the real server (ADR 0087). zod 4 also runs a length check on a wrong-typed value, and it
+ * The `fields` a 400 names, from the real server (ADR 0089). zod 4 also runs a length check on a wrong-typed value, and it
  * refuses a number that JSON reads as infinity. Each failing field must still be named once, and the answer keeps its shape.
  * Two routes answer with `fields` (the customer-order and menu-proposal bodies); the error-contract wrapper moves them to
  * `details.fields`.

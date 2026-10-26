@@ -13,7 +13,7 @@ import {
   type TransactionReceipt,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { deployBindSettlementOn, loadArtifact } from "../helpers/bind-settlement.js";
+import { deployBindSettlementOn, loadArtifact, viemClientsOn } from "../helpers/bind-settlement.js";
 import { ArcL1SettlementAdapter } from "../../src/adapters/settlement/arc-l1.js";
 import { SettlementChainMismatchError, SettlementRejectedError } from "../../src/adapters/settlement/errors.js";
 import type { TransferRequest, TransferResult } from "../../src/adapters/settlement/types.js";
@@ -343,5 +343,189 @@ describe.skipIf(!ANVIL_RPC_URL)("[anvil] BindSettlement and the Arc adapter on a
     expect(error.expected).toBe(5042002);
     expect(error.actual).toBe(ANVIL_CHAIN_ID);
     expect(await settlementLogs(ctx)).toHaveLength(0);
+  }, TEST_TIMEOUT);
+});
+
+/**
+ * [arc-anvil] Arc protocol differences. These run only on a node in Arc mode (latest base fee at least 20 gwei), which is
+ * `arc-anvil --network arc --chain-id 31337`. Plain Anvil starts at 1 gwei and is a standard EVM, so on it this block is
+ * reported NOT RUN, never passed. With ANVIL_EXPECT_ARC=1 (set by scripts/verify-local.sh for arc-anvil) the block runs
+ * regardless, and its first test fails on a node that is not in Arc mode. See docs/decisions/0088.
+ */
+const ARC_MIN_BASE_FEE_WEI = 20n * 10n ** 9n;
+const GWEI = 10n ** 9n;
+const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000";
+// The system emitter of Arc's native-value transfers. Its Transfer logs are not emitted by BindSettlement.
+const SYSTEM_EMITTER: Address = "0xfffffffffffffffffffffffffffffffffffffffe";
+const ERC20_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const TRANSFER_EVENT_ABI = [
+  {
+    type: "event",
+    name: "Transfer",
+    inputs: [
+      { name: "from", type: "address", indexed: true },
+      { name: "to", type: "address", indexed: true },
+      { name: "value", type: "uint256", indexed: false },
+    ],
+  },
+] as const;
+const EXPECT_ARC = process.env.ANVIL_EXPECT_ARC === "1";
+
+interface ArcProbe {
+  arc: boolean;
+  baseFeeWei?: bigint;
+  reason?: string;
+}
+
+async function probeArcMode(rpc: string): Promise<ArcProbe> {
+  try {
+    const block = await createPublicClient({ transport: http(rpc) }).getBlock({ blockTag: "latest" });
+    if (block.baseFeePerGas === null || block.baseFeePerGas === undefined) {
+      return { arc: false, reason: "the latest block has no baseFeePerGas" };
+    }
+    return { arc: block.baseFeePerGas >= ARC_MIN_BASE_FEE_WEI, baseFeeWei: block.baseFeePerGas };
+  } catch (error) {
+    return { arc: false, reason: `the node did not answer eth_getBlockByNumber: ${(error as Error).message.split("\n")[0]}` };
+  }
+}
+
+const arcProbe: ArcProbe = ANVIL_RPC_URL ? await probeArcMode(ANVIL_RPC_URL) : { arc: false, reason: "ANVIL_RPC_URL is not set" };
+const RUN_ARC = Boolean(ANVIL_RPC_URL) && (arcProbe.arc || EXPECT_ARC);
+
+if (!RUN_ARC) {
+  const reason =
+    arcProbe.reason ??
+    `the node at ${ANVIL_RPC_URL} has base fee ${arcProbe.baseFeeWei} wei, below 20 gwei, so it is not in Arc mode`;
+  process.stdout.write(
+    `NOT RUN [arc-anvil]: ${reason}. The Arc protocol difference tests were NOT RUN; they are not passed. ` +
+      "Start `arc-anvil --network arc --chain-id 31337` and set ANVIL_RPC_URL to run them.\n"
+  );
+}
+
+/** The error text of a viem or RPC error, including its cause chain. The node's reason can sit in any of these fields. */
+function errorTextOf(error: unknown): string {
+  const parts: string[] = [];
+  let node: any = error;
+  for (let depth = 0; node && depth < 10; depth++) {
+    for (const key of ["shortMessage", "message", "details"]) {
+      if (typeof node[key] === "string") parts.push(node[key]);
+    }
+    node = node.cause;
+  }
+  return parts.join("\n");
+}
+
+function requiredRpc(): string {
+  if (!ANVIL_RPC_URL) throw new Error("ANVIL_RPC_URL is not set");
+  return ANVIL_RPC_URL;
+}
+
+/** Owner clients on the node without a fresh contract, for the tests that only send native value. */
+function ownerClients() {
+  return viemClientsOn({ chainId: ANVIL_CHAIN_ID, transport: http(requiredRpc()), pollingInterval: 100 }, ownerKey());
+}
+
+describe.skipIf(!RUN_ARC)("[arc-anvil] Arc protocol differences", () => {
+  it("[arc-anvil] the node is in Arc mode: the latest base fee is at least 20 gwei", async () => {
+    const block = await createPublicClient({ transport: http(requiredRpc()) }).getBlock({ blockTag: "latest" });
+    expect(block.baseFeePerGas, "the latest block carries a base fee").not.toBeNull();
+    expect(
+      block.baseFeePerGas! >= ARC_MIN_BASE_FEE_WEI,
+      `base fee ${block.baseFeePerGas} wei is below 20 gwei: the node is not in Arc mode`
+    ).toBe(true);
+  }, TEST_TIMEOUT);
+
+  it("[arc-anvil] a transaction whose maxFeePerGas is below the base fee is rejected by the node", async () => {
+    const clients = ownerClients();
+    // Explicit gas skips estimation, so the only check the node makes before it refuses is the fee check.
+    const error = await rejectionOf(
+      clients.walletClient.sendTransaction({ to: SUPPLIER, value: 1n, gas: 21_000n, maxFeePerGas: GWEI, maxPriorityFeePerGas: 0n })
+    );
+    expect(errorTextOf(error)).toMatch(/max fee per gas less than block base fee/i);
+  }, TEST_TIMEOUT);
+
+  it("[arc-anvil] a native value send to the zero address reverts with 'Zero address not allowed' and moves no value", async () => {
+    const clients = ownerClients();
+    const error = await rejectionOf(
+      clients.publicClient.call({ account: clients.account.address, to: ZERO_ADDRESS, value: 1n })
+    );
+    expect(errorTextOf(error)).toContain("Zero address not allowed");
+
+    // With an explicit gas limit nothing is estimated first, so the transaction is mined and its receipt says reverted.
+    const zeroBefore = await clients.publicClient.getBalance({ address: ZERO_ADDRESS });
+    const hash = await clients.walletClient.sendTransaction({ to: ZERO_ADDRESS, value: 1n, gas: 21_000n });
+    const receipt = await clients.publicClient.waitForTransactionReceipt({ hash, timeout: 15_000 });
+    expect(receipt.status).toBe("reverted");
+    expect(await clients.publicClient.getBalance({ address: ZERO_ADDRESS })).toBe(zeroBefore);
+  }, TEST_TIMEOUT);
+
+  it("[arc-anvil] a native value send emits exactly one Transfer log from the system emitter, with from, to and an 18-decimal value", async () => {
+    const clients = ownerClients();
+    const hash = await clients.walletClient.sendTransaction({ to: SUPPLIER, value: ONE_USDC_WEI });
+    const receipt = await clients.publicClient.waitForTransactionReceipt({ hash, timeout: 15_000 });
+    expect(receipt.status).toBe("success");
+
+    expect(receipt.logs).toHaveLength(1);
+    const log = receipt.logs[0];
+    expect(log.address.toLowerCase()).toBe(SYSTEM_EMITTER);
+    expect(log.topics[0]).toBe(ERC20_TRANSFER_TOPIC);
+
+    const decoded = parseEventLogs({ abi: TRANSFER_EVENT_ABI, logs: receipt.logs, eventName: "Transfer" }) as unknown as {
+      args: Record<string, unknown>;
+    }[];
+    expect(decoded).toHaveLength(1);
+    expect(decoded[0].args.from).toBe(clients.account.address);
+    expect(decoded[0].args.to).toBe(SUPPLIER);
+    expect(decoded[0].args.value).toBe(ONE_USDC_WEI); // 1 USDC = 10^18 native units
+  }, TEST_TIMEOUT);
+
+  it("[arc-anvil] a settlement through the Arc adapter: system-emitter Transfer logs beside exactly one SettlementExecuted, which confirm and findTransfer use", async () => {
+    const ctx = await freshDeployment();
+    const sent = await ctx.adapter.transferUSDC(settleRequest());
+    expect(sent.status).toBe("submitted");
+
+    const receipt = await mined(ctx, sent.txHash as Hex);
+    expect(receipt.status).toBe("success");
+
+    const systemLogs = receipt.logs.filter((log) => log.address.toLowerCase() === SYSTEM_EMITTER);
+    expect(systemLogs.length, "the native value moves emit system-emitter logs").toBeGreaterThan(0);
+    expect(systemLogs.every((log) => log.topics[0] === ERC20_TRANSFER_TOPIC)).toBe(true);
+
+    const contractLogs = receipt.logs.filter((log) => log.address.toLowerCase() === ctx.deployed.address.toLowerCase());
+    const executedFromContract = parseEventLogs({ abi: ctx.deployed.abi, logs: contractLogs, eventName: "SettlementExecuted" });
+    const executedAnywhere = parseEventLogs({ abi: ctx.deployed.abi, logs: receipt.logs, eventName: "SettlementExecuted" });
+    expect(executedFromContract).toHaveLength(1);
+    expect(executedAnywhere).toHaveLength(1);
+
+    // confirm must count only the contract's SettlementExecuted, so the system-emitter logs beside it do not matter.
+    const confirmed = await ctx.adapter.confirm(sent.txHash);
+    expect(confirmed.status).toBe("confirmed");
+    expect(confirmed.txHash).toBe(sent.txHash);
+    expect(confirmed.blockNumber).toBe(Number(receipt.blockNumber));
+
+    const found = await ctx.adapter.findTransfer({ orderId: ORDER_ID });
+    expect(found?.status).toBe("confirmed");
+    expect(found?.txHash).toBe(sent.txHash);
+  }, TEST_TIMEOUT);
+
+  it("[arc-anvil] a settlement to the zero-address supplier is refused by the adapter with no chain effect", async () => {
+    const ctx = await freshDeployment();
+    const client = ctx.deployed.publicClient;
+    const ownerBefore = await client.getBalance({ address: ownerAddress() });
+    const nonceBefore = await client.getTransactionCount({ address: ownerAddress() });
+    const zeroBefore = await client.getBalance({ address: ZERO_ADDRESS });
+
+    // ADR 0087: the adapter refuses a zero-address recipient itself, before any RPC call, with ZERO_ADDRESS_RECIPIENT.
+    // (Before that change the refusal came from the contract's own Unauthorized revert at the pre-flight call; the
+    // contract check is still there as a second line of defence, but the adapter now never gets that far.)
+    // The chain-effect assertions below are unchanged: no log, no nonce change, no balance change.
+    const error = await rejectionOf(ctx.adapter.transferUSDC(settleRequest({ toAddress: ZERO_ADDRESS })));
+    expect(error).toBeInstanceOf(SettlementRejectedError);
+    expect(error.code).toBe("ZERO_ADDRESS_RECIPIENT");
+
+    expect(await settlementLogs(ctx)).toHaveLength(0);
+    expect(await client.getTransactionCount({ address: ownerAddress() })).toBe(nonceBefore);
+    expect(await client.getBalance({ address: ownerAddress() })).toBe(ownerBefore);
+    expect(await client.getBalance({ address: ZERO_ADDRESS })).toBe(zeroBefore);
   }, TEST_TIMEOUT);
 });

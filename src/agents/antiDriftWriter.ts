@@ -122,17 +122,8 @@ export async function writeWorkflowAntiDriftFiles(
     `--rpc-url ${CANONICAL_ARC_LOCK.rpcUrl}`,
   ].join(" ");
 
-  const circleExecuteCmd = [
-    "circle wallet execute",
-    `"settleOrder(bytes32,address)"`,
-    record.decisionHash,
-    record.selectedVendor.vendorWallet,
-    `--contract ${CANONICAL_ARC_LOCK.bindSettlementContract}`,
-    `--chain ${CANONICAL_ARC_LOCK.chainName}`,
-    `--amount ${record.selectedVendor.totalPriceUsdc}`,
-    `--rpc-url ${CANONICAL_ARC_LOCK.rpcUrl}`,
-  ].join(" ");
-
+  // No settlement command is printed here: value moves only in the settlement adapter, through the effects ledger
+  // and the commitment gate (docs/decisions/0085). A printed command would be a second, unguarded path.
   const stateAnchorMarkdown = `# Workflow State Anchor: ${record.workflowId}
 
 - **Business Template:** \`${record.templateId}\`
@@ -207,10 +198,7 @@ ${benchmarkRows}
   \`\`\`bash
   ${circleQueryCmd}
   \`\`\`
-- **Circle CLI Settlement Execution:**
-  \`\`\`bash
-  ${circleExecuteCmd}
-  \`\`\`
+- **Settlement Execution:** performed only by the Bind settlement adapter, through the effects ledger and the commitment gate (no command is recorded here).
 - **On-Chain Error Guards Active:** \`VendorNotWhitelisted (${CANONICAL_ARC_LOCK.errorSelectors.VendorNotWhitelisted})\`, \`DailyLimitExceeded (${CANONICAL_ARC_LOCK.errorSelectors.DailyLimitExceeded})\`
 
 ## 5. Settlement vs. Fulfilment Invariant

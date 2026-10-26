@@ -1,4 +1,4 @@
-# ADR 0087: Move from zod 3 to zod 4 for the high-severity audit (GHSA-mrhx-c7xc-m3w5)
+# ADR 0089: Move from zod 3 to zod 4 for the high-severity audit (GHSA-mrhx-c7xc-m3w5)
 
 ## Status
 Accepted (2026-10-25). One part is a deliberate exception to the rule we set for dependency overrides (decision 4). It is
