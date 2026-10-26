@@ -703,7 +703,8 @@ key was used by any of this work. The live run of the tab path (ADR 0081 item c)
 | A9 | Forge gates, Slither, the browser E2E run, CI on GitHub, the live Arc run of the tab path | None run in this round | Not run. CI still starts plain Anvil (ADR 0088 follow-up). | NOT_RUN |
 
 Known limits: the dropped decision can be wrong on a lagging node (fail-closed, the transfer is never re-sent, but a dropped order is not adopted automatically and needs an
-operator settle); the escrow and nanopayment ADRs (0086, 0083) are Proposed and decide nothing; ADR 0085's remaining prompt-injection surface (deepagents file tools) is recorded, not fixed.
+
+Owner decision, 2026-10-26: CI stays on the standard Anvil. The Arc-mode (`arc-anvil`) tests are therefore NOT RUN on GitHub; they have only been run locally (LOCAL_PASS). Revisit when the Arc Foundry release archive is available and someone can test the CI change. The live tab-path run stays NOT RUN and not approved.
 
 ## 0e. Production deploy of main at 22b64fc (2026-10-26)
 
@@ -711,3 +712,10 @@ operator settle); the escrow and nanopayment ADRs (0086, 0083) are Proposed and 
 - Full local gate on the merged branch before the PR, private database: 18 of 19 passed (unit 1012, integration 909 with 16 skipped, contracts 32, Anvil 10 with 6 skipped, browser E2E, audit 0 vulnerabilities). The one failure, codebase map drift, was fixed by regenerating the map. The background-worker test "a tick is bounded by batch size" failed once under load in an earlier run and passed alone and in the later full run (timing-sensitive; not skipped or changed). Evidence class: LOCAL_PASS.
 - Live, unauthenticated (LIVE_READ_PASS): `/health`, `/api/public-config`, `/app/sign-in`, `/app/connect-agent`, `/app/vendor/privy.js` return 200; `POST /mcp` without a key returns 401 `UNAUTHENTICATED`; `GET /api/templates` lists kitchen-v1, agency-v1 and social-v1 (social-v1 with no stock and no suppliers modules); the CSP is unchanged (`script-src 'self'`, `connect-src 'self' https://auth.privy.io`).
 - NOT_RUN: `/mcp` with a real agent key and client; live Google sign-in and wallet creation on this build; live email sending (off in production); anything on chain.
+
+## 0f. Live tab-path harness, review and hardening (2026-10-26)
+
+- Harness `scripts/live-tab-arc.ts` (ADR 0090): hard cap of 3 payments (0.03 USDC) from chain count plus a ledger, O_EXCL lock, balance and gas simulation before send, chain-based resume, separate submitted/confirmed reporting, read-only `--preflight`, dedicated-database rule. Two Sonnet reviews found gaps (cap, funding, resume, reporting, concurrency, deploy block, ledger path); all were fixed and the final review returned PASS WITH FIXES with no blocking defect.
+- LOCAL_PASS: `tests/unit/live-tab-arc.test.ts` 131 passed; `tests/integration/live-tab-arc-rehearsal.test.ts` 2 passed on a private local Postgres (skipped without `BIND_LIVE_PG_ADMIN_URL`); 34 of 35 mutation checks caught (survivor: the child's lock release, recorded in ADR 0090).
+- NOT_RUN: every chain path of the harness (log scan, gas estimate, nonce reads, cap against the real testnet, lock across real processes) was tested with fake RPCs only. The live tab-path run itself is NOT_RUN and not approved. The owner must rotate the RPC token and signer key and give an explicit yes first. The chain cap counts all signer-to-vendor payments since deployment, including earlier recovery runs, so `--preflight` may report the cap already reached.
+

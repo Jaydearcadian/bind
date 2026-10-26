@@ -60,3 +60,6 @@ templates/ws-*/
 .ua/function-map.json
 .ua/.trash-*/
 .claude/worktrees/
+
+# Live tab harness: the spend ledger lives here (docs/RUNBOOK.md section 16.4)
+.live-state/

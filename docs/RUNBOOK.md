@@ -742,3 +742,131 @@ state and labels it. In `timeout-retry`, the second broadcast can revert with `O
 once. Since ADR 0079 (duplicate reverted send), the order then adopts the first, confirmed transfer and ends `reconciled`, with an
 audit row `settlement.reverted_duplicate_adopted`. A held order (`SETTLEMENT_FAILED`) in this scenario is a failure of that rule, not an expected result.
 
+
+### 16.4 Live sub-cent tab settlement on Arc testnet (opt-in, spends testnet USDC)
+
+`scripts/live-tab-arc.ts` proves the sub-cent tab ledger (docs/decisions/0081) against the Arc testnet (chain 5042002). It drives
+Bind's own code: `TabLedger` (`accrueCharge`, `settleTab`, `executeSettlement`, `confirmSettlement`, `reconcileHeld`,
+`cancelHeldAndRestore`), the tab worker's tick (`runTick`) and `ArcL1SettlementAdapter`. The harness never calls `transferUSDC` itself.
+Decisions: docs/decisions/0090 (the cap, the chain-decided resume, the dedicated databases) and 0081 (the tab ledger).
+
+**Each scenario sends exactly one payment of 1 cent (0.01 USDC) to the whitelisted vendor. The three scenarios spend 0.03 USDC of
+testnet funds in total, plus gas.** The amount is not configurable: there is no option for it, and any unknown option is refused.
+
+| Scenario | What it does | What it proves | Command |
+|---|---|---|---|
+| `settle` | One `settleTab` (reserve, send, confirm), then the same call again. | One transfer, the submitted milestone on record before the confirmation, the carried-over remainder, and that the repeat sends nothing. | `npx tsx scripts/live-tab-arc.ts settle --confirm-testnet-spend [--state <file>] [--write-evidence <new-file>]` |
+| `crash-after-send` | A child sends, then is killed (SIGKILL) after the transfer returns and before the ledger records it. A new process runs the worker's tick, twice. | The tick adopts the mined transfer (`findTransfer`), sends nothing again (one effect attempt), confirms it, and the next tick is a no-op. | `npx tsx scripts/live-tab-arc.ts crash-after-send --confirm-testnet-spend [--state <file>] [--write-evidence <new-file>]` |
+| `held-adopt` | The first send is broadcast, then fails with a timeout, so its outcome is unknown. The transfer is mined. The supplier is made unverified and the settlement is re-run (held, not sent). A restore is attempted (refused by the chain). The worker's held step adopts and confirms it. | A hold keeps the clear and sends nothing; a restore is refused while the chain shows the transfer; the worker adopts the hash; one transfer on chain. | `npx tsx scripts/live-tab-arc.ts held-adopt --confirm-testnet-spend [--state <file>] [--write-evidence <new-file>]` |
+
+Required environment, by name only: `ARC_RPC_URL`, `ARC_SIGNER_PRIVATE_KEY`, `BIND_SETTLEMENT_ADDRESS` (must be
+`0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29`), and `DATABASE_URL`. `NODE_ENV` must not be `production`, and `SETTLEMENT_MODE`, if set, must be
+`arc-testnet`. **The deploy block is not operator input.** The harness uses the approved deploy block **67155017**, the block of the deployment
+that created the approved contract (`docs/RELEASE_EVIDENCE.md`, the deployment receipts, L9). `BIND_SETTLEMENT_DEPLOY_BLOCK` may be set only to that
+block or lower (a higher value is refused). The harness also requires no code at the block before the deploy block. The approved block was taken from
+that recorded evidence; this change did not re-read it from the chain.
+
+**Before a live run: `--preflight`.** `npx tsx scripts/live-tab-arc.ts <scenario> --preflight` (arc only) reads the contract, the
+signer's balance, the nonce, the total cap and the database, prints the plan, and exits 0 only when every check passes
+(`PREFLIGHT_READY`, evidence class `LIVE_READ_PASS`). A refused or blocked check exits 2. A preflight spawns nothing, sends nothing,
+and writes nothing: it takes no `--fresh`, `--resume` or `--write-evidence`.
+
+**One dedicated database per scenario (the dedicated-database rule).** The worker's tab and order steps are global: a tick settles any
+tab in the database that holds a cent, and resumes any order left in `settling`. So the harness requires:
+
+- the database name starts with `bind_live_` (or it holds the `bind_live_marker` table), for example `bind_live_settle`,
+  `bind_live_crash` and `bind_live_held`, each created empty and migrated with `npx tsx src/db/migrate.ts`;
+- for a new run, the `workspaces` table is empty, and there are no pending, submitted or held tab settlements, no tab with a cent, and
+  no orders in `settling` or `settlement_submitted`;
+- on a reuse of a state, and in every child before it starts, the `workspaces` table holds only that state's workspace.
+
+The fixture limits are one cent a day and a one-cent approval threshold. A run that fails leaves a pending or held settlement behind, and the
+check then refuses later runs in that database until it is resolved or the database is replaced.
+
+**The total cap: three payments, ever.** The harness refuses to send when either count is at 3 (0.03 USDC):
+
+- the chain: every `SettlementExecuted` from the signer to the vendor since `BIND_SETTLEMENT_DEPLOY_BLOCK` (chunked, a failed window is BLOCKED);
+- the spend ledger: `~/.bind-live-state/tab-spend-ledger.jsonl` (the operator's home directory, a fixed path independent of the checkout),
+  one line per send attempt, written and fsynced before the broadcast. A rehearsal never reads or writes it.
+
+**The lock.** The cap check and the ledger append are one critical section. The send child takes `tab-spend-ledger.jsonl.lock` (an exclusive
+create) before the cap check and holds it until it exits. While the lock file exists, every run and every preflight refuses: the lock is never
+broken automatically, whoever wrote it and whether or not its owner is still running. After the append the child re-reads the ledger, and
+refuses to broadcast if more than three attempts are recorded. The child also refuses while the signer has a transaction in flight (pending nonce
+different from latest), so a payment still in the mempool blocks the next one.
+
+*Procedure for a held lock:* confirm that no live-tab process is running (for example `pgrep -fa live-tab-arc`), inspect the chain and the ledger
+(`--preflight` shows the count), and only then remove the `.lock` file by hand. The `crash-after-send` scenario kills its child with SIGKILL by design,
+so it leaves the lock: inspect, then remove it. Deleting the ledger itself only removes its count: the chain count still applies, but an attempt that was
+recorded and never broadcast is then lost from the count. Do not delete it without a reason.
+
+**A burned slot.** A failure after the ledger intent is written but before the broadcast (for example a simulation error, or a broadcast the node
+refuses) still uses one of the three slots. The harness does not give it back.
+
+The orchestrator checks both before it spawns the send child, and the child checks both again before each broadcast. `--fresh` does not skip
+either check. **The chain count includes payments to this vendor from this signer made by any harness since the deploy block** (for
+example `scripts/live-recovery-arc.ts`). If the count is already 3, no run can send; `--preflight` shows the count first.
+
+**Guards.** They run before any send, in the orchestrator and again in each child, with fresh reads: the confirm flag; `NODE_ENV`; the database
+host (a local host only; a `host` or `hostaddr` parameter is refused); the database name and workspaces (above); the settlement mode; the approved
+contract address and a deploy block with code at that block; `eth_chainId` = 5042002; `owner()` equal to the signer; the vendor whitelisted and
+`enforceVendorWhitelist()` true. Then, before each broadcast, in this order: the pinned settlement (a pending one-cent settlement of this tab);
+the order unpaid on chain (`settledOrders` false, no `SettlementExecuted` for the order); the total cap; the signer's native balance (at least one
+cent plus a 0.003 USDC gas margin); a successful `eth_estimateGas` of the exact `settleOrder` call; and only then the spend ledger record. Every log
+read is chunked (`src/adapters/settlement/log-scan.ts`). A refusal names the rule, never a value, and sends nothing. One transfer per process is allowed.
+
+**State, resume and `--fresh`.** Each scenario has a state file (default `os.tmpdir()/bind-live-tab-<scenario>.json`; `--state <file>` chooses
+another). It records the baseline (the signer's nonce and the vendor balance, the USDC decimals, the contract, the deploy block, the head block)
+before the send, and that the send started. A second send for a scenario is refused while its state records a send.
+
+- A started send with a recorded result is resumed without a send by `--resume`, which waits for the mined transfer, runs the restart if the scenario needs
+  one, and verifies.
+- A started send with **no recorded result** (a timeout, a SIGTERM, a parent that died after the broadcast, or a crash between the state write and the
+  broadcast) is decided by the chain on `--resume` (arc only):
+  - **PAID**: the order's payment is on chain. Resume recovers and verifies it. Nothing is sent.
+  - **NOT_SENT**: no payment for the order, the signer's nonce unchanged, no broadcast recorded. Nothing was paid. Resume refuses, because Bind
+    has already reserved the settlement and this harness does not re-send a reservation. A new run is `--fresh` in a **new, empty** dedicated database.
+  - **AMBIGUOUS**, or a chain read that fails: a **HARD STOP**. Inspect the chain, and do NOT use `--fresh`.
+- Without `--resume`, a started send is refused.
+- `--fresh` starts a NEW payment of 0.01 USDC. It is refused unless the chain proves the prior send was not made (NOT_SENT). It can never cause a
+  second payment for a settlement that is on chain or unknown. Use it only on purpose.
+- If a state file is deleted after a send started, the harness cannot resume that send. The chain count and the spend ledger still bound the total
+  at three payments, and the ledger records every attempt. The operator must inspect the chain and the ledger before any new run.
+- A failure after the ledger intent but before the broadcast burns one of the three slots (see "A burned slot" above).
+
+**Results and evidence.** One JSON report on stdout: the steps, the child exit signals, the database states, the nonces, the balances and the
+assertions. Two top-level fields carry the outcome: `submitted` lists every transaction hash this run broadcast, and `confirmed` is `{bool, block}`,
+where `bool` is true only when Bind's record and (on arc) the chain's log agree. `--write-evidence <new-file>` writes the same report to a new file and
+refuses to overwrite one. Every output and file goes through `src/utils/redact.ts`, with the RPC URL and its path segments, the key and the database
+URL as extra secrets.
+
+| Result | Exit | Evidence class | Meaning |
+|---|---|---|---|
+| `PASS` | 0 | `VERIFIED_REMOTE` (PASS against a remote Arc RPC only); `LOCAL_PASS` (loopback or local-sim) | Every assertion held. |
+| `FAIL` | 1 | (none) | An unexpected state or a failed assertion. Nothing further is sent. |
+| `REFUSED` | 2 | `NOT_RUN` | A guard refused the run before a send, or a resume or `--fresh` was refused by the chain decision. Nothing was sent. |
+| `BLOCKED` | 2 | `BLOCKED` | A read the guards need could not be completed. Nothing was sent. |
+| `SUBMITTED_UNCONFIRMED` | 3 | `SUBMITTED_UNCONFIRMED` | A transaction was broadcast, but it is not confirmed in Bind's record (a timeout or a stop after the broadcast, or no mining within the bound). It is never a PASS, never reported as confirmed, and not a plain FAIL. Nothing further is sent. Run `--resume` later to read the chain. |
+
+The parent never retries or re-sends after a failure. Exit codes are as above; `--preflight` exits 0 only for `PREFLIGHT_READY`.
+
+**Offline rehearsal (no network, no spend).** `--adapter local-sim` swaps in the in-memory simulator and skips every chain read; the report says so. `ARC_RPC_URL` and
+`ARC_SIGNER_PRIVATE_KEY` must be unset. It proves the orchestration, the kill, the restart and the database states, and not one payment across processes
+(the simulator forgets its transfers when a process ends). Use a dedicated rehearsal database too (for example `bind_live_rehearsal`).
+
+```
+npx tsx scripts/live-tab-arc.ts settle --adapter local-sim [--state <file>] [--write-evidence <new-file>]
+```
+
+The rehearsal is also a test: `tests/integration/live-tab-arc-rehearsal.test.ts` runs the orchestrator and a real child process on local-sim against a
+private `bind_live_rehearsal_<random>` database, which it creates, migrates and drops. It needs `BIND_LIVE_PG_ADMIN_URL`, an admin URL to a Postgres server on
+`127.0.0.1` or `localhost`. Without that variable it is **SKIPPED** and prints why; a skipped run is not a pass.
+
+**Not verified by the offline rehearsal.** The chain reads, the transports, the log scan and the cap against the Arc testnet. A loopback fake of the
+RPC exercises those code paths; it is not the Arc network and it is not evidence from it. No live run has been made for the change in this section.
+
+Operator notes (final review):
+
+- The ledger and lock live under `$HOME/.bind-live-state/`. Keep `HOME` the same for every run (sudo, CI and containers change it). A different `HOME` means a different ledger and lock; the chain count still caps the total at 3 once payments are mined. `--preflight` prints the resolved ledger path.
+- A child refused because the lock is held (or by any later hook check) has already written its send marker to the state file. Treat that state file as used and start the scenario from a fresh state only after inspecting the chain and the ledger.
+- The lock uses `O_EXCL` and is reliable on a local filesystem only, not on NFS.
