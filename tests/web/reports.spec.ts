@@ -69,7 +69,14 @@ test("a social team's owner adds a brand, updates its stats, makes a report and 
 
   // The Reports link is in the nav of other pages for this team.
   await page.goto("/app/team");
-  await expect(page.locator(".side-nav").getByRole("link", { name: "Reports" })).toBeVisible();
+  const more = page.getByRole("button", { name: "More" });
+  if (await more.isVisible()) {
+    // On a phone the side nav is hidden: the link is in the More menu.
+    await more.click();
+    await expect(page.locator("#more-menu").getByRole("link", { name: "Reports" })).toBeVisible();
+  } else {
+    await expect(page.locator(".side-nav").getByRole("link", { name: "Reports" })).toBeVisible();
+  }
   expect(problems.filter((p) => !/status of 4\d\d/.test(p))).toEqual([]);
 });
 
@@ -90,7 +97,7 @@ test("staff read brands and reports but get no controls; a kitchen team gets no 
   await expect(kPage.getByRole("heading", { name: "Reports are for social media teams" })).toBeVisible();
   await expect(kPage.locator("#module-area")).toBeHidden();
   await kPage.goto("/app/team");
-  await expect(kPage.locator(".side-nav").getByRole("link", { name: "Reports" })).toHaveCount(0);
+  await expect(kPage.getByRole("link", { name: "Reports" })).toHaveCount(0);
 });
 
 test("a demo cannot add brands: the page says why in plain words", async ({ page, request }) => {
