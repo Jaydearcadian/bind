@@ -478,6 +478,8 @@ const TOOL_ALLOWLIST: Record<string, AllowedTool> = {
   feedback_summary: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of feedback summary." },
   list_audit: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of the audit log." },
   poll_events: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of the event feed." },
+  list_analytics_reports: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of post analytics reports (docs/decisions/0090)." },
+  get_analytics_report: { file: "mcp/src/tools.ts", effect: "read", note: "Member read of one post analytics report (docs/decisions/0090)." },
   request_replenishment: {
     file: "mcp/src/tools.ts",
     effect: "commercial_commitment",
@@ -601,7 +603,7 @@ describe("(c) every model-facing tool is on the reviewed allowlist, and the regi
     expect(allToolSites().filter((s) => s.name === undefined)).toEqual([]);
   });
 
-  it("the MCP table registers the 17 tools the ADR names", () => {
+  it("the MCP table registers the 19 tools the ADR names", () => {
     const mcp = allToolSites().filter((s) => s.file.startsWith("mcp/src/"));
     expect(mcp.map((s) => s.name).sort()).toEqual(
       Object.entries(TOOL_ALLOWLIST)
@@ -609,7 +611,7 @@ describe("(c) every model-facing tool is on the reviewed allowlist, and the regi
         .map(([name]) => name)
         .sort()
     );
-    expect(mcp).toHaveLength(17);
+    expect(mcp).toHaveLength(19);
   });
 
   it("no model-facing tool outside the allowlist (adding one forces a review here)", () => {

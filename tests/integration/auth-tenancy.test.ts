@@ -53,6 +53,10 @@ const PUBLIC_ROUTES: Array<[string, string]> = [
 
 /** Owner or staff of the workspace in the path (or, for the list, the caller's own workspace). */
 const ANY_ROLE_ROUTES: Array<[string, string]> = [
+  // Post analytics reads (docs/decisions/0090): a member reads the accounts and reports.
+  ["GET", "/api/workspaces/:id/analytics/accounts"],
+  ["GET", "/api/workspaces/:id/analytics/reports"],
+  ["GET", "/api/workspaces/:id/analytics/reports/:reportId"],
   // Staff and owner may record a charge on a tab: it is an obligation, and it is audited with the token (ADR 0081).
   ["POST", "/api/workspaces/:id/tabs/charges"],
   ["GET", "/api/workspaces"],
@@ -122,6 +126,10 @@ const OWNER_ROUTES: Array<[string, string]> = [
   // Owner notices by email (ADR 0074): owner only. A staff token is refused, another workspace is 404.
   ["GET", "/api/workspaces/:id/notifications"],
   ["POST", "/api/workspaces/:id/notifications/email"],
+  // Post analytics (docs/decisions/0090): writes are owner only.
+  ["POST", "/api/workspaces/:id/analytics/accounts"],
+  ["POST", "/api/workspaces/:id/analytics/accounts/:accountId/sync"],
+  ["POST", "/api/workspaces/:id/analytics/reports"],
   ["POST", "/api/workspaces/:id/notifications/email/verify"],
   ["DELETE", "/api/workspaces/:id/notifications/email/:emailId"],
   ["POST", "/api/workspaces/:id/documents/:docId/confirm"],

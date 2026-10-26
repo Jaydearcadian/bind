@@ -57,8 +57,10 @@ async function main() {
     // The restock sweep (ADR 0030) is OFF unless BIND_RESTOCK_SWEEP=true: it can place orders within policy without a
     // human, so the owner opts in (ADR 0030, "Default").
     if (config.BIND_WORKER_ENABLED !== "false") {
-      worker = startWorker({ restockSweep: config.BIND_RESTOCK_SWEEP === "true" });
-      log.info("worker.started", { restockSweep: config.BIND_RESTOCK_SWEEP === "true" });
+      // The weekly analytics reports (docs/decisions/0090) are OFF unless BIND_ANALYTICS_REPORTS=true.
+      const analyticsReports = config.BIND_ANALYTICS_REPORTS === "true";
+      worker = startWorker({ restockSweep: config.BIND_RESTOCK_SWEEP === "true", analyticsReports });
+      log.info("worker.started", { restockSweep: config.BIND_RESTOCK_SWEEP === "true", analyticsReports });
     }
   });
 

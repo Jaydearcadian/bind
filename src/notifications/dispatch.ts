@@ -38,7 +38,7 @@ async function skipUnverified(
  * What an owner notice is about (ADR 0027). `approval` is a commitment waiting for the owner (ADR 0020, ADR 0025).
  * The three order kinds are customer orders that were held, declined or only partly covered (ADR 0026, Task 8b).
  */
-export type OwnerNoticeKind = "approval" | "order_held" | "order_declined" | "order_partially_available";
+export type OwnerNoticeKind = "approval" | "order_held" | "order_declined" | "order_partially_available" | "analytics_report";
 
 /** The effect-map operation for each kind. Both are external requests, so neither commits money or stock. */
 const OPERATION_FOR_KIND: Record<OwnerNoticeKind, string> = {
@@ -46,7 +46,17 @@ const OPERATION_FOR_KIND: Record<OwnerNoticeKind, string> = {
   order_held: "notifications.send_summary",
   order_declined: "notifications.send_summary",
   order_partially_available: "notifications.send_summary",
+  // "Your report is ready" for a post analytics report (docs/decisions/0090). It names no finding.
+  analytics_report: "notifications.send_summary",
 };
+
+/**
+ * The effects-ledger key of one owner notice (ADR 0017, ADR 0074). The first recipient has no suffix; each additional recipient
+ * adds its owner_emails id. Shared by the sender and by any caller that asks whether a notice was already attempted.
+ */
+export function ownerNoticeIdempotencyKey(workspaceId: string, kind: OwnerNoticeKind, refId: string, recipientId?: string | null): string {
+  return `${workspaceId}:notify:${kind}:${refId}${recipientId ? `:${recipientId}` : ""}`;
+}
 
 /**
  * Sends the owner one notice, at most once per (kind, refId), through the effects ledger (ADR 0017, ADR 0020, ADR 0027).
@@ -76,7 +86,6 @@ export async function sendOwnerNotification(input: {
     ...input.payload,
     metadata: { ...(input.payload.metadata ?? {}), noticeKind: kind },
   };
-  const recipientSuffix = recipientId ? `:${recipientId}` : "";
   const emailOn = payload.channel === "email" && config.BIND_EMAIL_PROVIDER !== undefined;
   // With email on, an address is sent to only when it is a verified owner address of this workspace (ADR 0074). Refused
   // here and audited as a skip. The send path checks again.
@@ -96,7 +105,7 @@ export async function sendOwnerNotification(input: {
         effectClass: EffectClass.EXTERNAL_REQUEST,
         operation: OPERATION_FOR_KIND[kind],
         // The workspace id is part of the key, so a key cannot be probed or reused across tenants.
-        idempotencyKey: `${workspaceId}:notify:${kind}:${refId}${recipientSuffix}`,
+        idempotencyKey: ownerNoticeIdempotencyKey(workspaceId, kind, refId, recipientId),
         request,
         externalDedupes: false,
       },

@@ -30,7 +30,7 @@ const BIGINT_MAX = 9223372036854775807n;
  * else, including every free-text key, is dropped.
  */
 const ALLOWED_EVIDENCE_KEY =
-  /^(?:[A-Za-z]*Id|[A-Za-z]*Ids|status|state|fromState|toState|hold|code|codes|reasonCodes|kind|decision|connectorId|txHash|orderNumber|attempts|effectId|units|sku|channel|surface|promisedFor|slotId)$/;
+  /^(?:[A-Za-z]*Id|[A-Za-z]*Ids|status|state|fromState|toState|hold|code|codes|reasonCodes|kind|decision|connectorId|txHash|orderNumber|attempts|effectId|units|sku|channel|surface|promisedFor|slotId|posts|inserted|updated)$/;
 const MAX_VALUE_CHARACTERS = 200;
 const MAX_ARRAY_ITEMS = 20;
 

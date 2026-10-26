@@ -54,6 +54,9 @@ export interface OutputDefinition {
   description: string;
 }
 
+/** The data source kind that marks a template as having post analytics (docs/decisions/0090). Kept here, with no imports, so the templates can use it. */
+export const ANALYTICS_SOURCE_KIND = "post_analytics" as const;
+
 export interface WorkspaceTemplate {
   templateId: string;
   name: string;

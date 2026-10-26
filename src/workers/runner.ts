@@ -14,12 +14,14 @@ import { currentRequestId } from "../observability/request-context.js";
 import { purgeExpiredDemos } from "../demo/purge.js";
 import { runTabSettlementStep } from "../tabs/worker.js";
 import { tabLedger, type TabLedger } from "../tabs/ledger.js";
+import { runWeeklyAnalyticsReports } from "../analytics/service.js";
 
 /**
  * The background worker (ADR 0029, ADR 0030). One tick runs five steps in order, each bounded by a batch size:
  *   1. approval expiry, 2. interrupted-workflow recovery, 3. settlement confirmation polling,
  *   4. recovery of orders left in `settling`, 4b. the tab settlements (docs/decisions/0081: resume pending, confirm submitted,
- *   the end-of-day batch), 5. the restock sweep (off unless enabled), then the idempotency sweep and
+ *   the end-of-day batch), 5. the restock sweep (off unless enabled), 6. the weekly post analytics reports (off unless
+ *   BIND_ANALYTICS_REPORTS=true, docs/decisions/0090), then the idempotency sweep and
  *   the demo expiry sweep (docs/decisions/0057), which deletes expired demo workspaces whatever the demo flag says.
  * Every step first takes a non-blocking session lock named `worker:<step>`. A step whose lock is busy is skipped
  * and reported as skipped. The operations are idempotent regardless, so the locks only avoid duplicate work.
@@ -37,6 +39,7 @@ export type WorkerStep =
   | "stuck_settling"
   | "tab_settlements"
   | "restock_sweep"
+  | "analytics_reports"
   | "idempotency_sweep"
   | "demo_expiry";
 
@@ -64,6 +67,8 @@ export interface TickReport {
   };
   /** `skipped` is true when the sweep did not run: it is off, or its lock was busy. */
   restockSweep: { skipped: boolean; started: number; failed: number };
+  /** The weekly analytics job (docs/decisions/0090). Off unless BIND_ANALYTICS_REPORTS=true. */
+  analyticsReports: { skipped: boolean; synced: number; reports: number; notices: number; failed: number };
   /** Removes stored API idempotency outcomes older than their retention (ADR 0049). */
   idempotencySweep: { skipped: boolean; removed: number };
   /** Deletes expired demo workspaces and their generated files (docs/decisions/0057). `failed` demos are retried next tick. */
@@ -86,6 +91,8 @@ export interface TickOptions {
   stuckSettlingAfterMs?: number;
   /** Runs the restock sweep (step 5). Off by default, so a bare tick does not start replenishments (ADR 0030). */
   restockSweep?: boolean;
+  /** Runs the weekly analytics job (step 6). Off by default (docs/decisions/0090). */
+  analyticsReports?: boolean;
   /** The sweep looks only at these workspaces. Unset means every workspace that is not paused. */
   restockWorkspaceIds?: string[];
   /** A sku with any workflow created this recently is not swept again (default 6 hours). */
@@ -127,6 +134,7 @@ const STEP_KEY: Record<WorkerStep, keyof Omit<TickReport, "errors">> = {
   stuck_settling: "stuckSettling",
   tab_settlements: "tabSettlements",
   restock_sweep: "restockSweep",
+  analytics_reports: "analyticsReports",
   idempotency_sweep: "idempotencySweep",
   demo_expiry: "demoExpiry",
 };
@@ -139,6 +147,7 @@ function emptyReport(): TickReport {
     stuckSettling: { skipped: false, toSubmitted: 0, toHold: 0, failed: 0 },
     tabSettlements: { skipped: false, resumed: 0, confirmed: 0, held: 0, cancelled: 0, endOfDay: 0, reconciled: 0, failed: 0 },
     restockSweep: { skipped: false, started: 0, failed: 0 },
+    analyticsReports: { skipped: false, synced: 0, reports: 0, notices: 0, failed: 0 },
     idempotencySweep: { skipped: false, removed: 0 },
     demoExpiry: { skipped: false, removed: 0, failed: 0 },
     errors: [],
@@ -161,6 +170,7 @@ function resolved(opts: TickOptions) {
     maxPollAgeMs: opts.maxPollAgeMs ?? DEFAULT_MAX_POLL_AGE_MS,
     stuckSettlingAfterMs: opts.stuckSettlingAfterMs ?? DEFAULT_STUCK_SETTLING_AFTER_MS,
     restockSweep: opts.restockSweep ?? false,
+    analyticsReports: opts.analyticsReports ?? false,
     restockWorkspaceIds: opts.restockWorkspaceIds,
     restockCooldownMs: opts.restockCooldownMs ?? DEFAULT_RESTOCK_COOLDOWN_MS,
     tabs: {
@@ -225,6 +235,21 @@ async function tabSettlementsStep(cfg: Resolved, report: TickReport): Promise<vo
   report.tabSettlements.failed = counts.failed;
   for (const message of counts.errors) {
     report.errors.push({ step: "tab_settlements", error: redactText(message).slice(0, ERROR_LIMIT) });
+  }
+}
+
+/**
+ * The weekly post analytics job (docs/decisions/0090): syncs each analytics account of a real workspace and writes its report for
+ * the last full week, then tells the owner once per report. Each account and each notice is isolated; errors are bounded.
+ */
+async function analyticsReportsStep(cfg: Resolved, report: TickReport): Promise<void> {
+  const result = await runWeeklyAnalyticsReports({ now: cfg.now, batchSize: cfg.batchSize });
+  report.analyticsReports.synced = result.synced;
+  report.analyticsReports.reports = result.reports;
+  report.analyticsReports.notices = result.notices;
+  report.analyticsReports.failed = result.failed;
+  for (const message of result.errors) {
+    report.errors.push({ step: "analytics_reports", error: redactText(message).slice(0, ERROR_LIMIT) });
   }
 }
 
@@ -460,6 +485,11 @@ export async function runTick(opts: TickOptions = {}): Promise<TickReport> {
     await runStep("restock_sweep", report, () => restockSweepStep(cfg, report));
   } else {
     report.restockSweep.skipped = true;
+  }
+  if (cfg.analyticsReports) {
+    await runStep("analytics_reports", report, () => analyticsReportsStep(cfg, report));
+  } else {
+    report.analyticsReports.skipped = true;
   }
   await runStep("idempotency_sweep", report, () => idempotencySweepStep(cfg, report));
   await runStep("demo_expiry", report, () => demoExpiryStep(cfg, report));

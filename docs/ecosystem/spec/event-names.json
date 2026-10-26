@@ -317,6 +317,27 @@
       "renamed": false
     },
     {
+      "type": "analytics.account_created",
+      "name": "analytics.account_created",
+      "object": "analytics_account",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "analytics.synced",
+      "name": "analytics.synced",
+      "object": "analytics_account",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
+      "type": "analytics.report_generated",
+      "name": "analytics.report_generated",
+      "object": "analytics_report",
+      "visibility": "member",
+      "renamed": false
+    },
+    {
       "type": "customer_order.accepted",
       "name": "customer_order.accepted",
       "object": "customer_order",

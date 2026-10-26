@@ -101,6 +101,8 @@ const envShape = z.object({
   BIND_WORKER_ENABLED: z.string().optional(),
   // The restock sweep (ADR 0030) runs in the worker unless this is exactly "false".
   BIND_RESTOCK_SWEEP: z.string().optional(),
+  // Weekly post analytics reports (docs/decisions/0090). Off unless exactly "true". Any other value is ignored.
+  BIND_ANALYTICS_REPORTS: z.string().optional(),
   // Log level for the structured logger (ADR 0032). Unset or empty means info.
   LOG_LEVEL: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["debug", "info", "warn", "error"]).optional()),
   // Bearer token for GET /metrics (ADR 0032). Not a workspace token. Unset: /metrics answers 404. At least 32 characters.

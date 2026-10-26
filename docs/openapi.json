@@ -5377,6 +5377,1735 @@
         "x-bind-access": "owner"
       }
     },
+    "/api/workspaces/{id}/analytics/accounts": {
+      "get": {
+        "description": "Access: a workspace token of the owner or a staff member of the workspace in the path.",
+        "operationId": "listAnalyticsAccounts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "brandLabel": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "isSimulated": {
+                        "type": "boolean"
+                      },
+                      "lastSyncedAt": {
+                        "format": "date-time",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "postCount": {
+                        "type": "integer"
+                      },
+                      "provider": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string"
+                      },
+                      "timeZone": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "provider",
+                      "brandLabel",
+                      "timeZone",
+                      "isSimulated",
+                      "status",
+                      "createdAt",
+                      "lastSyncedAt",
+                      "postCount"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The accounts, oldest first."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The analytics accounts of this workspace, with when each was last synced and how many posts it holds. A workspace whose template has no analytics module has none: the list is empty.",
+        "tags": [
+          "Analytics"
+        ],
+        "x-bind-access": "member"
+      },
+      "post": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "createAnalyticsAccount",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "brandLabel": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "maxLength": 40,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "timeZone": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "brandLabel"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "brandLabel": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "isSimulated": {
+                      "type": "boolean"
+                    },
+                    "lastSyncedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "postCount": {
+                      "type": "integer"
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "timeZone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "provider",
+                    "brandLabel",
+                    "timeZone",
+                    "isSimulated",
+                    "status",
+                    "createdAt",
+                    "lastSyncedAt",
+                    "postCount"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The account, now connected."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed input (INVALID_INPUT: a brand label of 1 to 80 characters, or an IANA time zone). Also: TEMPLATE_HAS_NO_ANALYTICS, or ANALYTICS_PROVIDER_NOT_AVAILABLE for any provider other than simulated."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A demo workspace does not change analytics (ANALYTICS_DEMO_REFUSED)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The workspace already has the most accounts it can have (ANALYTICS_ACCOUNT_LIMIT)."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body too large (over 256 kB)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Connect an analytics account. Only the simulated provider is available: its data is labelled simulated everywhere.",
+        "tags": [
+          "Analytics"
+        ],
+        "x-bind-access": "owner"
+      }
+    },
+    "/api/workspaces/{id}/analytics/accounts/{accountId}/sync": {
+      "post": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "syncAnalyticsAccount",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "accountId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "_meta": {
+                      "additionalProperties": true,
+                      "description": "Outcome of the request in one vocabulary, and what the caller's role may do next.",
+                      "properties": {
+                        "links": {
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "nextActions": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "actor": {
+                                "enum": [
+                                  "owner",
+                                  "staff",
+                                  "agent",
+                                  "system"
+                                ],
+                                "type": "string"
+                              },
+                              "href": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "enum": [
+                                  "GET",
+                                  "POST",
+                                  "PUT",
+                                  "DELETE"
+                                ],
+                                "type": "string"
+                              },
+                              "needsConfirmation": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "actor",
+                              "method"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "processing": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "events": {
+                              "type": "string"
+                            },
+                            "poll": {
+                              "type": "string"
+                            },
+                            "remaining": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "completed",
+                            "accepted",
+                            "held",
+                            "refused"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "requestId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "inserted": {
+                      "type": "integer"
+                    },
+                    "posts": {
+                      "type": "integer"
+                    },
+                    "simulated": {
+                      "type": "boolean"
+                    },
+                    "syncedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updated": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "accountId",
+                    "posts",
+                    "inserted",
+                    "updated",
+                    "syncedAt",
+                    "simulated"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "What the sync stored: how many posts, how many were new and how many were updated."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "This workspace's template has no post analytics module (TEMPLATE_HAS_NO_ANALYTICS), or the stored provider is not available."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A demo workspace does not change analytics (ANALYTICS_DEMO_REFUSED)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such analytics account in this workspace (ANALYTICS_ACCOUNT_NOT_FOUND)."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The account is disabled (ANALYTICS_ACCOUNT_DISABLED)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The provider did not answer (ANALYTICS_PROVIDER_UNAVAILABLE), or its answer is not valid (ANALYTICS_PROVIDER_OUTPUT_INVALID). Nothing was stored."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Fetch the account's recent posts from its provider and store them. Repeating it leaves the stored posts as they were.",
+        "tags": [
+          "Analytics"
+        ],
+        "x-bind-access": "owner"
+      }
+    },
+    "/api/workspaces/{id}/analytics/reports": {
+      "get": {
+        "description": "Access: a workspace token of the owner or a staff member of the workspace in the path.",
+        "operationId": "listAnalyticsReports",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "accountId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "findings": {
+                        "additionalProperties": true,
+                        "properties": {
+                          "countries": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "posts": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "top": {
+                                "items": {},
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "posts",
+                              "top"
+                            ],
+                            "type": "object"
+                          },
+                          "followers": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "posts": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "posts"
+                            ],
+                            "type": "object"
+                          },
+                          "formats": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "comparisons": {
+                                "items": {},
+                                "type": "array"
+                              },
+                              "groups": {
+                                "items": {},
+                                "type": "array"
+                              },
+                              "status": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "groups",
+                              "comparisons"
+                            ],
+                            "type": "object"
+                          },
+                          "hours": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "eligibleHours": {
+                                "items": {},
+                                "type": "array"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "timeZone": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "timeZone",
+                              "eligibleHours"
+                            ],
+                            "type": "object"
+                          },
+                          "minimumGroupPosts": {
+                            "type": "integer"
+                          },
+                          "postCount": {
+                            "type": "integer"
+                          },
+                          "rankings": {
+                            "additionalProperties": true,
+                            "properties": {
+                              "bottom": {
+                                "items": {},
+                                "type": "array"
+                              },
+                              "eligible": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "top": {
+                                "items": {},
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "eligible",
+                              "top",
+                              "bottom"
+                            ],
+                            "type": "object"
+                          },
+                          "simulated": {
+                            "type": "boolean"
+                          },
+                          "timeZone": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "simulated",
+                          "timeZone",
+                          "postCount",
+                          "minimumGroupPosts",
+                          "formats",
+                          "hours",
+                          "followers",
+                          "countries",
+                          "rankings"
+                        ],
+                        "type": "object"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "weekly",
+                          "on_demand"
+                        ],
+                        "type": "string"
+                      },
+                      "periodEnd": {
+                        "type": "string"
+                      },
+                      "periodStart": {
+                        "type": "string"
+                      },
+                      "simulated": {
+                        "type": "boolean"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "accountId",
+                      "kind",
+                      "periodStart",
+                      "periodEnd",
+                      "createdAt",
+                      "simulated",
+                      "text",
+                      "findings"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The reports, newest first."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "The 50 newest analytics reports of this workspace, with their text and findings. Empty for a workspace with no analytics module.",
+        "tags": [
+          "Analytics"
+        ],
+        "x-bind-access": "member"
+      },
+      "post": {
+        "description": "Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.",
+        "operationId": "createAnalyticsReport",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "accountId": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "on_demand"
+                    ],
+                    "type": "string"
+                  },
+                  "periodEnd": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "periodStart": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "accountId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "findings": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "countries": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "posts": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "top": {
+                              "items": {},
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "posts",
+                            "top"
+                          ],
+                          "type": "object"
+                        },
+                        "followers": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "posts": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "posts"
+                          ],
+                          "type": "object"
+                        },
+                        "formats": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "comparisons": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "groups": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "groups",
+                            "comparisons"
+                          ],
+                          "type": "object"
+                        },
+                        "hours": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "eligibleHours": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "timeZone": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "timeZone",
+                            "eligibleHours"
+                          ],
+                          "type": "object"
+                        },
+                        "minimumGroupPosts": {
+                          "type": "integer"
+                        },
+                        "postCount": {
+                          "type": "integer"
+                        },
+                        "rankings": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "bottom": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "eligible": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "top": {
+                              "items": {},
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "eligible",
+                            "top",
+                            "bottom"
+                          ],
+                          "type": "object"
+                        },
+                        "simulated": {
+                          "type": "boolean"
+                        },
+                        "timeZone": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "simulated",
+                        "timeZone",
+                        "postCount",
+                        "minimumGroupPosts",
+                        "formats",
+                        "hours",
+                        "followers",
+                        "countries",
+                        "rankings"
+                      ],
+                      "type": "object"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "weekly",
+                        "on_demand"
+                      ],
+                      "type": "string"
+                    },
+                    "periodEnd": {
+                      "type": "string"
+                    },
+                    "periodStart": {
+                      "type": "string"
+                    },
+                    "simulated": {
+                      "type": "boolean"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "accountId",
+                    "kind",
+                    "periodStart",
+                    "periodEnd",
+                    "createdAt",
+                    "simulated",
+                    "text",
+                    "findings",
+                    "created"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The period already had its report, which is returned (created: false)."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "accountId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "findings": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "countries": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "posts": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "top": {
+                              "items": {},
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "posts",
+                            "top"
+                          ],
+                          "type": "object"
+                        },
+                        "followers": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "posts": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "posts"
+                          ],
+                          "type": "object"
+                        },
+                        "formats": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "comparisons": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "groups": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "groups",
+                            "comparisons"
+                          ],
+                          "type": "object"
+                        },
+                        "hours": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "eligibleHours": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "timeZone": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "timeZone",
+                            "eligibleHours"
+                          ],
+                          "type": "object"
+                        },
+                        "minimumGroupPosts": {
+                          "type": "integer"
+                        },
+                        "postCount": {
+                          "type": "integer"
+                        },
+                        "rankings": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "bottom": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "eligible": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "top": {
+                              "items": {},
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "eligible",
+                            "top",
+                            "bottom"
+                          ],
+                          "type": "object"
+                        },
+                        "simulated": {
+                          "type": "boolean"
+                        },
+                        "timeZone": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "simulated",
+                        "timeZone",
+                        "postCount",
+                        "minimumGroupPosts",
+                        "formats",
+                        "hours",
+                        "followers",
+                        "countries",
+                        "rankings"
+                      ],
+                      "type": "object"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "weekly",
+                        "on_demand"
+                      ],
+                      "type": "string"
+                    },
+                    "periodEnd": {
+                      "type": "string"
+                    },
+                    "periodStart": {
+                      "type": "string"
+                    },
+                    "simulated": {
+                      "type": "boolean"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "accountId",
+                    "kind",
+                    "periodStart",
+                    "periodEnd",
+                    "createdAt",
+                    "simulated",
+                    "text",
+                    "findings",
+                    "created"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The report was written now (created: true)."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed input (INVALID_INPUT: a period that is not whole days, longer than 92 days, or ends after today). Also TEMPLATE_HAS_NO_ANALYTICS."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A demo workspace does not change analytics (ANALYTICS_DEMO_REFUSED)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such analytics account in this workspace (ANALYTICS_ACCOUNT_NOT_FOUND), when an accountId is given."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Request body too large (over 256 kB)."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Write a report for a period (UTC days, at most 92, ending by today). Once per period: asking again for the same period returns the same report.",
+        "tags": [
+          "Analytics"
+        ],
+        "x-bind-access": "owner"
+      }
+    },
+    "/api/workspaces/{id}/analytics/reports/{reportId}": {
+      "get": {
+        "description": "Access: a workspace token of the owner or a staff member of the workspace in the path.",
+        "operationId": "getAnalyticsReport",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "reportId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "accountId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "findings": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "countries": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "posts": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "top": {
+                              "items": {},
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "posts",
+                            "top"
+                          ],
+                          "type": "object"
+                        },
+                        "followers": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "posts": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "posts"
+                          ],
+                          "type": "object"
+                        },
+                        "formats": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "comparisons": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "groups": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "groups",
+                            "comparisons"
+                          ],
+                          "type": "object"
+                        },
+                        "hours": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "eligibleHours": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "timeZone": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "timeZone",
+                            "eligibleHours"
+                          ],
+                          "type": "object"
+                        },
+                        "minimumGroupPosts": {
+                          "type": "integer"
+                        },
+                        "postCount": {
+                          "type": "integer"
+                        },
+                        "rankings": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "bottom": {
+                              "items": {},
+                              "type": "array"
+                            },
+                            "eligible": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "top": {
+                              "items": {},
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "eligible",
+                            "top",
+                            "bottom"
+                          ],
+                          "type": "object"
+                        },
+                        "simulated": {
+                          "type": "boolean"
+                        },
+                        "timeZone": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "simulated",
+                        "timeZone",
+                        "postCount",
+                        "minimumGroupPosts",
+                        "formats",
+                        "hours",
+                        "followers",
+                        "countries",
+                        "rankings"
+                      ],
+                      "type": "object"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "weekly",
+                        "on_demand"
+                      ],
+                      "type": "string"
+                    },
+                    "periodEnd": {
+                      "type": "string"
+                    },
+                    "periodStart": {
+                      "type": "string"
+                    },
+                    "simulated": {
+                      "type": "boolean"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "accountId",
+                    "kind",
+                    "periodStart",
+                    "periodEnd",
+                    "createdAt",
+                    "simulated",
+                    "text",
+                    "findings"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The report."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "No such analytics report in this workspace (ANALYTICS_REPORT_NOT_FOUND). Also the answer for a workspace with no analytics module."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033)."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "An unexpected failure. The detail is logged with the request id, never returned."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Authentication is unavailable (the token lookup failed). Retry later."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "One analytics report of this workspace.",
+        "tags": [
+          "Analytics"
+        ],
+        "x-bind-access": "member"
+      }
+    },
     "/api/workspaces/{id}/approvals": {
       "get": {
         "description": "Access: a workspace token of the owner or a staff member of the workspace in the path.",

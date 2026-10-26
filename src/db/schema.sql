@@ -656,3 +656,70 @@ CREATE TABLE IF NOT EXISTS tab_attempts (
   PRIMARY KEY (workspace_id, counterparty_id),
   FOREIGN KEY (workspace_id, counterparty_id) REFERENCES suppliers (workspace_id, id)
 );
+
+-- Post analytics (docs/decisions/0090). Additive. Every table carries workspace_id, and every foreign key that points at a
+-- workspace's own row is composite on (workspace_id, id), so a row of one workspace cannot name a row of another.
+-- A provider's post numbers are stored as ids, enums, counts and timestamps only: no caption, comment or other free text.
+
+-- One row per analytics account a workspace connects. `provider` is `simulated` until a real adapter is built and tested.
+-- `time_zone` is the zone the account's posts are read in (the workspace has none of its own). `is_simulated` marks fabricated data.
+CREATE TABLE IF NOT EXISTS analytics_accounts (
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  id VARCHAR(64) NOT NULL,
+  provider TEXT NOT NULL CHECK (char_length(provider) BETWEEN 1 AND 40),
+  external_account_id TEXT NOT NULL CHECK (char_length(external_account_id) BETWEEN 1 AND 128),
+  brand_label TEXT NOT NULL CHECK (char_length(brand_label) BETWEEN 1 AND 80),
+  time_zone TEXT NOT NULL DEFAULT 'UTC' CHECK (char_length(time_zone) BETWEEN 1 AND 64),
+  is_simulated BOOLEAN NOT NULL DEFAULT FALSE,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (workspace_id, id),
+  CONSTRAINT uq_analytics_accounts_external UNIQUE (workspace_id, provider, external_account_id)
+);
+
+-- One row per post of an account, upserted by (workspace_id, account_id, external_id) on each sync (so a repeated sync leaves the
+-- row count as it was). Optional splits are NULL when the provider does not supply them. Counts are INTEGER: validated to 1e9.
+CREATE TABLE IF NOT EXISTS analytics_posts (
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  account_id VARCHAR(64) NOT NULL,
+  external_id TEXT NOT NULL CHECK (char_length(external_id) BETWEEN 1 AND 128),
+  media_type TEXT NOT NULL CHECK (media_type IN ('reel', 'image', 'carousel', 'video', 'story', 'other')),
+  published_at TIMESTAMPTZ NOT NULL,
+  reach INTEGER NOT NULL CHECK (reach >= 0),
+  impressions INTEGER NOT NULL CHECK (impressions >= reach),
+  likes INTEGER NOT NULL CHECK (likes >= 0),
+  comments INTEGER NOT NULL CHECK (comments >= 0),
+  saves INTEGER NOT NULL CHECK (saves >= 0),
+  shares INTEGER NOT NULL CHECK (shares >= 0),
+  plays INTEGER CHECK (plays IS NULL OR plays >= 0),
+  follower_reach INTEGER CHECK (follower_reach IS NULL OR (follower_reach >= 0 AND follower_reach <= reach)),
+  non_follower_reach INTEGER CHECK (non_follower_reach IS NULL OR (non_follower_reach >= 0 AND non_follower_reach <= reach)),
+  country_reach JSONB,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (workspace_id, account_id, external_id),
+  FOREIGN KEY (workspace_id, account_id) REFERENCES analytics_accounts (workspace_id, id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_analytics_posts_published ON analytics_posts (workspace_id, account_id, published_at);
+
+-- One report per (workspace, account or all brands, kind, period). `account_id` is NULL for an all-brands report. The unique
+-- index uses COALESCE, because two NULLs are never equal in a plain unique index, and that would let an all-brands report be
+-- written twice. Periods are UTC days: period_start inclusive, period_end exclusive. `findings` is the typed analysis;
+-- `report_text` is the plain-English rendering of it. Neither holds a caption or a brand label.
+CREATE TABLE IF NOT EXISTS analytics_reports (
+  workspace_id VARCHAR(64) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  id VARCHAR(64) NOT NULL,
+  account_id VARCHAR(64),
+  kind TEXT NOT NULL CHECK (kind IN ('weekly', 'on_demand')),
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  findings JSONB NOT NULL,
+  report_text TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (workspace_id, id),
+  CONSTRAINT analytics_reports_period_order CHECK (period_end > period_start),
+  FOREIGN KEY (workspace_id, account_id) REFERENCES analytics_accounts (workspace_id, id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_analytics_reports_period
+  ON analytics_reports (workspace_id, (COALESCE(account_id, '')), kind, period_start, period_end);
+CREATE INDEX IF NOT EXISTS idx_analytics_reports_created ON analytics_reports (workspace_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_analytics_reports_period ON analytics_reports (kind, period_start, period_end);

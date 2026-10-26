@@ -9,7 +9,7 @@ Decisions behind a behaviour are cited as ADR numbers. Shell examples assume the
 - **One Node process** (`node dist/index.js`, started by `npm start` after `npm run build`). It serves the HTTP API, the
   orphaned static UI (ADR 0016) and, unless `BIND_WORKER_ENABLED=false`, the background worker (ADR 0029). The worker ticks
   every 15 seconds. Each tick runs, in order: approval expiry, recovery of interrupted workflows, settlement confirmation
-  polling, recovery of orders stuck in `settling`, and the restock sweep (only when `BIND_RESTOCK_SWEEP=true`, ADR 0030).
+  polling, recovery of orders stuck in `settling`, the restock sweep (only when `BIND_RESTOCK_SWEEP=true`, ADR 0030), and the weekly analytics reports (only when `BIND_ANALYTICS_REPORTS=true`, docs/decisions/0090).
 - **PostgreSQL.** The only durable store. Every workflow, order, effect, token and audit row is in it. Derived files
   (template materialisation, workflow evidence) are written under the working directory (`templates/`, `workflows/`) unless
   `BIND_ARTIFACTS_DIR` is set. The database is the source of truth; the files are not.
@@ -43,6 +43,7 @@ variable.
 | `BIND_CORS_ORIGINS` | No | No CORS headers are sent | Comma-separated origins (ADR 0021). |
 | `BIND_WORKER_ENABLED` | No | The worker runs | Only the exact value `false` disables it (ADR 0029). |
 | `BIND_RESTOCK_SWEEP` | No | **Off** | Only the exact value `true` enables it. It starts replenishments on its own, within policy (ADR 0030). Any other value is ignored. |
+| `BIND_ANALYTICS_REPORTS` | No | **Off** | Only the exact value `true` enables it. The worker then syncs each analytics account of a workspace whose template has a post analytics source, and writes that account's report for the last full ISO week, and tells the owner once that it is ready (docs/decisions/0090). The data is simulated until a real provider is built. Any other value is ignored. |
 | `BIND_TRUST_PROXY` | Behind a proxy | `0`: the socket address is the client | Number of proxy hops that append to `X-Forwarded-For`. Must be a non-negative integer (ADR 0033). |
 | `BIND_PUBLIC_URL` | Yes, in production | The request's own host (wrong behind a proxy: see below) | The https origin of the deployment, for example `https://bind.example` (no path). It is the address `/mcp` reports and the only origin its Origin check accepts. `http` only for `127.0.0.1` and `localhost`. An invalid value stops startup. Precedence (ADR 0075, point 7): `BIND_PUBLIC_URL`; else an explicitly set `APP_BASE_URL` that is https (one setting is enough); else the request's host. Production with neither logs one startup warning naming `BIND_PUBLIC_URL`. |
 | `BIND_EMAIL_PROVIDER` | To send owner notices by email (ADR 0074) | Email is **simulated**: a notice is recorded in memory and labelled `simulated`, nothing is sent, and the owner email routes answer **503** `EMAIL_NOT_CONFIGURED` | Only `resend`. Startup is refused unless `BIND_EMAIL_API_KEY` and `BIND_EMAIL_FROM` are set and `APP_BASE_URL` is https (or local outside production). Live sending is `NOT_RUN` until tried against a real provider account. |
@@ -238,6 +239,19 @@ A pause written in that short window can still pay (ADR 0023).
 one per item every 6 hours. A replenishment whose amount is under the workspace's approval threshold and daily budget is placed
 without an owner's approval (ADR 0030). It is off unless set.
 To turn it off, unset the variable and restart. Paused workspaces are not swept.
+
+### 6.3 The weekly analytics reports (opt-in)
+
+`BIND_ANALYTICS_REPORTS=true` makes the worker, once each tick, look for analytics accounts of a real workspace (not a demo) whose
+template declares a post analytics data source, and that have no report yet for the last full ISO week (Monday to Monday, UTC). For
+each it syncs the account's posts from its provider, writes the week's report, and then tells the owner once, by the owner's
+notice path, that the report is ready. The notice names nothing in the report. At most 25 accounts and 25 notices are handled per
+tick, and each failure is counted in the tick report (`analyticsReports.failed`) and does not stop the others.
+
+Only the simulated provider exists in this release, so the data is fabricated and every report says so. Turning the flag on therefore
+writes simulated reports and sends the owner "Your report is ready" notices about them. Leave it off on a deployment that should show
+no simulated data. To turn it off, unset the variable and restart. Demo workspaces and disabled accounts are not touched. A failing
+account is retried each tick (about every 15 seconds) and its failures are counted until it is fixed or disabled.
 
 ## 7. Recover a stuck workflow
 

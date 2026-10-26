@@ -61,18 +61,18 @@ describe("Social media manager template (social-v1, docs/decisions/0084)", () =>
 
   it("declares only read-only data sources, and says so in the description", () => {
     expect(socialTemplate.dataSources).toEqual([
-      { id: "instagram_insights", label: "Instagram post insights", kind: "instagram_insights", readOnly: true },
+      { id: "post_analytics", label: "Post analytics (simulated until a provider is connected)", kind: "post_analytics", readOnly: true },
     ]);
     expect(socialTemplate.description).toMatch(/never posts, runs ads or replies/);
     expect(socialTemplate.description).toMatch(/separately approved capability/);
   });
 
-  it("declares the weekly report and post-published triggers, and a report output only", () => {
+  it("declares the weekly and on-demand report triggers, and a report output only (docs/decisions/0090)", () => {
     expect(socialTemplate.triggers?.map((t) => [t.id, t.kind])).toEqual([
       ["weekly_report", "schedule"],
-      ["post_published", "event"],
+      ["on_demand_report", "manual"],
     ]);
-    expect(socialTemplate.outputs?.map((o) => [o.id, o.kind])).toEqual([["weekly_report", "report"]]);
+    expect(socialTemplate.outputs?.map((o) => [o.id, o.kind])).toEqual([["analytics_report", "report"]]);
   });
 
   it("does not change the kitchen or agency stock and supplier modules", () => {

@@ -2,19 +2,19 @@
   "version": 1,
   "source": "docs/openapi.json + docs/ecosystem/exposure.json + sdk/src/client.ts + mcp/src/tools.ts. Generated: do not edit by hand.",
   "counts": {
-    "operations": 95,
-    "mcpTools": 17,
-    "exposure:public_api": 84,
+    "operations": 101,
+    "mcpTools": 19,
+    "exposure:public_api": 90,
     "exposure:internal_service": 7,
     "exposure:protocol_primitive": 4,
     "effect:owner_decision": 10,
-    "effect:owner_configuration": 18,
+    "effect:owner_configuration": 19,
     "effect:commercial_commitment": 6,
-    "effect:operational": 3,
+    "effect:operational": 4,
     "effect:credential": 10,
     "effect:data_entry": 3,
-    "effect:read": 42,
-    "effect:external_request": 3
+    "effect:read": 45,
+    "effect:external_request": 4
   },
   "capabilities": [
     {
@@ -260,6 +260,54 @@
       }
     },
     {
+      "id": "createAnalyticsAccount",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/analytics/accounts",
+      "summary": "Connect an analytics account. Only the simulated provider is available: its data is labelled simulated everywhere.",
+      "tag": "Analytics",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "owner_configuration",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "Owner connects an analytics account. Only the simulated provider is available; its data is labelled simulated (docs/decisions/0090).",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "createAnalyticsReport",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/analytics/reports",
+      "summary": "Write a report for a period (UTC days, at most 92, ending by today). Once per period: asking again for the same period returns the same report.",
+      "tag": "Analytics",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "operational",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "Writes a report for a period, once per period. It sends no notice: the owner is told by the weekly job only (docs/decisions/0090).",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
       "id": "createCustomerOrder",
       "method": "POST",
       "route": "/api/workspaces/{id}/customer-orders",
@@ -459,6 +507,30 @@
         "api": true,
         "sdk": "generic",
         "mcp": null
+      }
+    },
+    {
+      "id": "getAnalyticsReport",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/analytics/reports/{reportId}",
+      "summary": "One analytics report of this workspace.",
+      "tag": "Analytics",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "One analytics report of a workspace (docs/decisions/0090).",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": "get_analytics_report"
       }
     },
     {
@@ -967,6 +1039,54 @@
         "api": true,
         "sdk": "generic",
         "mcp": null
+      }
+    },
+    {
+      "id": "listAnalyticsAccounts",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/analytics/accounts",
+      "summary": "The analytics accounts of this workspace, with when each was last synced and how many posts it holds. A workspace whose template has no analytics module has none: the list is empty.",
+      "tag": "Analytics",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "Lists the analytics accounts of a workspace whose template has the module. Reads only (docs/decisions/0090).",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "listAnalyticsReports",
+      "method": "GET",
+      "route": "/api/workspaces/{id}/analytics/reports",
+      "summary": "The 50 newest analytics reports of this workspace, with their text and findings. Empty for a workspace with no analytics module.",
+      "tag": "Analytics",
+      "authorization": "member",
+      "exposure": "public_api",
+      "effect": "read",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "The newest analytics reports of a workspace. The report text is generated from numbers and ids, never from platform text (docs/decisions/0090).",
+      "idempotency": {
+        "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": "list_analytics_reports"
       }
     },
     {
@@ -2156,6 +2276,30 @@
       "note": "SSE stream (ADR 0035).",
       "idempotency": {
         "clientKey": false,
+        "natural": "not documented"
+      },
+      "surfaces": {
+        "api": true,
+        "sdk": "generic",
+        "mcp": null
+      }
+    },
+    {
+      "id": "syncAnalyticsAccount",
+      "method": "POST",
+      "route": "/api/workspaces/{id}/analytics/accounts/{accountId}/sync",
+      "summary": "Fetch the account's recent posts from its provider and store them. Repeating it leaves the stored posts as they were.",
+      "tag": "Analytics",
+      "authorization": "owner",
+      "exposure": "public_api",
+      "effect": "external_request",
+      "irreversible": false,
+      "economic": false,
+      "stability": "preview",
+      "flags": [],
+      "note": "Fetches an account's posts from its provider and stores them. Idempotent: a repeat leaves the rows as they were. Provider output is untrusted and validated (docs/decisions/0090).",
+      "idempotency": {
+        "clientKey": true,
         "natural": "not documented"
       },
       "surfaces": {

@@ -6,6 +6,73 @@ that this task did not reproduce are kept, labelled, in the appendix at the end,
 **Commit the gates ran on:** `407533ac09f7121806836e25db4834be5c91c412` (HEAD of `claude/capabilities-overview-c6elxr` before the
 commit that adds this document; the working tree was clean at that commit).
 
+## 0d. Post analytics, first read-only slice (ADR 0090): gate run
+
+**Commit the gates ran on:** the working tree on top of `22b64fc` (origin/main at the start of this task), with this change uncommitted at the time of the runs. Integration runs used a private database, `bind_haiku_analytics`, created for this work and never the shared `bind_local`: `DATABASE_URL=postgres://bind_local:bind_local_only@127.0.0.1:5432/bind_haiku_analytics`.
+
+**Scope.** No real platform is contacted and no credential is read. Provider: simulated only. Every report and surface says it is simulated.
+
+| Command | Result | Class |
+| --- | --- | --- |
+| `npm run typecheck` | passes (root, SDK and MCP projects) | `LOCAL_PASS` |
+| `npm run lint` | 0 errors; 3 warnings, all in `tests/integration/tab-dropped.test.ts` (existing, not changed) | `LOCAL_PASS` |
+| `npx vitest run tests/unit/` | 79 files, 1076 tests passed | `LOCAL_PASS` |
+| `DATABASE_URL=… npx vitest run tests/integration/` (private DB) | 92 files passed, 1 skipped (existing skips, ADR 0057); 948 tests passed, 16 skipped | `LOCAL_PASS` |
+| `npm run api:spec`, `npm run sdk:generate`, `npm run capabilities:generate` | regenerated; re-running them reproduces the committed files (no drift) | `LOCAL_PASS` |
+| `npm run build` (includes `sdk:build`) and `npm run mcp:build` | both succeed | `LOCAL_PASS` |
+| Analytics unit tests: `tests/unit/analytics-analyse.test.ts` (27), `analytics-validate.test.ts`, `analytics-simulated.test.ts`, `analytics-notice-and-template.test.ts` | pass; every expected value in the analysis tests was worked out by hand from the input, then checked against the code | `LOCAL_PASS` |
+| Analytics integration: `tests/integration/analytics.test.ts` (27) and `analytics-notices.test.ts` (12) | pass, on the private database | `LOCAL_PASS` |
+| Browser E2E (`playwright`) | not run in this worktree (the owner builds the screens later) | `NOT_RUN` |
+| Live Meta or any real provider | not contacted (out of scope) | `NOT_RUN` |
+| `docs/CODEBASE_MAP.md` | not regenerated (no `.ua` graph in a worktree) and not edited by hand | `NOT_RUN` |
+
+**Contract and tenancy suites changed deliberately (not weakened):**
+- `api-contract.test.ts`: the excluded-GET list gained the report-by-id route, and the not-tested cap rose from 13 to 17 for four routes that need a workspace with the module (reasons recorded in the registry and in ADR 0090).
+- `auth-tenancy.test.ts`: the route inventory gained the six analytics routes, with their access.
+- `idempotency.test.ts`: the keyed-route check names the analytics sync as the one keyed route that is neither economic nor irreversible (the brief asks for its Idempotency-Key). It is listed, not hidden.
+- `sdk.test.ts`: `getAnalyticsReport` joins the routes that need their own ids (covered by `analytics.test.ts`).
+- `social-template` tests: the placeholder ids are replaced by the real ids (ADR 0090, section 11).
+- `mcp.test.ts`, `no-value-moving-model-tools.test.ts`, integration `mcp.test.ts`: the two read tools are documented.
+
+### Mutation checks (run against the test suite, then restored)
+
+Each mutation was applied to the source, the relevant suites were run, and the file was restored. A mutation is KILLED when at least one test fails.
+
+| # | Mutation | Verdict | Killing tests (examples) |
+| --- | --- | --- | --- |
+| M1 | Sample-size guard removed (format groups accept 1 post) | KILLED | "does not state a comparison from fewer than 5 posts in a group" |
+| M2 | `ON CONFLICT DO NOTHING` removed from the report insert | KILLED | "ten concurrent requests … write exactly one report" |
+| M3 | Owner notice sent before the effects ledger (no ledger guard) | KILLED | "ten concurrent deliveries … send one email", the crash-during-send test |
+| M4 | Delivery pre-check ignores completed rows | KILLED | "a verified owner is emailed once …" (the `alreadySent` count) |
+| M5 | Re-sync keeps the old sync time (`synced_at` not updated) | KILLED after a test was added (first run survived; the test was missing from the run, see below) | "a later sync updates the stored rows, not only their count" |
+| M6 | Account lookup loses the workspace scope | KILLED | 25 failing tests (tenancy and notices) |
+| M7 | Staff allowed to create reports (owner route becomes member) | KILLED | "anonymous gets 401; staff can read and cannot write (403)" |
+| M8 | Demo refusal removed for writes | KILLED | "a demo workspace reads analytics and refuses every change" |
+| M9 | NaN accepted as a count | KILLED | "refuses NaN and infinities", "refuses a fraction, a numeric string and a boolean" |
+| M10 | Free-text fields kept (raw object spread) | KILLED | "drops a caption, a comment and any other text field …" |
+| M11 | Template refusal removed from account creation | KILLED | "a workspace with no analytics module reads as empty, and every write is 400 …" |
+| M12 | Weekly job's pending-notice step ignores the ledger row (no `NOT EXISTS`) | **SURVIVED** | none (see below) |
+
+**M5 note:** the first run of M5 survived. The re-sync test had been written but not yet applied to the file, so the run used the old suite. After the test was applied, M5 is killed. The result above is the post-fix run; the survived run is recorded here so the history is visible.
+
+**M12 (survived), and why it is not a notice-safety gap:** the weekly job's second step lists reports whose primary recipient has no ledger row yet. Removing that `NOT EXISTS` makes the job re-visit already-delivered reports. The notice itself stays at most once, because `deliverReportNotice` skips completed rows and the effects ledger guards the send (M3 and M4 are killed). So M12 changes efficiency and the risk of starving other reports in a busy week, not whether an owner is emailed twice. No test measures that starvation. It is recorded as a known gap, with the batch-size limit as the only guard.
+
+### Defects found and fixed during the gate runs (recorded)
+- **In-doubt notices were not audited.** The delivery pre-check skipped any ledger row, so a started or failed notice was silently held back and left no audit row. It now skips completed rows only, and the dispatcher reports and audits a started or failed row as in doubt (`notification.in_doubt`). The worker's query still excludes reports with any row, so this does not repeat every tick.
+- **Analytics reads returned 400 on a workspace with no module.** They now return an empty list, as the stock reads do (ADR 0084). Writes still refuse with `TEMPLATE_HAS_NO_ANALYTICS`.
+- **`2026-02-30` passed the date check.** The validator now checks that the calendar date exists.
+- **A report over an in-progress period** is now refused in the generator as well as at the route.
+
+**Known risks and limitations (recorded in ADR 0090, "Known limitations"):**
+- A crash between two owner recipients leaves the later ones untold by the weekly job (the on-demand route sends no notice).
+- A failing analytics account is retried each tick and its failures counted; there is no backoff.
+- An all-brands report pools the brands' posts and reads hours in UTC.
+- Reports are fixed when written and are not updated by later syncs.
+- No Meta requirement is verified. ADR 0090 lists what a real adapter must check, and asserts none of it.
+- The workspace time zone is per analytics account (no workspace time zone exists). Recorded as a reversible choice.
+
+**Evidence not claimed:** no `LIVE_READ_PASS`, `VERIFIED_REMOTE` or `BLOCKED` for this slice. The simulated provider is `LOCAL_PASS` only.
+
 ## 0c. Embedded wallet for Google sign-in (ADR 0073): gate run and deployment
 
 **Commit the gates ran on and the commit deployed:** `28f13c4df9ab72e6f48f14bd1d1d4bff66cc7580`. Command: `bash scripts/verify-local.sh`. Result: `PASS=19 FAIL_OR_BLOCKED=0 NOT_RUN_ACCEPTED=0` (unit 57 files and 606 tests, integration 638 passed and 10 skipped, contract 32, browser E2E including `wallet.spec.ts`, `account-signin.spec.ts` and `privy-bundle.spec.ts`).

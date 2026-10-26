@@ -452,6 +452,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{id}/analytics/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The analytics accounts of this workspace, with when each was last synced and how many posts it holds. A workspace whose template has no analytics module has none: the list is empty.
+         * @description Access: a workspace token of the owner or a staff member of the workspace in the path.
+         */
+        get: operations["listAnalyticsAccounts"];
+        put?: never;
+        /**
+         * Connect an analytics account. Only the simulated provider is available: its data is labelled simulated everywhere.
+         * @description Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.
+         */
+        post: operations["createAnalyticsAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{id}/analytics/accounts/{accountId}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fetch the account's recent posts from its provider and store them. Repeating it leaves the stored posts as they were.
+         * @description Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.
+         */
+        post: operations["syncAnalyticsAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{id}/analytics/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The 50 newest analytics reports of this workspace, with their text and findings. Empty for a workspace with no analytics module.
+         * @description Access: a workspace token of the owner or a staff member of the workspace in the path.
+         */
+        get: operations["listAnalyticsReports"];
+        put?: never;
+        /**
+         * Write a report for a period (UTC days, at most 92, ending by today). Once per period: asking again for the same period returns the same report.
+         * @description Access: a workspace token of the owner of the workspace in the path. A staff token gets 403.
+         */
+        post: operations["createAnalyticsReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{id}/analytics/reports/{reportId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One analytics report of this workspace.
+         * @description Access: a workspace token of the owner or a staff member of the workspace in the path.
+         */
+        get: operations["getAnalyticsReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspaces/{id}/approvals": {
         parameters: {
             query?: never;
@@ -4492,6 +4580,867 @@ export interface operations {
                 };
             };
             /** @description The change could not be recorded. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listAnalyticsAccounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The accounts, oldest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": ({
+                        brandLabel: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        id: string;
+                        isSimulated: boolean;
+                        /** Format: date-time */
+                        lastSyncedAt: string | null;
+                        postCount: number;
+                        provider: string;
+                        status: string;
+                        timeZone: string;
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                };
+            };
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    createAnalyticsAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    brandLabel: string;
+                    provider: string;
+                    timeZone?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The account, now connected. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        brandLabel: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        id: string;
+                        isSimulated: boolean;
+                        /** Format: date-time */
+                        lastSyncedAt: string | null;
+                        postCount: number;
+                        provider: string;
+                        status: string;
+                        timeZone: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Malformed input (INVALID_INPUT: a brand label of 1 to 80 characters, or an IANA time zone). Also: TEMPLATE_HAS_NO_ANALYTICS, or ANALYTICS_PROVIDER_NOT_AVAILABLE for any provider other than simulated. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description A demo workspace does not change analytics (ANALYTICS_DEMO_REFUSED). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The workspace already has the most accounts it can have (ANALYTICS_ACCOUNT_LIMIT). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Request body too large (over 256 kB). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    syncAnalyticsAccount: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 128 characters from A-Z a-z 0-9 . _ : -. A retry with the same key and the same request returns the first outcome with Idempotent-Replayed: true; a different request is refused with 422 IDEMPOTENCY_KEY_REUSED; a retry while the first is running gets 409 IDEMPOTENCY_IN_PROGRESS. Stored for 24 hours. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: string;
+                accountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the sync stored: how many posts, how many were new and how many were updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Outcome of the request in one vocabulary, and what the caller's role may do next. */
+                        _meta?: {
+                            links?: {
+                                [key: string]: string;
+                            };
+                            nextActions?: ({
+                                /** @enum {string} */
+                                actor: "owner" | "staff" | "agent" | "system";
+                                href?: string;
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                method: "GET" | "POST" | "PUT" | "DELETE";
+                                needsConfirmation?: boolean;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                            processing?: {
+                                events?: string;
+                                poll?: string;
+                                remaining?: string[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            requestId: string;
+                            state?: string;
+                            /** @enum {string} */
+                            status: "completed" | "accepted" | "held" | "refused";
+                            warnings?: ({
+                                code: string;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            })[];
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        accountId: string;
+                        inserted: number;
+                        posts: number;
+                        simulated: boolean;
+                        /** Format: date-time */
+                        syncedAt: string;
+                        updated: number;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This workspace's template has no post analytics module (TEMPLATE_HAS_NO_ANALYTICS), or the stored provider is not available. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description A demo workspace does not change analytics (ANALYTICS_DEMO_REFUSED). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No such analytics account in this workspace (ANALYTICS_ACCOUNT_NOT_FOUND). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The account is disabled (ANALYTICS_ACCOUNT_DISABLED). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The provider did not answer (ANALYTICS_PROVIDER_UNAVAILABLE), or its answer is not valid (ANALYTICS_PROVIDER_OUTPUT_INVALID). Nothing was stored. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listAnalyticsReports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reports, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": ({
+                        accountId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        findings: {
+                            countries: {
+                                posts: number;
+                                status: string;
+                                top: unknown[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            followers: {
+                                posts: number;
+                                status: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            formats: {
+                                comparisons: unknown[];
+                                groups: unknown[];
+                                status: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            hours: {
+                                eligibleHours: unknown[];
+                                status: string;
+                                timeZone: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            minimumGroupPosts: number;
+                            postCount: number;
+                            rankings: {
+                                bottom: unknown[];
+                                eligible: number;
+                                status: string;
+                                top: unknown[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            simulated: boolean;
+                            timeZone: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        id: string;
+                        /** @enum {string} */
+                        kind: "weekly" | "on_demand";
+                        periodEnd: string;
+                        periodStart: string;
+                        simulated: boolean;
+                        text: string;
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                };
+            };
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Workspace not found. The same body answers a workspace that does not exist and one that belongs to another tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    createAnalyticsReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    accountId?: string;
+                    /** @enum {string} */
+                    kind: "on_demand";
+                    periodEnd?: string;
+                    periodStart?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The period already had its report, which is returned (created: false). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        accountId: string | null;
+                        created: boolean;
+                        /** Format: date-time */
+                        createdAt: string;
+                        findings: {
+                            countries: {
+                                posts: number;
+                                status: string;
+                                top: unknown[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            followers: {
+                                posts: number;
+                                status: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            formats: {
+                                comparisons: unknown[];
+                                groups: unknown[];
+                                status: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            hours: {
+                                eligibleHours: unknown[];
+                                status: string;
+                                timeZone: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            minimumGroupPosts: number;
+                            postCount: number;
+                            rankings: {
+                                bottom: unknown[];
+                                eligible: number;
+                                status: string;
+                                top: unknown[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            simulated: boolean;
+                            timeZone: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        id: string;
+                        /** @enum {string} */
+                        kind: "weekly" | "on_demand";
+                        periodEnd: string;
+                        periodStart: string;
+                        simulated: boolean;
+                        text: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The report was written now (created: true). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        accountId: string | null;
+                        created: boolean;
+                        /** Format: date-time */
+                        createdAt: string;
+                        findings: {
+                            countries: {
+                                posts: number;
+                                status: string;
+                                top: unknown[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            followers: {
+                                posts: number;
+                                status: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            formats: {
+                                comparisons: unknown[];
+                                groups: unknown[];
+                                status: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            hours: {
+                                eligibleHours: unknown[];
+                                status: string;
+                                timeZone: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            minimumGroupPosts: number;
+                            postCount: number;
+                            rankings: {
+                                bottom: unknown[];
+                                eligible: number;
+                                status: string;
+                                top: unknown[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            simulated: boolean;
+                            timeZone: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        id: string;
+                        /** @enum {string} */
+                        kind: "weekly" | "on_demand";
+                        periodEnd: string;
+                        periodStart: string;
+                        simulated: boolean;
+                        text: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Malformed input (INVALID_INPUT: a period that is not whole days, longer than 92 days, or ends after today). Also TEMPLATE_HAS_NO_ANALYTICS. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description A demo workspace does not change analytics (ANALYTICS_DEMO_REFUSED). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No such analytics account in this workspace (ANALYTICS_ACCOUNT_NOT_FOUND), when an accountId is given. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Request body too large (over 256 kB). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication is unavailable (the token lookup failed). Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getAnalyticsReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                reportId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        accountId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        findings: {
+                            countries: {
+                                posts: number;
+                                status: string;
+                                top: unknown[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            followers: {
+                                posts: number;
+                                status: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            formats: {
+                                comparisons: unknown[];
+                                groups: unknown[];
+                                status: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            hours: {
+                                eligibleHours: unknown[];
+                                status: string;
+                                timeZone: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            minimumGroupPosts: number;
+                            postCount: number;
+                            rankings: {
+                                bottom: unknown[];
+                                eligible: number;
+                                status: string;
+                                top: unknown[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                            simulated: boolean;
+                            timeZone: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        id: string;
+                        /** @enum {string} */
+                        kind: "weekly" | "on_demand";
+                        periodEnd: string;
+                        periodStart: string;
+                        simulated: boolean;
+                        text: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Malformed JSON, a NUL character in the input, or a field that fails validation (see the route for its own message). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Authentication required: the token is missing, malformed, unknown or revoked (or the webhook signature is refused). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description No such analytics report in this workspace (ANALYTICS_REPORT_NOT_FOUND). Also the answer for a workspace with no analytics module. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Too many requests: the per-client or per-token limit is reached. Retry-After is set (ADR 0033). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description An unexpected failure. The detail is logged with the request id, never returned. */
             500: {
                 headers: {
                     [name: string]: unknown;

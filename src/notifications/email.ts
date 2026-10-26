@@ -29,7 +29,7 @@ export const VERIFICATION_SUBJECT = "Your Bind verification code";
 /** The longest supplier name shown in an email. Longer text is cut, with an ellipsis. */
 export const MAX_EMAIL_FIELD_LENGTH = 80;
 
-const NOTICE_KINDS: readonly OwnerNoticeKind[] = ["approval", "order_held", "order_declined", "order_partially_available"];
+const NOTICE_KINDS: readonly OwnerNoticeKind[] = ["approval", "order_held", "order_declined", "order_partially_available", "analytics_report"];
 
 /**
  * Control characters (C0, DEL, C1), line and paragraph separators, and the bidirectional controls, by code point. Each one
@@ -155,6 +155,9 @@ function noticeSentence(kind: OwnerNoticeKind, metadata: Record<string, unknown>
       return "A customer order was declined.";
     case "order_partially_available":
       return "A customer order can only be partly filled from stock.";
+    case "analytics_report":
+      // Names no finding and no account: the report is read in Bind (docs/decisions/0090).
+      return "Your report is ready.";
   }
 }
 
@@ -167,14 +170,12 @@ export function buildOwnerNoticeEmail(input: { kind: unknown; metadata: Record<s
     throw new Error("The email notice has no known kind");
   }
   const sentence = noticeSentence(input.kind as OwnerNoticeKind, input.metadata);
-  const text = [
-    sentence,
-    "",
-    `${input.baseUrl.replace(/\/+$/, "")}/app/`,
-    "",
-    "Open Bind to look at it and decide. Nothing happens until you do.",
-    "",
-  ].join("\n");
+  // A report asks for nothing, so its closing line says only that reading it changes nothing.
+  const closing =
+    input.kind === "analytics_report"
+      ? "Open Bind to read it. Reading it changes nothing."
+      : "Open Bind to look at it and decide. Nothing happens until you do.";
+  const text = [sentence, "", `${input.baseUrl.replace(/\/+$/, "")}/app/`, "", closing, ""].join("\n");
   return { subject: OWNER_NOTICE_SUBJECT, text };
 }
 
