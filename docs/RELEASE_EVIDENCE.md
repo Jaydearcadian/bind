@@ -811,3 +811,11 @@ Sonnet re-ran the claims in section 0d on private databases and approved a merge
 ### Guard test exceptions for the live tab harness (2026-10-27)
 
 The full gate on the merged branch failed three assertions in `tests/unit/no-value-moving-model-tools.test.ts`: `scripts/live-tab-arc.ts` (the live tab harness, ADR 0090) contains `sendRawTransaction`, spawns a child process and wraps `transferUSDC`, and was not listed as an operator-script exception. It is now listed in the three exception tables with a reason each, exactly as `scripts/live-recovery-arc.ts` is. This allows one more operator script to carry those primitives; it does not allow product code (`src/`, `mcp/`) to carry them, and every other rule in the test is unchanged. The harness itself is unreviewed for a live run and the live run is not approved.
+
+## 0f. Production deploy of main at e2fdc2f: analytics reports, Reports screen (2026-10-27)
+
+- Pull request #4 merged to `main` (`e2fdc2f`); deployed to the `bind` Vercel project, target production (`dpl_6ACnJBi456vwc8MpANtKgfmoGTvi`, READY), aliased to bind-gilt.vercel.app.
+- Gate before the PR (private database): 18 of 19 on the first run (the failure was `tests/unit/no-value-moving-model-tools.test.ts` not listing `scripts/live-tab-arc.ts`, fixed by listing it with reasons; full unit suite then 1221 passed). Integration 961 passed, 18 skipped. Browser tests for Reports, Connect an agent and the app: 38 passed on desktop and phone. Evidence class: LOCAL_PASS.
+- Live, read-only (LIVE_READ_PASS): `/health`, `/api/public-config`, `/app/reports`, `/app/sign-in` return 200; an analytics route and `POST /mcp` without a key return 401; `GET /api/templates` lists social-v1 with the `post_analytics` data source. Vercel runtime errors for the last hour: only two pre-existing Node warnings (pg SSL mode aliases, `url.parse`).
+- NOT_RUN: any write against production (no test workspace was created there), `/mcp` with a real agent key, live email, Google sign-in on this build, anything with Meta or Instagram, and the live tab harness. The weekly analytics job is OFF in production.
+- Follow-up: make the SSL mode explicit (`sslmode=verify-full`) in the production `DATABASE_URL` to silence the pg warning (owner setting).
