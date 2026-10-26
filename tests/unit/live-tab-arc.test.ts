@@ -25,8 +25,11 @@ import {
 } from "../../scripts/live-recovery-arc.js";
 import {
   CHARGE_MICRO,
+  APPROVED_DEPLOY_BLOCK,
   CONFIRMATION_CHECKS,
   DEFAULT_SPEND_LEDGER,
+  assertNoCodeBefore,
+  effectiveDeployBlock,
   EXIT_SUBMITTED_UNCONFIRMED,
   GAS_MARGIN_NATIVE_WEI,
   KILL_ARMED_MARK,
@@ -56,6 +59,7 @@ import {
   workspaceRowsProblem,
   type SendFacts,
   type SpendLedger,
+  type SpendLock,
   type SpendRecord,
   assertTabPhase,
   assertTabStateMatches,
@@ -208,6 +212,8 @@ function guardedChain(
         return Array.from({ length: n }, (_, i) => ({ transactionHash: `0x${(i + 1).toString(16).padStart(64, "0")}`, blockNumber: "0x3e8" }));
       },
       eth_getBalance: () => over.balance ?? FUNDED,
+      // Code at the deploy block (1000) and none at the block before it (999), as a fresh deployment shows.
+      eth_getCode: (params) => (params[1] === "0x3e7" ? "0x" : "0x6000"),
       eth_estimateGas: () => {
         if (over.estimate === "revert") throw new Error("execution reverted");
         return "0x5208";
@@ -463,7 +469,9 @@ describe("tabStaticGuards", () => {
   it("refuses any contract address but the approved one, a missing deploy block, a non-http RPC and a bad key", () => {
     expect(guardsOf({ ...GOOD_ENV, BIND_SETTLEMENT_ADDRESS: "0x0000000000000000000000000000000000000001" })).toContain("settlement-address");
     expect(guardsOf({ ...GOOD_ENV, BIND_SETTLEMENT_ADDRESS: undefined })).toContain("settlement-address");
-    expect(guardsOf({ ...GOOD_ENV, BIND_SETTLEMENT_DEPLOY_BLOCK: undefined })).toContain("deploy-block");
+    // The approved deploy block is hardcoded: an unset override is the approved block, and an override above it is refused.
+    expect(guardsOf({ ...GOOD_ENV, BIND_SETTLEMENT_DEPLOY_BLOCK: undefined })).not.toContain("deploy-block");
+    expect(guardsOf({ ...GOOD_ENV, BIND_SETTLEMENT_DEPLOY_BLOCK: (APPROVED_DEPLOY_BLOCK + 1n).toString() })).toContain("deploy-block");
     expect(guardsOf({ ...GOOD_ENV, BIND_SETTLEMENT_DEPLOY_BLOCK: "12.5" })).toContain("deploy-block");
     expect(guardsOf({ ...GOOD_ENV, ARC_RPC_URL: "ws://rpc.example.test" })).toContain("rpc-url");
     expect(guardsOf({ ...GOOD_ENV, ARC_SIGNER_PRIVATE_KEY: "0x1234" })).toContain("signer-key");
@@ -1052,7 +1060,22 @@ function fakeDb(over: Partial<{ precheck: string[]; rowsCheck: string[]; snapsho
 /** An in-memory spend ledger. Records are kept in order; a test reads them to see what was attempted. */
 function memorySpend(initial: SpendRecord[] = []) {
   const records = [...initial];
-  return { records, read: () => [...records], append: (r: SpendRecord) => void records.push(r) } satisfies SpendLedger & { records: SpendRecord[] };
+  let locked = false;
+  return {
+    records,
+    read: () => [...records],
+    append: (r: SpendRecord) => void records.push(r),
+    acquire: (): SpendLock => {
+      if (locked) throw new RefusedError(["a live tab payment lock is held"]);
+      locked = true;
+      return {
+        release: () => {
+          locked = false;
+        },
+      };
+    },
+    isLocked: () => locked,
+  } satisfies SpendLedger & { records: SpendRecord[] };
 }
 
 function portsOf(over: Partial<TabPorts> & { calls?: { spawned: number }; db?: ReturnType<typeof fakeDb>["db"]; rpc?: RpcCall; statePath?: string } = {}): { ports: TabPorts; spawned: { n: number }; out: string[]; statePath: string; spend: ReturnType<typeof memorySpend> } {
@@ -1322,6 +1345,7 @@ describe("buildSendHooks: every check runs before a broadcast, and the ledger in
       const before = spend.records.length;
       await expect(buildSendHooks(config(rpc, spend)).beforeTransfer(request()), name).rejects.toThrow(reason);
       expect(spend.records.length, name).toBe(before);
+      expect(spend.isLocked(), `${name}: the lock is released`).toBe(false);
     }
   });
 
@@ -1382,11 +1406,11 @@ describe("tabGuardedAdapter: one payment per process", () => {
 // ---------------------------------------------------------------------------------------------------------------------
 
 describe("the spend ledger file", () => {
-  it("lives in the repository's git-ignored .live-state directory, never in the temporary directory", () => {
-    expect(DEFAULT_SPEND_LEDGER).toContain(`${path.sep}.live-state${path.sep}`);
-    expect(DEFAULT_SPEND_LEDGER.startsWith(os.tmpdir())).toBe(false);
-    const gitignore = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".gitignore"), "utf8");
-    expect(gitignore.split("\n")).toContain(".live-state/");
+  it("lives at a fixed path in the operator's home directory, independent of the checkout and the temporary directory", () => {
+    const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+    expect(DEFAULT_SPEND_LEDGER).toBe(path.join(os.homedir(), ".bind-live-state", "tab-spend-ledger.jsonl"));
+    expect(DEFAULT_SPEND_LEDGER.startsWith(repo + path.sep)).toBe(false);
+    expect(DEFAULT_SPEND_LEDGER.startsWith(os.tmpdir() + path.sep)).toBe(false);
   });
 
   it("reads a missing file as empty, appends one record per line in order, and refuses a corrupt file without resetting it", () => {
@@ -1670,7 +1694,7 @@ describe("--preflight", () => {
     const spawns = { n: 0 };
     const made = portsOf({
       files: { exists: () => false, read: () => null, write: forbidden("write a file") },
-      spend: { read: () => [], append: forbidden("append to the spend ledger") },
+      spend: { read: () => [], append: forbidden("append to the spend ledger"), acquire: forbidden("take the spend lock"), isLocked: () => false },
       spawnPhase: async () => {
         spawns.n += 1;
         throw new Error("preflight must not spawn a child");
@@ -1692,6 +1716,13 @@ describe("--preflight", () => {
     expect(doc.checks.every((c: { status: string }) => c.status === "PASS")).toBe(true);
   });
 
+  it("refuses with exit 2 while a spend lock file exists, and reports the lock as the failing check", async () => {
+    const { ports, spawned, out, statePath } = readOnlyPorts({ spend: { read: () => [], append: () => undefined, acquire: () => ({ release: () => undefined }), isLocked: () => true } } as never);
+    expect(await runTabPreflight(args({ preflight: true, statePath }), ports)).toBe(2);
+    expect(spawned.n).toBe(0);
+    expect(out.join("\n")).toMatch(/"spend_lock"[\s\S]*?"status": "FAIL"/);
+  });
+
   it("refuses with exit 2 at the cap, an underfunded signer, a bad chain, an ambiguous prior send, and the local rehearsal", async () => {
     const cases: [string, Parameters<typeof portsOf>[0], string][] = [
       ["the cap", { rpc: guardedChain({ payments: 3 }) }, "total cap is reached"],
@@ -1709,5 +1740,181 @@ describe("--preflight", () => {
     expect(await runTabPreflight(args({ preflight: true, statePath: ambiguous.statePath }), ambiguous.ports)).toBe(2);
     const local = readOnlyPorts();
     expect(await runTabPreflight(args({ preflight: true, adapter: "local-sim", statePath: local.statePath }), local.ports)).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Concurrency, the spend lock, the in-flight check, the recount, the deploy block and the block before it
+// ---------------------------------------------------------------------------------------------------------------------
+
+describe("the spend lock on the real ledger file", () => {
+  function tempLedger(): { dir: string; file: string; cleanup: () => void } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "live-tab-lock-"));
+    return { dir, file: path.join(dir, "nested", "tab-spend-ledger.jsonl"), cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+  }
+
+  it("refuses a second take while the first is held, and takes it again after release", () => {
+    const t = tempLedger();
+    try {
+      const ledger = realSpendLedger(t.file);
+      const first = ledger.acquire();
+      expect(ledger.isLocked()).toBe(true);
+      expect(() => ledger.acquire()).toThrow(/lock is held.*never broken automatically/);
+      first.release();
+      expect(ledger.isLocked()).toBe(false);
+      expect(() => ledger.acquire().release()).not.toThrow();
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("never breaks a stale lock: a lock whose owner is gone still refuses, and the file is left in place", () => {
+    const t = tempLedger();
+    try {
+      const ledger = realSpendLedger(t.file);
+      fs.mkdirSync(path.dirname(t.file), { recursive: true });
+      fs.writeFileSync(`${t.file}.lock`, JSON.stringify({ token: "gone", pid: 999999, at: "2026-10-01T00:00:00Z" }));
+      expect(() => ledger.acquire()).toThrow(/never broken automatically/);
+      expect(fs.readFileSync(`${t.file}.lock`, "utf8")).toMatch(/"token":"gone"/);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("a handle releases only the lock it wrote: another owner's lock is left alone", () => {
+    const t = tempLedger();
+    try {
+      const ledger = realSpendLedger(t.file);
+      const mine = ledger.acquire();
+      fs.writeFileSync(`${t.file}.lock`, JSON.stringify({ token: "someone-else", pid: 1, at: "x" }));
+      mine.release();
+      expect(fs.readFileSync(`${t.file}.lock`, "utf8")).toMatch(/someone-else/);
+    } finally {
+      t.cleanup();
+    }
+  });
+});
+
+describe("two concurrent child hooks against one shared real ledger file", () => {
+  const request: TransferRequest = {
+    fromAddress: SIGNER,
+    toAddress: VENDOR_ADDRESS,
+    amountCents: 1n,
+    currency: "USDC",
+    orderId: tabAdapterOrderId(SET),
+    idempotencyKey: "k",
+    matchHash: TX,
+  };
+  const db = { settlementRow: async (_ws: string, id: string) => ({ id, counterpartyId: CP, status: "pending", amountCents: "1" }) };
+  const hooks = (spend: SpendLedger, rpc: RpcCall = guardedChain({ payments: 2 })) =>
+    buildSendHooks({ rpc, spend, contract: CONTRACT, signer: SIGNER, vendor: VENDOR_ADDRESS, deployBlock: 1000n, db, workspaceId: WS, counterpartyId: CP, scenario: "settle", onChain: true });
+
+  it("at most one proceeds: the second is refused while the first holds the lock, and the ledger gains one record", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "live-tab-race-"));
+    try {
+      const file = path.join(dir, "tab-spend-ledger.jsonl");
+      const ledger = realSpendLedger(file);
+      ledger.append(intent("tabset-a"));
+      ledger.append(intent("tabset-b"));
+      const first = hooks(ledger);
+      const second = hooks(ledger);
+      const results = await Promise.allSettled([first.beforeTransfer(request), second.beforeTransfer(request)]);
+      const fulfilled = results.filter((r) => r.status === "fulfilled");
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(String(rejected[0].reason)).toMatch(/lock is held/);
+      expect(ledger.read()).toHaveLength(3);
+      expect(ledger.isLocked()).toBe(true);
+
+      // The holder releases on exit. A later run then sees three attempts and is refused by the cap.
+      first.release?.();
+      expect(ledger.isLocked()).toBe(false);
+      await expect(hooks(ledger).beforeTransfer(request)).rejects.toThrow(/spend ledger holds 3/);
+      expect(ledger.read()).toHaveLength(3);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("a stale lock file blocks the hook, names the inspection, and writes nothing", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "live-tab-stale-"));
+    try {
+      const file = path.join(dir, "tab-spend-ledger.jsonl");
+      const ledger = realSpendLedger(file);
+      fs.writeFileSync(`${file}.lock`, JSON.stringify({ token: "dead-owner", pid: 999999, at: "x" }));
+      await expect(hooks(ledger).beforeTransfer(request)).rejects.toThrow(/never broken automatically/);
+      expect(fs.existsSync(`${file}.lock`)).toBe(true);
+      expect(fs.existsSync(file)).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the hook's additional checks", () => {
+  const request: TransferRequest = {
+    fromAddress: SIGNER,
+    toAddress: VENDOR_ADDRESS,
+    amountCents: 1n,
+    currency: "USDC",
+    orderId: tabAdapterOrderId(SET),
+    idempotencyKey: "k",
+    matchHash: TX,
+  };
+  const db = { settlementRow: async (_ws: string, id: string) => ({ id, counterpartyId: CP, status: "pending", amountCents: "1" }) };
+  const hooks = (spend: ReturnType<typeof memorySpend>, rpc: RpcCall) =>
+    buildSendHooks({ rpc, spend, contract: CONTRACT, signer: SIGNER, vendor: VENDOR_ADDRESS, deployBlock: 1000n, db, workspaceId: WS, counterpartyId: CP, scenario: "settle", onChain: true });
+
+  it("refuses a signer with a transaction in flight (pending differs from latest), with no append, and releases the lock", async () => {
+    const spend = memorySpend();
+    await expect(hooks(spend, guardedChain({ latestNonce: "0x1", pendingNonce: "0x2" })).beforeTransfer(request)).rejects.toThrow(/in flight/);
+    expect(spend.records).toEqual([]);
+    expect(spend.isLocked()).toBe(false);
+  });
+
+  it("re-reads the ledger after the append, and refuses (no broadcast) when another writer pushed it over the cap", async () => {
+    const records: SpendRecord[] = [intent("a"), intent("b")];
+    const spend: SpendLedger & { isLocked(): boolean } = {
+      read: () => [...records],
+      // A writer that does not take the lock adds one more attempt after our append.
+      append: (r) => {
+        records.push(r, intent("unlocked-writer"));
+      },
+      acquire: () => ({ release: () => undefined }),
+      isLocked: () => false,
+    };
+    await expect(hooks(spend as never, guardedChain({ payments: 2 })).beforeTransfer(request)).rejects.toThrow(/over the cap of 3/);
+  });
+
+  it("the child's hook releases a lock it took when the hook returns without error and the caller releases it", async () => {
+    const spend = memorySpend();
+    const h = hooks(spend, guardedChain());
+    await h.beforeTransfer(request);
+    expect(spend.isLocked()).toBe(true);
+    h.release?.();
+    expect(spend.isLocked()).toBe(false);
+  });
+});
+
+describe("the deploy block: hardcoded, with an override that may only be lower or equal", () => {
+  it("is the approved block from the deployment record when unset, and a lower override is used", () => {
+    expect(APPROVED_DEPLOY_BLOCK).toBe(67155017n);
+    expect(effectiveDeployBlock({})).toBe(67155017n);
+    expect(effectiveDeployBlock({ BIND_SETTLEMENT_DEPLOY_BLOCK: "1000" })).toBe(1000n);
+    expect(effectiveDeployBlock({ BIND_SETTLEMENT_DEPLOY_BLOCK: "67155018" })).toBe(67155017n);
+  });
+
+  it("refuses an override above the approved block in the static guards", () => {
+    const refused = tabStaticGuards({ ...GOOD_ENV, BIND_SETTLEMENT_DEPLOY_BLOCK: "67155018" }, { adapter: "arc", confirmTestnetSpend: true, writeEvidence: undefined }, false);
+    expect(refused.map((f) => f.guard)).toContain("deploy-block");
+  });
+
+  it("refuses code before the deploy block, passes no code there, and is BLOCKED when the read fails", async () => {
+    const codeAt = (before: string) => fakeRpc({ eth_getCode: (params) => (params[1] === "0x" + (1000n - 1n).toString(16) ? before : "0x6000") });
+    await expect(assertNoCodeBefore(codeAt("0x6000"), CONTRACT, 1000n)).rejects.toThrow(/code before the deploy block/);
+    await expect(assertNoCodeBefore(codeAt("0x"), CONTRACT, 1000n)).resolves.toBeUndefined();
+    await expect(assertNoCodeBefore(fakeRpc({ eth_getCode: () => { throw new Error("pruned"); } }), CONTRACT, 1000n)).rejects.toThrow(BlockedError);
+    await expect(assertNoCodeBefore(fakeRpc({ eth_getCode: () => { throw new Error("never asked"); } }), CONTRACT, 0n)).resolves.toBeUndefined();
   });
 });

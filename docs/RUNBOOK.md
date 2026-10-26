@@ -760,8 +760,11 @@ testnet funds in total, plus gas.** The amount is not configurable: there is no 
 | `held-adopt` | The first send is broadcast, then fails with a timeout, so its outcome is unknown. The transfer is mined. The supplier is made unverified and the settlement is re-run (held, not sent). A restore is attempted (refused by the chain). The worker's held step adopts and confirms it. | A hold keeps the clear and sends nothing; a restore is refused while the chain shows the transfer; the worker adopts the hash; one transfer on chain. | `npx tsx scripts/live-tab-arc.ts held-adopt --confirm-testnet-spend [--state <file>] [--write-evidence <new-file>]` |
 
 Required environment, by name only: `ARC_RPC_URL`, `ARC_SIGNER_PRIVATE_KEY`, `BIND_SETTLEMENT_ADDRESS` (must be
-`0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29`), `BIND_SETTLEMENT_DEPLOY_BLOCK`, and `DATABASE_URL`. `NODE_ENV` must not be `production`, and
-`SETTLEMENT_MODE`, if set, must be `arc-testnet`.
+`0x16E1Bd42F7C0FfD28D10919C87CaD22d05f2aA29`), and `DATABASE_URL`. `NODE_ENV` must not be `production`, and `SETTLEMENT_MODE`, if set, must be
+`arc-testnet`. **The deploy block is not operator input.** The harness uses the approved deploy block **67155017**, the block of the deployment
+that created the approved contract (`docs/RELEASE_EVIDENCE.md`, the deployment receipts, L9). `BIND_SETTLEMENT_DEPLOY_BLOCK` may be set only to that
+block or lower (a higher value is refused). The harness also requires no code at the block before the deploy block. The approved block was taken from
+that recorded evidence; this change did not re-read it from the chain.
 
 **Before a live run: `--preflight`.** `npx tsx scripts/live-tab-arc.ts <scenario> --preflight` (arc only) reads the contract, the
 signer's balance, the nonce, the total cap and the database, prints the plan, and exits 0 only when every check passes
@@ -783,8 +786,22 @@ check then refuses later runs in that database until it is resolved or the datab
 **The total cap: three payments, ever.** The harness refuses to send when either count is at 3 (0.03 USDC):
 
 - the chain: every `SettlementExecuted` from the signer to the vendor since `BIND_SETTLEMENT_DEPLOY_BLOCK` (chunked, a failed window is BLOCKED);
-- the spend ledger: `.live-state/tab-spend-ledger.jsonl` in the repository (git-ignored), one line per send attempt, written and fsynced
-  before the broadcast. It is never in the temporary directory, and a rehearsal never reads or writes it.
+- the spend ledger: `~/.bind-live-state/tab-spend-ledger.jsonl` (the operator's home directory, a fixed path independent of the checkout),
+  one line per send attempt, written and fsynced before the broadcast. A rehearsal never reads or writes it.
+
+**The lock.** The cap check and the ledger append are one critical section. The send child takes `tab-spend-ledger.jsonl.lock` (an exclusive
+create) before the cap check and holds it until it exits. While the lock file exists, every run and every preflight refuses: the lock is never
+broken automatically, whoever wrote it and whether or not its owner is still running. After the append the child re-reads the ledger, and
+refuses to broadcast if more than three attempts are recorded. The child also refuses while the signer has a transaction in flight (pending nonce
+different from latest), so a payment still in the mempool blocks the next one.
+
+*Procedure for a held lock:* confirm that no live-tab process is running (for example `pgrep -fa live-tab-arc`), inspect the chain and the ledger
+(`--preflight` shows the count), and only then remove the `.lock` file by hand. The `crash-after-send` scenario kills its child with SIGKILL by design,
+so it leaves the lock: inspect, then remove it. Deleting the ledger itself only removes its count: the chain count still applies, but an attempt that was
+recorded and never broadcast is then lost from the count. Do not delete it without a reason.
+
+**A burned slot.** A failure after the ledger intent is written but before the broadcast (for example a simulation error, or a broadcast the node
+refuses) still uses one of the three slots. The harness does not give it back.
 
 The orchestrator checks both before it spawns the send child, and the child checks both again before each broadcast. `--fresh` does not skip
 either check. **The chain count includes payments to this vendor from this signer made by any harness since the deploy block** (for
@@ -815,6 +832,7 @@ before the send, and that the send started. A second send for a scenario is refu
   second payment for a settlement that is on chain or unknown. Use it only on purpose.
 - If a state file is deleted after a send started, the harness cannot resume that send. The chain count and the spend ledger still bound the total
   at three payments, and the ledger records every attempt. The operator must inspect the chain and the ledger before any new run.
+- A failure after the ledger intent but before the broadcast burns one of the three slots (see "A burned slot" above).
 
 **Results and evidence.** One JSON report on stdout: the steps, the child exit signals, the database states, the nonces, the balances and the
 assertions. Two top-level fields carry the outcome: `submitted` lists every transaction hash this run broadcast, and `confirmed` is `{bool, block}`,

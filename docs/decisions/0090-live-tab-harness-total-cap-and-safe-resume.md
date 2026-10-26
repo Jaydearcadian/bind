@@ -18,8 +18,13 @@ does not change production code, the contract, or any gate.
 ### 1. A total cap of three payments, counted two ways, checked before every broadcast
 - The cap is `TOTAL_CAP_PAYMENTS = 3` payments of one cent (0.03 USDC) in total, across scenarios, runs and state files.
 - Chain: every `SettlementExecuted` from the signer to the vendor, from the deploy block to the head (chunked). Ledger: the spend
-  ledger, `.live-state/tab-spend-ledger.jsonl` under the repository (git-ignored; never under the temporary directory), one record per
-  send attempt, appended and fsynced before the broadcast. Either count at the cap refuses the send.
+  ledger, `~/.bind-live-state/tab-spend-ledger.jsonl` (a fixed path in the operator's home directory, independent of the checkout),
+  one record per send attempt, appended and fsynced before the broadcast. Either count at the cap refuses the send.
+- Concurrency (added after the 2026-10-26 re-review): the cap check and the append are one critical section under an exclusive lock file
+  (`tab-spend-ledger.jsonl.lock`). The child holds it from the cap check until it exits. A lock file that exists refuses every run, whoever
+  wrote it and whether or not its owner is alive; it is never broken automatically. After the append the child re-reads the ledger and refuses
+  to broadcast when more than three attempts are recorded. A pending nonce different from the latest refuses (a transaction is in flight).
+  A failure after the intent and before the broadcast still uses a slot.
 - The orchestrator checks it before spawning the send child, and the child checks it again before each broadcast. `--fresh` does not
   skip either check. A rehearsal (local-sim) never reads or writes the ledger.
 - The count includes payments from the signer to this vendor made by any harness since the deploy block. An operator runs `--preflight`
@@ -61,11 +66,28 @@ does not change production code, the contract, or any gate.
   `bind_live_rehearsal_<random>` database that it creates and drops. It needs `BIND_LIVE_PG_ADMIN_URL` (a local admin URL) and is
   SKIPPED, with a printed reason, without it.
 
+### 8. The deploy block is hardcoded
+- The approved deploy block is 67155017, from the deployment record in `docs/RELEASE_EVIDENCE.md` (L9, the receipts for `0x16E1…aA29`).
+  It was not re-read from the chain for this decision. An operator override may only be equal to or lower than it, and the harness
+  requires that the address has no code at the block before the deploy block.
+
+## Verification status (RELEASE_EVIDENCE wording)
+- Every arc and chain path of this harness is `NOT_RUN` for this change: the chain reads, the cap against the Arc testnet, the lock across
+  real processes, and the live send were exercised with fake RPCs only. None of it is `LIVE_READ_PASS` or `VERIFIED_REMOTE`.
+- `tests/unit/live-tab-arc.test.ts` (131 tests, fake RPC and in-memory or temp-file ledgers) is `LOCAL_PASS`.
+- `tests/integration/live-tab-arc-rehearsal.test.ts` is SKIPPED unless `BIND_LIVE_PG_ADMIN_URL` names a local Postgres admin URL. Where it ran,
+  it ran on a private Postgres cluster the author started for this review and removed afterwards (`LOCAL_PASS`, local-sim only).
+- The mutation checks of the guards are recorded in the commit message and the report, not in `RELEASE_EVIDENCE.md`.
+
 ## Consequences
 - The harness can now refuse a fourth payment, and a started send is never re-sent by resume. The cost: a NOT_SENT outcome needs a new
   empty database, and an operator must read the chain by hand for AMBIGUOUS outcomes.
 - A state file that is deleted after a started send is not recoverable by the harness. The ledger and the chain still bound the total
   at three payments, and the operator must inspect the chain before any new run. This is a known residual risk (see RUNBOOK 16.4).
+- A stale lock blocks every run until an operator inspects and removes it by hand. This is the fail-closed choice; a SIGKILLed child (the
+  `crash-after-send` scenario, by design) always leaves one.
+- The child releases its lock on exit, and this is not covered by a unit test (the release sits in the process's `finally`). Its absence would
+  leave the lock behind, which fails closed, so it is recorded as a gap rather than a silent pass.
 - The chain reads and the Arc RPC behaviour are not verified by the offline rehearsal. No live run was made for this change.
 
 ## Not done

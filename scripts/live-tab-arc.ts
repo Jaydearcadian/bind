@@ -144,7 +144,19 @@ export const GAS_MARGIN_NATIVE_WEI = 3n * 10n ** 15n;
 /** The native amount of one cent (1 cent = 1e16 wei), the same conversion the Arc adapter sends with. */
 export const PAYMENT_NATIVE_WEI = centsToNativeWei(PAYMENT_CENTS);
 /** The spend ledger lives in the repository's git-ignored .live-state directory, never in the temporary directory. */
-export const DEFAULT_SPEND_LEDGER = path.resolve(path.dirname(SCRIPT_PATH), "..", ".live-state", "tab-spend-ledger.jsonl");
+export const DEFAULT_SPEND_LEDGER = path.join(os.homedir(), ".bind-live-state", "tab-spend-ledger.jsonl");
+/**
+ * The approved contract's deploy block: the block of the deployment that created APPROVED_SETTLEMENT_ADDRESS (recorded in
+ * docs/RELEASE_EVIDENCE.md, the deployment receipts, L9). An operator override may only be this block or lower.
+ */
+export const APPROVED_DEPLOY_BLOCK = 67155017n;
+/** The block the harness scans from: the approved one, or the operator's override when it is not higher (see tabStaticGuards). */
+export function effectiveDeployBlock(env: Env): bigint {
+  const override = env.BIND_SETTLEMENT_DEPLOY_BLOCK;
+  if (override === undefined || !/^\d+$/.test(override)) return APPROVED_DEPLOY_BLOCK;
+  const value = BigInt(override);
+  return value > APPROVED_DEPLOY_BLOCK ? APPROVED_DEPLOY_BLOCK : value;
+}
 /** Exit code for a send that was broadcast but is not confirmed: neither a PASS nor a plain FAIL. */
 export const EXIT_SUBMITTED_UNCONFIRMED = 3;
 export type TabRunResult = RunResult | "SUBMITTED_UNCONFIRMED";
@@ -276,8 +288,9 @@ export function tabStaticGuards(env: Env, args: Pick<TabCliArgs, "adapter" | "co
     if (!contract || !isAddress(contract) || contract.toLowerCase() !== APPROVED_SETTLEMENT_ADDRESS.toLowerCase()) {
       add("settlement-address", "BIND_SETTLEMENT_ADDRESS is not the owner-approved contract address");
     }
-    if (!/^\d+$/.test(env.BIND_SETTLEMENT_DEPLOY_BLOCK ?? "")) {
-      add("deploy-block", "BIND_SETTLEMENT_DEPLOY_BLOCK must be set to a non-negative integer");
+    const override = env.BIND_SETTLEMENT_DEPLOY_BLOCK;
+    if (override !== undefined && (!/^\d+$/.test(override) || BigInt(override) > APPROVED_DEPLOY_BLOCK)) {
+      add("deploy-block", "BIND_SETTLEMENT_DEPLOY_BLOCK, when set, must be a non-negative integer no higher than the approved deploy block");
     }
     if (!isHttpUrl(env.ARC_RPC_URL)) add("rpc-url", "ARC_RPC_URL is not set or is not an http(s) URL");
     if (signerAddressOf(env.ARC_SIGNER_PRIVATE_KEY) === undefined) {
@@ -335,6 +348,8 @@ export interface SettlementRowView {
 }
 
 export interface TabSendHooks {
+  /** Releases the spend lock the hook took. The child calls it when it exits, so the lock is held until then. */
+  release?(): void;
   /** Before every transferUSDC: the database pin, then the chain reads (chain id, owner, whitelist, settledOrders). */
   beforeTransfer(req: TransferRequest): Promise<void>;
   /** After the real transfer returned a result. A throw here reaches the ledger as an unknown outcome. */
@@ -409,14 +424,29 @@ export interface SpendRecord {
   settlementId: string;
 }
 
+export interface SpendLock {
+  release(): void;
+}
+
 export interface SpendLedger {
   /** Every record. A ledger that cannot be read, or holds a line that is not a record, throws (BLOCKED), never reads as empty. */
   read(): SpendRecord[];
   append(record: SpendRecord): void;
+  /**
+   * Takes the one lock for the cap check and the append. A lock file that exists, whoever wrote it and whether or not its owner
+   * is still running, refuses (RefusedError). A lock is never broken automatically.
+   */
+  acquire(): SpendLock;
+  /** True while a lock file exists. Read-only. */
+  isLocked(): boolean;
 }
 
-/** The real ledger: a JSON-lines file, appended and fsynced. A missing file is an empty ledger. */
+const LOCK_HELD_REASON =
+  "a live tab payment lock is held (the spend lock file exists). Its owner may still be running, or may have died after a broadcast, so the lock is never broken automatically. Inspect the chain and the ledger, confirm no live-tab process is running, then remove the lock file by hand. Nothing is sent";
+
+/** The real ledger: a JSON-lines file in the operator's home directory, and an O_EXCL lock file beside it. */
 export function realSpendLedger(file: string = DEFAULT_SPEND_LEDGER): SpendLedger {
+  const lockFile = `${file}.lock`;
   return {
     read() {
       let text: string;
@@ -438,14 +468,45 @@ export function realSpendLedger(file: string = DEFAULT_SPEND_LEDGER): SpendLedge
       return records;
     },
     append(record) {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      const fd = fs.openSync(file, "a");
+      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+      const fd = fs.openSync(file, "a", 0o600);
       try {
         fs.writeSync(fd, `${JSON.stringify(record)}\n`);
         fs.fsyncSync(fd);
       } finally {
         fs.closeSync(fd);
       }
+    },
+    acquire() {
+      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+      const token = crypto.randomBytes(16).toString("hex");
+      let fd: number;
+      try {
+        fd = fs.openSync(lockFile, "wx", 0o600);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new RefusedError([LOCK_HELD_REASON]);
+        throw new BlockedError("the spend lock cannot be taken; nothing is sent");
+      }
+      try {
+        fs.writeSync(fd, `${JSON.stringify({ token, pid: process.pid, at: new Date().toISOString() })}\n`);
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      return {
+        release() {
+          // Removes only the lock this handle wrote. Another owner's lock, or a missing one, is left as it is.
+          try {
+            const held = JSON.parse(fs.readFileSync(lockFile, "utf8")) as { token?: string };
+            if (held.token === token) fs.rmSync(lockFile, { force: true });
+          } catch {
+            // Nothing to release: the file is gone or unreadable. It is never removed on a guess.
+          }
+        },
+      };
+    },
+    isLocked() {
+      return fs.existsSync(lockFile);
     },
   };
 }
@@ -527,6 +588,24 @@ export async function assertOrderUnpaid(rpc: RpcCall, contract: string, orderId:
   if (logs.length > 0) throw new RefusedError(["the chain already shows a payment for this order; nothing is broadcast"]);
 }
 
+/**
+ * No code before the deploy block: at deployBlock-1 the address must hold no code, so the scan starts no later than the
+ * deployment. Code there means the scan would start too late. A failed read is BLOCKED.
+ */
+export async function assertNoCodeBefore(rpc: RpcCall, contract: string, deployBlock: bigint): Promise<void> {
+  if (deployBlock === 0n) return;
+  let code: unknown;
+  try {
+    code = await rpc("eth_getCode", [contract, `0x${(deployBlock - 1n).toString(16)}`]);
+  } catch (error) {
+    throw new BlockedError(`the code read before the deploy block failed: ${error instanceof Error ? error.message : "unknown error"}`);
+  }
+  if (typeof code !== "string" || !/^0x([0-9a-fA-F]{2})*$/.test(code)) {
+    throw new BlockedError("unexpected RPC answer for eth_getCode before the deploy block");
+  }
+  if (code.length > 2) throw new RefusedError(["the contract has code before the deploy block: the scan would start too late; nothing is sent"]);
+}
+
 export interface CapCheckConfig {
   rpc: RpcCall;
   spend: SpendLedger;
@@ -561,25 +640,49 @@ export interface SendHookConfig extends CapCheckConfig {
  * refusal at any step means nothing is broadcast. The ledger intent is written even if the broadcast then fails.
  */
 export function buildSendHooks(cfg: SendHookConfig): TabSendHooks {
+  let held: SpendLock | undefined;
   return {
     beforeTransfer: async (req: TransferRequest) => {
       await pinSettlement(cfg.db, cfg.workspaceId, cfg.counterpartyId, req.orderId);
       if (!cfg.onChain) return;
       await assertContractGuards(cfg.rpc, { contract: cfg.contract, signer: cfg.signer, vendor: cfg.vendor });
       await assertOrderUnpaid(cfg.rpc, cfg.contract, req.orderId, cfg.deployBlock);
-      await assertCapAndBalance(cfg);
-      await assertSimulates(
-        cfg.rpc,
-        cfg.signer,
-        settleOrderCall({ contract: cfg.contract, orderId: req.orderId, supplier: req.toAddress, matchHash: req.matchHash ?? "" })
-      );
-      cfg.spend.append({
-        kind: "intent",
-        at: new Date().toISOString(),
-        scenario: cfg.scenario,
-        workspaceId: cfg.workspaceId,
-        settlementId: req.orderId.slice("tab_".length),
-      });
+      // The cap check and the append are one critical section. The lock is held from here until this process exits (the
+      // child releases it), so two runs cannot both see room under the cap. A refusal before the append releases it here.
+      const lock = cfg.spend.acquire();
+      try {
+        const latest = await readNonce(cfg.rpc, cfg.signer, "latest");
+        const pending = await readNonce(cfg.rpc, cfg.signer, "pending");
+        if (pending !== latest) throw new RefusedError(["the signer has a transaction in flight; nothing is broadcast"]);
+        await assertCapAndBalance(cfg);
+        await assertSimulates(
+          cfg.rpc,
+          cfg.signer,
+          settleOrderCall({ contract: cfg.contract, orderId: req.orderId, supplier: req.toAddress, matchHash: req.matchHash ?? "" })
+        );
+        cfg.spend.append({
+          kind: "intent",
+          at: new Date().toISOString(),
+          scenario: cfg.scenario,
+          workspaceId: cfg.workspaceId,
+          settlementId: req.orderId.slice("tab_".length),
+        });
+        // Re-read after the append: a writer that did not take the lock could have added records since the check.
+        const after = cfg.spend.read().length;
+        if (after > TOTAL_CAP_PAYMENTS) {
+          throw new RefusedError([
+            `the spend ledger holds ${after} attempts after this one, over the cap of ${TOTAL_CAP_PAYMENTS}; nothing is broadcast`,
+          ]);
+        }
+      } catch (error) {
+        lock.release();
+        throw error;
+      }
+      held = lock;
+    },
+    release: () => {
+      held?.release();
+      held = undefined;
     },
   };
 }
@@ -837,7 +940,7 @@ export function resumeProblems(
   } else {
     const b = state.baseline;
     const contract = env.BIND_SETTLEMENT_ADDRESS ?? "";
-    const deployBlock = env.BIND_SETTLEMENT_DEPLOY_BLOCK ?? "";
+    const deployBlock = effectiveDeployBlock(env).toString();
     if (args.adapter === "arc" && (b.contract.toLowerCase() !== contract.toLowerCase() || b.deployBlock !== deployBlock)) {
       reasons.push("baseline mismatch: the state's baseline names another contract or deploy block than this environment");
     }
@@ -1766,11 +1869,12 @@ export async function runTabOrchestrator(args: TabCliArgs, ports: TabPorts): Pro
 
     const signer = payerOf(ports.env);
     const contract = ports.env.BIND_SETTLEMENT_ADDRESS ?? APPROVED_SETTLEMENT_ADDRESS;
-    const deployBlock = ports.env.BIND_SETTLEMENT_DEPLOY_BLOCK ?? "0";
+    const deployBlock = effectiveDeployBlock(ports.env).toString();
     if (args.adapter === "arc") {
       if (!ports.rpc) return report.end("BLOCKED", ["no RPC client"]);
       const reading = await assertContractGuards(ports.rpc, { contract, signer, vendor: VENDOR_ADDRESS });
       await assertDeployBlockCode(ports.rpc, contract, BigInt(deployBlock));
+      await assertNoCodeBefore(ports.rpc, contract, BigInt(deployBlock));
       report.step("contract-guards", { chainId: reading.chainId, owner: reading.owner, whitelisted: reading.vendorWhitelisted });
     }
 
@@ -1985,12 +2089,13 @@ export async function runTabPreflight(args: TabCliArgs, ports: TabPorts): Promis
     if (!rpc) return finish("BLOCKED", ["no RPC client"]);
     const signer = payerOf(ports.env);
     const contract = ports.env.BIND_SETTLEMENT_ADDRESS ?? APPROVED_SETTLEMENT_ADDRESS;
-    const deployBlock = BigInt(ports.env.BIND_SETTLEMENT_DEPLOY_BLOCK ?? "0");
+    const deployBlock = effectiveDeployBlock(ports.env);
 
     // The contract, read fresh. A refusal names the rule (thrown as RefusedError and caught below).
     await assertContractGuards(rpc, { contract, signer, vendor: VENDOR_ADDRESS });
     await assertDeployBlockCode(rpc, contract, deployBlock);
-    checks.push(check("contract_guards", true, "chain id, owner, whitelist and enforcement hold; the deploy block has code"));
+    await assertNoCodeBefore(rpc, contract, deployBlock);
+    checks.push(check("contract_guards", true, "chain id, owner, whitelist and enforcement hold; code at the deploy block and none before it"));
 
     const latest = await readNonce(rpc, signer, "latest");
     const pending = await readNonce(rpc, signer, "pending");
@@ -2004,6 +2109,8 @@ export async function runTabPreflight(args: TabCliArgs, ports: TabPorts): Promis
     const ledgerAttempts = ports.spend.read().length;
     const capProblems = totalCapReasons(chainPayments, ledgerAttempts);
     checks.push(check("total_cap", capProblems.length === 0, capProblems.length === 0 ? `payments ${chainPayments}, ledger attempts ${ledgerAttempts}, cap ${TOTAL_CAP_PAYMENTS}` : capProblems[0]));
+    const locked = ports.spend.isLocked();
+    checks.push(check("spend_lock", !locked, locked ? "the spend lock file exists: inspect before any run (RUNBOOK 16.4)" : "no spend lock is held"));
 
     const previous = loadState(ports.files, args.statePath);
     if (previous !== null) assertTabStateMatches(previous, args);
@@ -2135,6 +2242,7 @@ export async function runTabChild(
   const signer = payerOf(env);
   const contract = env.BIND_SETTLEMENT_ADDRESS ?? APPROVED_SETTLEMENT_ADDRESS;
   let db: ChildDb | undefined;
+  let releaseSpendLock: (() => void) | undefined;
   try {
     const failures = tabStaticGuards(env, args, false);
     if (failures.length > 0) throw new RefusedError(failures.map((f) => f.reason));
@@ -2143,7 +2251,8 @@ export async function runTabChild(
     if (!state!.baseline) throw new RefusedError(["the baseline is missing: the orchestrator has not started the send"]);
     if (rpc) {
       await assertContractGuards(rpc, { contract, signer, vendor: VENDOR_ADDRESS });
-      await assertDeployBlockCode(rpc, contract, BigInt(env.BIND_SETTLEMENT_DEPLOY_BLOCK ?? "0"));
+      await assertDeployBlockCode(rpc, contract, effectiveDeployBlock(env));
+      await assertNoCodeBefore(rpc, contract, effectiveDeployBlock(env));
     }
     db = await open();
     const ws = state!.workspaceId;
@@ -2174,7 +2283,7 @@ export async function runTabChild(
         chainId: ARC_TESTNET_CHAIN_ID,
         contractAddress: APPROVED_SETTLEMENT_ADDRESS,
         signerPrivateKey: env.ARC_SIGNER_PRIVATE_KEY as Hex,
-        deployBlock: BigInt(env.BIND_SETTLEMENT_DEPLOY_BLOCK ?? "0"),
+        deployBlock: effectiveDeployBlock(env),
         transport,
       });
     }
@@ -2192,13 +2301,14 @@ export async function runTabChild(
       contract,
       signer,
       vendor: VENDOR_ADDRESS,
-      deployBlock: BigInt(env.BIND_SETTLEMENT_DEPLOY_BLOCK ?? "0"),
+      deployBlock: effectiveDeployBlock(env),
       db: db!,
       workspaceId: ws,
       counterpartyId: cp,
       scenario: args.scenario,
       onChain: args.adapter === "arc",
     });
+    releaseSpendLock = () => sendHooks.release?.();
     const guard = tabGuardedAdapter(
       inner,
       {
@@ -2238,7 +2348,7 @@ export async function runTabChild(
       rpc,
       signer,
       contract,
-      deployBlock: BigInt(env.BIND_SETTLEMENT_DEPLOY_BLOCK ?? "0"),
+      deployBlock: effectiveDeployBlock(env),
       startNonce: BigInt(state!.baseline!.startNonce),
       ws,
       cp,
@@ -2286,6 +2396,7 @@ export async function runTabChild(
     emitResult(emit, { failed: true, reason });
     return 1;
   } finally {
+    releaseSpendLock?.();
     if (db) await db.close().catch(() => undefined);
   }
 }
