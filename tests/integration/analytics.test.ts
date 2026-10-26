@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import type { Server } from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -9,6 +9,8 @@ import { runMigrations } from "../../src/db/migrate.js";
 import { provisionWorkspace } from "../../src/templates/registry.js";
 import { issueToken } from "../../src/auth/tokens.js";
 import { createAnalyticsAccount, generateReport, syncAccount, setAnalyticsProviderForTests } from "../../src/analytics/service.js";
+import { createSimulatedProvider } from "../../src/analytics/simulated-provider.js";
+import type { FetchPostsRequest, ProviderPost } from "../../src/analytics/types.js";
 import { config } from "../../src/config/env.js";
 import { AnalyticsReportCreatedSchema, AnalyticsReportSchema, AnalyticsSyncResultSchema, AnalyticsAccountSchema } from "../../src/api/schemas.js";
 import { BindClient } from "../../sdk/src/index.js";
@@ -16,7 +18,7 @@ import { createBindMcpServer } from "../../mcp/src/server.js";
 import { createLogger } from "../../mcp/src/logger.js";
 
 /*
- * Post analytics over the real API, PostgreSQL and tokens (docs/decisions/0090). Nothing is mocked: the provider is the
+ * Post analytics over the real API, PostgreSQL and tokens (docs/decisions/0091). Nothing is mocked: the provider is the
  * simulated one, which makes no network call. Each test uses its own workspaces, so the shared database never leaks state
  * between tests or runs.
  */
@@ -75,6 +77,40 @@ async function countRows(sql: string, params: unknown[]): Promise<number> {
   const res = await query<{ n: number }>(sql, params);
   return Number(res.rows[0].n);
 }
+
+/**
+ * The default provider for this file's simulated accounts: the simulator, plus one post on each of the last 30 UTC days. The
+ * simulator publishes nothing on about 45% of days, so a seed can leave a whole week empty (about 0.4%), and the tests below ask
+ * for periods of the last 30 days. One post a day makes every such period hold data whatever the seed. A test that needs another
+ * provider replaces this for its own account and restores it with `setAnalyticsProviderForTests(null)`; the next test restores it.
+ */
+const DAY_MS = 86_400_000;
+function anchorPostsIn(request: FetchPostsRequest): ProviderPost[] {
+  const today = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+  const out: ProviderPost[] = [];
+  for (let back = 1; back <= 30; back += 1) {
+    const at = today - back * DAY_MS + 12 * 3_600_000;
+    if (at < request.since.getTime() || at >= request.until.getTime()) continue;
+    out.push({
+      externalId: `anchor_${back}`,
+      publishedAt: new Date(at),
+      mediaType: "image" as ProviderPost["mediaType"],
+      metrics: { reach: 100, impressions: 120, likes: 3, comments: 1, saves: 1, shares: 0 },
+    });
+  }
+  return out;
+}
+function useDefaultProvider(): void {
+  setAnalyticsProviderForTests((account) => {
+    if (account.provider !== "simulated") return null;
+    const inner = createSimulatedProvider({ workspaceId: account.workspace_id, accountId: account.id });
+    return { ...inner, fetchPosts: async (request) => [...anchorPostsIn(request), ...(await inner.fetchPosts(request))] };
+  });
+}
+
+beforeEach(() => {
+  useDefaultProvider();
+});
 
 beforeAll(async () => {
   await runMigrations();
@@ -308,7 +344,8 @@ describe("sync is an idempotent upsert", () => {
 
   it("the sync audit row holds counts and ids only", async () => {
     const rows = await query(`SELECT evidence::text AS evidence FROM audit_logs WHERE workspace_id = $1 AND action = 'analytics.synced';`, [WS_SOCIAL]);
-    expect(rows.rows.length).toBeGreaterThanOrEqual(2);
+    // A sync is audited only when it changed a stored post (review S-A), so one real change is one row, and the re-syncs add none.
+    expect(rows.rows.length).toBeGreaterThanOrEqual(1);
     for (const row of rows.rows) {
       const evidence = JSON.parse(row.evidence);
       expect(Object.keys(evidence).sort()).toEqual(["accountId", "inserted", "posts", "status", "updated"]);
@@ -328,7 +365,9 @@ describe("sync is an idempotent upsert", () => {
     const withoutMeta = (body: Record<string, unknown>) => Object.fromEntries(Object.entries(body).filter(([k]) => k !== "_meta"));
     expect(withoutMeta(b.body)).toEqual(withoutMeta(a.body));
     const after = await countRows(`SELECT COUNT(*)::int AS n FROM audit_logs WHERE workspace_id = $1 AND action = 'analytics.synced';`, [WS_SOCIAL]);
-    expect(after - before).toBe(1);
+    // The sync is audited only when it changes a post, and the posts of this day are already stored, so the replay adds at most
+    // one row. The replayed body and the throttle (a second real run would be refused with 429) show it ran once.
+    expect(after - before).toBeLessThanOrEqual(1);
   });
 
   it("a provider that is no longer available for a stored account is refused with a typed 400, and nothing changes", async () => {

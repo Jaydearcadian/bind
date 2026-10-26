@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { eventData } from "../../src/api/events.js";
 
 /**
- * The sync's audit row carries three counts (docs/decisions/0090). They are numbers, and only numbers leave the server under those
+ * The sync's audit row carries three counts (docs/decisions/0091). They are numbers, and only numbers leave the server under those
  * keys, whatever the row holds. Free text is still dropped everywhere.
  */
 describe("the analytics count keys in the event allowlist", () => {

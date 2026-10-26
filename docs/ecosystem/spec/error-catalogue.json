@@ -384,7 +384,7 @@
       "category": "validation",
       "retryable": false,
       "existing": true,
-      "note": "This workspace's template has no post analytics module (docs/decisions/0090)."
+      "note": "This workspace's template has no post analytics module (docs/decisions/0091)."
     },
     {
       "code": "ANALYTICS_PROVIDER_NOT_AVAILABLE",
@@ -392,7 +392,7 @@
       "category": "validation",
       "retryable": false,
       "existing": true,
-      "note": "Only the simulated analytics provider is available on this server (docs/decisions/0090)."
+      "note": "Only the simulated analytics provider is available on this server (docs/decisions/0091)."
     },
     {
       "code": "ANALYTICS_PROVIDER_OUTPUT_INVALID",
@@ -448,7 +448,7 @@
       "category": "policy",
       "retryable": false,
       "existing": true,
-      "note": "A demo workspace does not change analytics (docs/decisions/0090)."
+      "note": "A demo workspace does not change analytics (docs/decisions/0091)."
     },
     {
       "code": "ANALYTICS_SYNC_TOO_SOON",
@@ -456,7 +456,7 @@
       "category": "rate_limited",
       "retryable": true,
       "existing": true,
-      "note": "This analytics account was attempted within the minimum interval. Retry-After is set (docs/decisions/0090)."
+      "note": "This analytics account was attempted within the minimum interval. Retry-After is set (docs/decisions/0091)."
     },
     {
       "code": "ANALYTICS_NO_DATA_YET",
@@ -464,7 +464,7 @@
       "category": "conflict",
       "retryable": true,
       "existing": true,
-      "note": "The period has no stored posts yet. Nothing is stored for it (docs/decisions/0090)."
+      "note": "The period has no stored posts yet. Nothing is stored for it (docs/decisions/0091)."
     }
   ]
 }

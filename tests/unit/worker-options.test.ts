@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { workerOptionsFromEnv } from "../../src/workers/options.js";
 
 /**
- * The entry point starts the worker with these options (src/index.ts). The weekly analytics reports (docs/decisions/0090) run only
+ * The entry point starts the worker with these options (src/index.ts). The weekly analytics reports (docs/decisions/0091) run only
  * when BIND_ANALYTICS_REPORTS is exactly "true". Anything else, and an unset variable, leaves them off.
  */
 describe("the worker's options from the environment", () => {

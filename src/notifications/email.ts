@@ -156,7 +156,7 @@ function noticeSentence(kind: OwnerNoticeKind, metadata: Record<string, unknown>
     case "order_partially_available":
       return "A customer order can only be partly filled from stock.";
     case "analytics_report":
-      // Names no finding and no account: the report is read in Bind. Simulated data is said to be sample data (docs/decisions/0090).
+      // Names no finding and no account: the report is read in Bind. Simulated data is said to be sample data (docs/decisions/0091).
       return metadata.simulated === true ? "Your report is ready (sample data)." : "Your report is ready.";
   }
 }

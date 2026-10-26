@@ -1,5 +1,5 @@
 /**
- * Post analytics service (docs/decisions/0090). Connects an analytics account, syncs its posts through a provider, writes one
+ * Post analytics service (docs/decisions/0091). Connects an analytics account, syncs its posts through a provider, writes one
  * report per period, and tells the owner that the report is ready.
  *
  * Guarantees:
@@ -54,6 +54,8 @@ export const BACKOFF_BASE_SECONDS = 15 * 60;
 export const BACKOFF_CAP_SECONDS = 12 * 60 * 60;
 /** A report that has no posts yet is looked at again in an hour. It is not a failure. */
 export const NO_DATA_DEFER_SECONDS = 60 * 60;
+/** A recipient the notice could not be handed to (failed before its ledger row existed) is tried this many times, then audited. */
+export const MAX_NOTICE_ATTEMPTS = 3;
 /** The weekly report's actor, on its audit rows. */
 export const SYSTEM_ACTOR = { type: "system" as const, id: "system:analytics" };
 const ENGINE = new WorkflowEngine();
@@ -304,8 +306,21 @@ async function claimSyncAttempt(workspaceId: string, accountId: string, now: Dat
   return { claimed: false, retryAfterSeconds: Math.max(1, Math.ceil((lastMs + minIntervalMs - now.getTime()) / 1000)) };
 }
 
-/** Records a failed attempt: the account waits before its next attempt. Provider-level failures wait the longest. */
-async function recordFailure(workspaceId: string, accountId: string, code: string, now: Date): Promise<void> {
+/**
+ * Records a failed attempt: the account waits before its next attempt. Provider-level failures wait the longest.
+ * `priorFailures` is the count the account had before this attempt. The weekly job passes it when a report fails after its sync
+ * succeeded (a good sync resets the count), so a failing report still backs off further each time.
+ */
+async function recordFailure(workspaceId: string, accountId: string, code: string, now: Date, priorFailures?: number): Promise<void> {
+  if (priorFailures !== undefined) {
+    const seconds = SLOW_FAILURE_CODES.has(code) ? BACKOFF_CAP_SECONDS : Math.min(BACKOFF_BASE_SECONDS * 2 ** priorFailures, BACKOFF_CAP_SECONDS);
+    await query(
+      `UPDATE analytics_accounts SET consecutive_failures = $3::int + 1, next_attempt_at = $4::timestamptz + make_interval(secs => $5::float8)
+       WHERE workspace_id = $1 AND id = $2;`,
+      [workspaceId, accountId, priorFailures, now.toISOString(), seconds]
+    );
+    return;
+  }
   await query(
     `UPDATE analytics_accounts
      SET consecutive_failures = consecutive_failures + 1,
@@ -315,6 +330,11 @@ async function recordFailure(workspaceId: string, accountId: string, code: strin
      WHERE workspace_id = $1 AND id = $2;`,
     [workspaceId, accountId, now.toISOString(), SLOW_FAILURE_CODES.has(code), BACKOFF_CAP_SECONDS, BACKOFF_BASE_SECONDS]
   );
+}
+
+/** A report was written from the account's posts: the account's backoff is over. */
+async function clearBackoff(workspaceId: string, accountId: string): Promise<void> {
+  await query(`UPDATE analytics_accounts SET consecutive_failures = 0, next_attempt_at = NULL WHERE workspace_id = $1 AND id = $2;`, [workspaceId, accountId]);
 }
 
 /** Puts the account off for a fixed time without counting a failure (a report with no posts yet). */
@@ -376,10 +396,27 @@ const UPSERT_POSTS = `
     non_follower_reach = EXCLUDED.non_follower_reach,
     country_reach = EXCLUDED.country_reach,
     synced_at = EXCLUDED.synced_at
+  -- A row already stored with the same values is left alone (and not returned): a sync with no new data changes nothing.
+  WHERE ROW(analytics_posts.media_type, analytics_posts.published_at, analytics_posts.reach, analytics_posts.impressions,
+            analytics_posts.likes, analytics_posts.comments, analytics_posts.saves, analytics_posts.shares, analytics_posts.plays,
+            analytics_posts.follower_reach, analytics_posts.non_follower_reach, analytics_posts.country_reach)
+        IS DISTINCT FROM
+        ROW(EXCLUDED.media_type, EXCLUDED.published_at, EXCLUDED.reach, EXCLUDED.impressions,
+            EXCLUDED.likes, EXCLUDED.comments, EXCLUDED.saves, EXCLUDED.shares, EXCLUDED.plays,
+            EXCLUDED.follower_reach, EXCLUDED.non_follower_reach, EXCLUDED.country_reach)
   RETURNING (xmax = 0) AS inserted;`;
 
-/** The posts as parallel arrays, one entry per post, for a single unnest insert. Nullable values are NULL. */
-function postArrays(posts: readonly ProviderPost[]) {
+/** Sorted by the provider's id, so two syncs take the upsert's row locks in the same order. */
+function byExternalId(a: ProviderPost, b: ProviderPost): number {
+  return a.externalId < b.externalId ? -1 : a.externalId > b.externalId ? 1 : 0;
+}
+
+/**
+ * The posts as parallel arrays, one entry per post, for a single unnest insert, in provider-id order. Nullable values are NULL.
+ * The order is part of this function, so every caller that writes posts gets it.
+ */
+export function upsertArrays(input: readonly ProviderPost[]) {
+  const posts = [...input].sort(byExternalId);
   const col = <T>(f: (p: ProviderPost) => T) => posts.map(f);
   return {
     externalIds: col((p) => p.externalId),
@@ -396,11 +433,6 @@ function postArrays(posts: readonly ProviderPost[]) {
     nonFollowerReach: col((p) => p.nonFollowerReach ?? null),
     countryReach: col((p) => (p.countryReach ? JSON.stringify(p.countryReach) : null)),
   };
-}
-
-/** Sorted by the provider's id, so two syncs take the upsert's row locks in the same order. */
-function byExternalId(a: ProviderPost, b: ProviderPost): number {
-  return a.externalId < b.externalId ? -1 : a.externalId > b.externalId ? 1 : 0;
 }
 
 /**
@@ -431,11 +463,11 @@ export async function syncAccount(workspaceId: string, accountId: string, actor:
     await recordFailure(workspaceId, accountId, code, now);
     throw err;
   }
-  posts.sort(byExternalId);
-  const arrays = postArrays(posts);
+  const arrays = upsertArrays(posts);
 
   return withTransaction(async (client: PoolClient) => {
     let inserted = 0;
+    let changed = 0;
     if (posts.length > 0) {
       const res = await client.query<{ inserted: boolean }>(UPSERT_POSTS, [
         workspaceId,
@@ -456,6 +488,12 @@ export async function syncAccount(workspaceId: string, accountId: string, actor:
         arrays.countryReach,
       ]);
       inserted = res.rows.filter((row) => row.inserted).length;
+      changed = res.rows.length;
+      // Every post this sync covered is stamped with its time, changed or not: the account view shows the latest stamp.
+      await client.query(
+        `UPDATE analytics_posts SET synced_at = $3::timestamptz WHERE workspace_id = $1 AND account_id = $2 AND external_id = ANY($4::text[]);`,
+        [workspaceId, accountId, now.toISOString(), arrays.externalIds]
+      );
     }
     const updated = posts.length - inserted;
     await client.query(
@@ -463,18 +501,21 @@ export async function syncAccount(workspaceId: string, accountId: string, actor:
        WHERE workspace_id = $1 AND id = $2;`,
       [workspaceId, accountId, now.toISOString()]
     );
-    await ENGINE.recordAudit(
-      workspaceId,
-      null,
-      actor.type,
-      actor.id,
-      EffectClass.EXTERNAL_REQUEST,
-      "analytics.synced",
-      PolicyDecision.ALLOW,
-      { accountId, status: "synced", posts: posts.length, inserted, updated },
-      undefined,
-      client
-    );
+    // A sync that brought no new or changed post is not audited: the backoff and the attempt time above still record it.
+    if (changed > 0) {
+      await ENGINE.recordAudit(
+        workspaceId,
+        null,
+        actor.type,
+        actor.id,
+        EffectClass.EXTERNAL_REQUEST,
+        "analytics.synced",
+        PolicyDecision.ALLOW,
+        { accountId, status: "synced", posts: posts.length, inserted, updated },
+        undefined,
+        client
+      );
+    }
     return { accountId, posts: posts.length, inserted, updated, syncedAt: now.toISOString(), simulated: provider.isSimulated };
   });
 }
@@ -696,6 +737,11 @@ export interface NoticeOutcome {
   failed: number;
   /** A started or failed send recorded by an earlier call: not sent again, and not audited again. */
   alreadyRecorded: number;
+  /**
+   * The send failed before its ledger row existed, so nothing is recorded as sent or refused. The report stays not done and the
+   * next pass tries again, up to MAX_NOTICE_ATTEMPTS deliveries; then it is audited (`notification.failed`) and the report is done.
+   */
+  untried: number;
 }
 
 /**
@@ -710,7 +756,16 @@ export interface NoticeOutcome {
 export async function deliverReportNotice(workspaceId: string, reportId: string): Promise<NoticeOutcome> {
   const report = await loadReportView(workspaceId, reportId);
   const recipients = await resolveOwnerRecipients(workspaceId);
-  const outcome: NoticeOutcome = { recipients: recipients.length, sent: 0, inDoubt: 0, skipped: 0, alreadySent: 0, failed: 0, alreadyRecorded: 0 };
+  const outcome: NoticeOutcome = {
+    recipients: recipients.length,
+    sent: 0,
+    inDoubt: 0,
+    skipped: 0,
+    alreadySent: 0,
+    failed: 0,
+    alreadyRecorded: 0,
+    untried: 0,
+  };
   const label = report.simulated ? "Your report is ready (sample data)." : "Your report is ready.";
   for (const recipient of recipients) {
     const key = ownerNoticeIdempotencyKey(workspaceId, "analytics_report", reportId, recipient.recipientId);
@@ -747,9 +802,14 @@ export async function deliverReportNotice(workspaceId: string, reportId: string)
       // The ledger says which it was: a row left `started` is in doubt (the send may have happened); a row marked `failed` is a refusal.
       const after = await query<{ id: string; status: string }>(`SELECT id, status FROM effects WHERE idempotency_key = $1;`, [key]);
       const row = after.rows[0];
-      const inDoubt = row?.status === "started";
-      const evidence: Record<string, unknown> = { kind: "analytics_report", refId: reportId };
-      if (row) evidence.effectId = row.id;
+      if (!row) {
+        // Failed before the ledger row was written: nothing was sent and nothing is recorded. Not audited yet (see below).
+        outcome.untried += 1;
+        log.warn("analytics.notice_not_tried", { workspaceId, reportId, reason: err instanceof Error ? err.name : "unknown" });
+        continue;
+      }
+      const inDoubt = row.status === "started";
+      const evidence: Record<string, unknown> = { kind: "analytics_report", refId: reportId, effectId: row.id };
       await ENGINE.recordAudit(
         workspaceId,
         null,
@@ -765,12 +825,32 @@ export async function deliverReportNotice(workspaceId: string, reportId: string)
       log.warn("analytics.notice_not_sent", { workspaceId, reportId, outcome: inDoubt ? "in_doubt" : "failed", reason: err instanceof Error ? err.name : "unknown" });
     }
   }
+  if (outcome.untried > 0) {
+    const tries = await query<{ attempts: number }>(
+      `UPDATE analytics_reports SET notice_attempts = notice_attempts + 1 WHERE workspace_id = $1 AND id = $2 RETURNING notice_attempts AS attempts;`,
+      [workspaceId, reportId]
+    );
+    // Not done: the next pass tries the untried recipients again.
+    if (Number(tries.rows[0]?.attempts ?? 0) < MAX_NOTICE_ATTEMPTS) return outcome;
+    // The tries have run out. The recipients that were never reached are audited once, here, and the report is done.
+    await ENGINE.recordAudit(
+      workspaceId,
+      null,
+      "system",
+      SYSTEM_ACTOR.id,
+      EffectClass.EXTERNAL_REQUEST,
+      "notification.failed",
+      PolicyDecision.ALLOW,
+      { kind: "analytics_report", refId: reportId, reason: "not_attempted", untried: outcome.untried, attempts: MAX_NOTICE_ATTEMPTS }
+    );
+    outcome.failed += outcome.untried;
+  }
   await query(`UPDATE analytics_reports SET notice_done = TRUE WHERE workspace_id = $1 AND id = $2;`, [workspaceId, reportId]);
   return outcome;
 }
 
 /* ---------------------------------------------------------------------------------------------------------------------------
- * The weekly job (called by the worker, docs/decisions/0090)
+ * The weekly job (called by the worker, docs/decisions/0091)
  * ------------------------------------------------------------------------------------------------------------------------- */
 
 export interface WeeklyReportsResult {
@@ -806,7 +886,13 @@ function errorCode(err: unknown): string | null {
  * about each weekly report of that week that is not yet done. Both steps stop starting new work after `deadlineMs`.
  * A replay of a pass does nothing that was already done.
  */
-export async function runWeeklyAnalyticsReports(opts: { now: Date; batchSize: number; deadlineMs?: number }): Promise<WeeklyReportsResult> {
+export async function runWeeklyAnalyticsReports(opts: {
+  now: Date;
+  batchSize: number;
+  deadlineMs?: number;
+  /** Restricts the pass to these workspaces. Tests use it so one file's pass does not reach another file's rows. Omitted in production. */
+  workspaceIds?: string[];
+}): Promise<WeeklyReportsResult> {
   const result: WeeklyReportsResult = { synced: 0, skippedRecentSync: 0, reports: 0, notices: 0, noticesInDoubt: 0, failed: 0, deferred: 0, errors: [] };
   const templateIds = templateIdsWithAnalytics();
   if (templateIds.length === 0) return result;
@@ -816,8 +902,9 @@ export async function runWeeklyAnalyticsReports(opts: { now: Date; batchSize: nu
   const outOfTime = () => opts.deadlineMs !== undefined && Date.now() - startedAt > opts.deadlineMs;
   const note = (err: unknown) => result.errors.push(`${errorCode(err) ?? "ERROR"}`);
 
-  const due = await query<{ workspace_id: string; id: string }>(
-    `SELECT a.workspace_id, a.id
+  const scope = opts.workspaceIds ?? null;
+  const due = await query<{ workspace_id: string; id: string; consecutive_failures: number }>(
+    `SELECT a.workspace_id, a.id, a.consecutive_failures
      FROM analytics_accounts a
      JOIN workspaces w ON w.id = a.workspace_id
      WHERE a.status = 'active' AND NOT w.is_demo AND w.template_id = ANY($1::text[])
@@ -826,9 +913,10 @@ export async function runWeeklyAnalyticsReports(opts: { now: Date; batchSize: nu
          SELECT 1 FROM analytics_reports r
          WHERE r.workspace_id = a.workspace_id AND r.account_id = a.id AND r.kind = 'weekly'
            AND r.period_start = $2::date AND r.period_end = $3::date)
+       AND ($6::text[] IS NULL OR a.workspace_id = ANY($6::text[]))
      ORDER BY a.next_attempt_at ASC NULLS FIRST, a.created_at ASC, a.id ASC
      LIMIT $4;`,
-    [templateIds, dayString(periodStart), dayString(periodEnd), opts.batchSize, opts.now.toISOString()]
+    [templateIds, dayString(periodStart), dayString(periodEnd), opts.batchSize, opts.now.toISOString(), scope]
   );
   for (const row of due.rows) {
     if (outOfTime()) break;
@@ -845,6 +933,7 @@ export async function runWeeklyAnalyticsReports(opts: { now: Date; batchSize: nu
       stage = "report";
       const generated = await generateReport(row.workspace_id, { accountId: row.id, kind: "weekly", periodStart, periodEnd }, SYSTEM_ACTOR, opts.now);
       if (generated.created) result.reports += 1;
+      await clearBackoff(row.workspace_id, row.id);
       stage = "notice";
       const notice = await deliverReportNotice(row.workspace_id, generated.report.id);
       result.notices += notice.sent;
@@ -858,8 +947,9 @@ export async function runWeeklyAnalyticsReports(opts: { now: Date; batchSize: nu
       }
       result.failed += 1;
       note(err);
-      // A sync failure was recorded by syncAccount. A failure after it is recorded here, so the account backs off.
-      if (stage !== "sync") await recordFailure(row.workspace_id, row.id, errorCode(err) ?? "ERROR", opts.now);
+      // A sync failure was recorded by syncAccount. A failure after a good sync is recorded here with the count the account had
+      // before this pass, because the sync reset it: the wait keeps doubling while the report keeps failing (review S-A).
+      if (stage !== "sync") await recordFailure(row.workspace_id, row.id, errorCode(err) ?? "ERROR", opts.now, Number(row.consecutive_failures));
     }
   }
 
@@ -871,9 +961,10 @@ export async function runWeeklyAnalyticsReports(opts: { now: Date; batchSize: nu
      WHERE r.kind = 'weekly' AND r.period_start = $1::date AND r.period_end = $2::date
        AND NOT w.is_demo AND w.template_id = ANY($3::text[])
        AND r.notice_done = FALSE
+       AND ($5::text[] IS NULL OR r.workspace_id = ANY($5::text[]))
      ORDER BY r.created_at ASC, r.id ASC
      LIMIT $4;`,
-    [dayString(periodStart), dayString(periodEnd), templateIds, opts.batchSize]
+    [dayString(periodStart), dayString(periodEnd), templateIds, opts.batchSize, scope]
   );
   for (const row of pending.rows) {
     if (outOfTime()) break;

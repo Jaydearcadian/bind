@@ -1117,7 +1117,7 @@ export const ROUTES: RouteSpec[] = [
   }),
 
   // -------------------------------------------------------------------------------------------------------------------
-  // Post analytics (docs/decisions/0090). Only templates with a post analytics data source have it; the others get
+  // Post analytics (docs/decisions/0091). Only templates with a post analytics data source have it; the others get
   // TEMPLATE_HAS_NO_ANALYTICS. The simulated provider is the only one.
   // -------------------------------------------------------------------------------------------------------------------
   withGenericErrors({
@@ -1150,7 +1150,7 @@ export const ROUTES: RouteSpec[] = [
       409: err("The workspace already has the most accounts it can have (ANALYTICS_ACCOUNT_LIMIT)."),
     },
     contractTested: false,
-    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0090).",
+    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0091).",
   }),
   withGenericErrors({
     operationId: "syncAnalyticsAccount",
@@ -1171,7 +1171,7 @@ export const ROUTES: RouteSpec[] = [
       ),
     },
     contractTested: false,
-    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0090).",
+    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0091).",
   }),
   withGenericErrors({
     operationId: "listAnalyticsReports",
@@ -1197,7 +1197,7 @@ export const ROUTES: RouteSpec[] = [
       404: err("No such analytics report in this workspace (ANALYTICS_REPORT_NOT_FOUND). Also the answer for a workspace with no analytics module."),
     },
     contractTested: false,
-    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0090).",
+    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0091).",
   }),
   withGenericErrors({
     operationId: "createAnalyticsReport",
@@ -1219,7 +1219,7 @@ export const ROUTES: RouteSpec[] = [
       409: err("The period has no stored posts yet (ANALYTICS_NO_DATA_YET). Sync the account, then ask again. Nothing is stored for the period."),
     },
     contractTested: false,
-    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0090).",
+    notTestedReason: "Needs a workspace with the analytics module; the shared contract fixture is a kitchen. Covered by tests/integration/analytics.test.ts (docs/decisions/0091).",
   }),
 
   // -------------------------------------------------------------------------------------------------------------------

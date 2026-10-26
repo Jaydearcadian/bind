@@ -101,7 +101,7 @@ A stream over a cap is answered `429 { "error": "Too many event streams", "code"
 - `workflowId` appears only when the row belongs to a workflow.
 - `data` holds only these evidence keys: ids (`*Id`, `*Ids`), `status`, `state`, `fromState`, `toState`, `hold`, `code`,
   `codes`, `reasonCodes`, `kind`, `decision`, `connectorId`, `txHash`, `orderNumber`, `attempts`, `effectId`, `units`,
-  `sku`, `channel`, `surface`, `promisedFor`, `slotId`, `posts`, `inserted`, `updated` (the last three are counts, docs/decisions/0090). A value is kept only when it is a string of at most 200 characters,
+  `sku`, `channel`, `surface`, `promisedFor`, `slotId`, `posts`, `inserted`, `updated` (the last three are counts, docs/decisions/0091). A value is kept only when it is a string of at most 200 characters,
   a finite number, a boolean, or a list of at most 20 such strings. Everything else is dropped: free text (reasons, errors,
   notes, labels, messages, rationales), nested objects and extracted document text. `txHash` comes from the row's
   transaction hash.
@@ -157,7 +157,7 @@ from the plan.
 | `feedback.ingested` | customer feedback is recorded | `src/workflows/feedback.ts` |
 | `agent.tool_called` | a write tool of the hosted MCP endpoint has finished, through a staff key: the key's id is the object, and the evidence holds the tool, its outcome and the API status, never the arguments, the answer or the token (docs/decisions/0075) | `src/server/mcp-route.ts` |
 | `menu.proposed`, `menu.propose_refused`, `menu.approved`, `menu.rejected`, `menu.cancelled`, `menu.published`, `menu.publish_refused` | a menu change moves through its states | `src/workflows/menu.ts` |
-| `analytics.account_created`, `analytics.synced`, `analytics.report_generated` | a post analytics account is connected, its posts are synced (counts only: posts, inserted, updated), or a report is written for a period (docs/decisions/0090) | `src/analytics/service.ts` |
+| `analytics.account_created`, `analytics.synced`, `analytics.report_generated` | a post analytics account is connected, its posts are synced and changed (counts only: posts, inserted, updated; an unchanged re-sync writes none), or a report is written for a period (docs/decisions/0091) | `src/analytics/service.ts` |
 | `surface.bind_identity` | a social surface identity is bound | `src/adapters/socialSurface.ts` |
 | `document.extract_staged`, `document.confirm_quote` | a document is extracted or confirmed | `src/studio/documentsAndAccounting.ts` |
 

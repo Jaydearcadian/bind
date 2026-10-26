@@ -48,7 +48,7 @@ const READ_TOOLS = [
   "feedback_summary",
   "list_audit",
   "poll_events",
-  // Post analytics reports (docs/decisions/0090): read only.
+  // Post analytics reports (docs/decisions/0091): read only.
   "list_analytics_reports",
   "get_analytics_report",
 ];
