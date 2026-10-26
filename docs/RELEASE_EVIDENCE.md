@@ -6,7 +6,7 @@ that this task did not reproduce are kept, labelled, in the appendix at the end,
 **Commit the gates ran on:** `407533ac09f7121806836e25db4834be5c91c412` (HEAD of `claude/capabilities-overview-c6elxr` before the
 commit that adds this document; the working tree was clean at that commit).
 
-## 0d. Post analytics, first read-only slice (ADR 0090): gate run, second pass after review
+## 0d. Post analytics, first read-only slice (ADR 0091): gate run, second pass after review
 
 **Commit the gates ran on:** the working tree on top of `6e4a8a2` (the first commit of this slice), with the review changes uncommitted at the time of the runs. Integration runs used a private database, `bind_haiku_analytics`, created for this work and dropped afterwards. `bind_local` was never used for analytics. No real platform is contacted and no credential is read; the provider is simulated only.
 
@@ -79,7 +79,7 @@ The table uses the full mutation list of this pass. A mutation is KILLED when at
 
 **Earlier mutation sweep (first pass, before this review).** Its survivors were: the time-zone mutation of the account (now killed, AH), the flag default (now killed, F), staff sync (now killed, D), demo and disabled sweeps (now killed, G and H), the sync time (killed in both passes), and the weekly job's ledger-check removal (now replaced by `notice_done`, mutation P, killed). The first pass's in-doubt audit gap (B1) is closed, and its test now runs through the worker.
 
-**Known limitations (ADR 0090).** A crash in the middle of one provider send leaves the row `started`; the owner's audit row is written by the pass that sees the failure, not by a later pass. Reports are fixed when written. The all-brands report pools brands. The backoff, timeout and throttle values are first choices, with fake providers only.
+**Known limitations (ADR 0091).** A crash in the middle of one provider send leaves the row `started`; the owner's audit row is written by the pass that sees the failure, not by a later pass. Reports are fixed when written. The all-brands report pools brands. The backoff, timeout and throttle values are first choices, with fake providers only.
 
 **Not claimed:** no `LIVE_READ_PASS`, `VERIFIED_REMOTE` or `BLOCKED` for this slice. The simulated provider is `LOCAL_PASS` only.
 

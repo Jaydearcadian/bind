@@ -233,7 +233,7 @@ export function shell({ me, onSignOut }) {
   }
 }
 
-// ---- Reports link (only for teams that have post analytics, ADR 0090) -------------------------------------------------
+// ---- Reports link (only for teams that have post analytics, ADR 0091) -------------------------------------------------
 
 /** Adds "Reports" to the side nav and the More menu when this workspace's team reads post analytics. Quiet on any failure. */
 async function addReportsLink(me) {

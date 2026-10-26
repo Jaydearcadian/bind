@@ -1,7 +1,7 @@
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
 
 /*
- * Reports (ADR 0090) in a real browser against the real server. Only the simulated provider exists, so every brand and report
+ * Reports (ADR 0091) in a real browser against the real server. Only the simulated provider exists, so every brand and report
  * is sample data, and the page must say so. Server state is checked after each action.
  */
 

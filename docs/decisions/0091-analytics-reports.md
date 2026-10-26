@@ -1,4 +1,4 @@
-# ADR 0090: Analytics reports: provider interface, simulated provider first, deterministic analysis
+# ADR 0091: Analytics reports: provider interface, simulated provider first, deterministic analysis
 
 ## Status
 Accepted (2026-10-26), as the first slice. Builds on ADR 0084 (`social-v1` and its descriptive `dataSources`), ADR 0017 (the effects
